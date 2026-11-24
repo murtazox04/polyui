@@ -1,6 +1,6 @@
 # Security model and the tests behind it
 
-Section 13 of `spec/protocol.md` lists seven security rules. This page explains who we defend against, where the trust boundaries are, and which test checks each rule. It also lists the defects the tests found that are not fixed yet.
+Section 13 of `spec/protocol.md` lists seven security rules. This page explains who we defend against, where the trust boundaries are, and which test checks each rule. It also lists the defects the tests found and how each one was fixed.
 
 ## Who we defend against
 
@@ -48,7 +48,7 @@ The arrows that leave the server toward the model carry only what the model wrot
 
 ## Rules and the tests that check them
 
-The tests live in three files. Run them with `cargo test`; the ignored ones are the known defects listed further down.
+The tests live in three files. Run them with `cargo test`. None of them is ignored.
 
 - `crates/polyui-core/tests/security_pack.rs`: the validator and the client core, with no I/O.
 - `crates/polyui-server/tests/security_pack.rs`: the agent loop with `ScriptedProvider`, which replays the exact hostile replies a prompt-injected model would send.
@@ -83,7 +83,7 @@ Text such as `<b>Bills</b>` is valid content and reaches the client as a plain s
 | The same through `update_ui` data, upserts and rebinding | core `rule2_bound_urls_are_checked_against_update_ui_data_and_upserts` |
 | A `$ref` source that may give `http` or a resolver that returns `data:` | core `rule2_ref_urls_are_checked_by_declared_kind_and_by_value` |
 | Bad URLs arriving at the renderer in `ui.data`, `ui.patch`, `ui.snapshot` and merge ops | core `rule2_the_renderer_rejects_bad_urls_in_every_server_message` |
-| The user types a `javascript:` URL into a form field bound to an image | server `bound_urls_stay_safe_when_the_user_writes_form_values` (ignored, defect 1) |
+| The user types a `javascript:` URL into a form field bound to an image | server `bound_urls_stay_safe_when_the_user_writes_form_values` |
 
 One behavior to know about: `allow_http()` on the host does not widen a URL prop that does not list `http` in its own `schemes`. The built-in `Image.src` has no `schemes`, which means `https` only, so it stays `https` only even when the host allows `http`. That is stricter than the wording of the rule, not looser; a catalog that wants `http` must list it.
 
@@ -171,22 +171,23 @@ sequenceDiagram
 | Invalid UTF-8 in a POST body, with and without a session | transport `http_send_refuses_invalid_utf8_bodies` |
 | Invalid, deep and oversized POST bodies | transport `http_send_reports_invalid_and_deep_json_without_reaching_the_model` |
 | 20 000 bad frames from one client while another connects | transport `ws_flood_of_bad_messages_keeps_the_server_responsive` |
-| A client that floods without reading replies | transport `ws_flood_from_a_client_that_never_reads_is_bounded` (ignored, defect 2) |
-| A flood of `user.say` | transport `ws_user_say_flood_is_bounded_per_session` (ignored, defect 3) |
-| Opening more WebSocket sessions than `max_sessions` | transport `ws_sessions_count_against_max_sessions` (ignored, defect 4) |
-| One model reply that opens 300 surfaces | server `the_number_of_open_surfaces_per_session_is_capped` (ignored, defect 5) |
+| A client that floods without reading replies | transport `ws_flood_from_a_client_that_never_reads_is_bounded` |
+| A client that stops reading is closed as a slow consumer | server `a_client_that_stops_reading_is_closed_as_a_slow_consumer` |
+| A flood of `user.say` | transport `ws_user_say_flood_is_bounded_per_session` |
+| `user.say` faster than the rate limit | server `user_say_is_rate_limited_with_a_user_safe_agent_error` |
+| Opening more WebSocket sessions than `max_sessions` | transport `ws_sessions_count_against_max_sessions` |
+| WebSocket and SSE sessions together over `max_sessions` | transport `sse_and_websocket_sessions_share_max_sessions` |
+| A client that leaves while the model is still answering | transport `a_disconnect_cancels_the_running_turn` |
+| One model reply that opens 300 surfaces | server `the_number_of_open_surfaces_per_session_is_capped` |
 
-## Known defects
+## Defects the pack found
 
-Each one has a test marked `#[ignore = "known defect: ..."]`. They were confirmed by running the ignored tests, which all fail today:
+The pack first ran with these five tests marked `#[ignore = "known defect: ..."]`, and all five failed. They are fixed now and run with every `cargo test`. The limits they rely on are described in [server.md](server.md#limits-per-session-and-per-server).
 
-```sh
-cargo test -p polyui-server --test security_pack -- --ignored
-cargo test -p polyui-server --test security_pack_transport -- --ignored
-```
+1. **Form values skipped the URL check (rules 2 and 4).** `Session::store_values` wrote the `with` values into both copies of the data model and checked only the size limits, so a `javascript:` URL typed into a field bound to `Image.src` reached the client in the next `ui.snapshot`. Now every component that binds to the data model is checked again against the data with the new values, using the same prop rules as `show_ui`, and charts that bind to it are drawn again. A value that does not fit refuses the action with `ui.action.result` `rejected`, before the confirm sheet when the action needs one and again just before it runs.
+2. **No backpressure on outgoing messages.** Replies went into an unbounded channel and the WebSocket reader never waited for the writer; a client that sent without reading made the server accept 400 000 messages in under 2 seconds. Now each session has a bounded queue (256 messages). The server waits for room before it handles the next client message or model event, so the client is slowed down through TCP, and a session that does not make room within 10 seconds is closed as a slow consumer (WebSocket close code 1008 with the reason when the frame still fits).
+3. **No limit on queued turns.** Every `user.say` went into an unbounded queue and later became a model call. Now one turn runs at a time, at most two wait, and a rate limit (8 at once, then one every 4 seconds) covers `user.say` and actions that start a turn. Anything over is answered with an `agent.error` that is safe to show to the user, or a rejected `ui.action.result` before the action runs.
+4. **`max_sessions` did not count WebSocket sessions.** Now one semaphore counts both transports. A WebSocket takes a place before the upgrade and gets HTTP 503 when none is left.
+5. **No limit on open surfaces per session.** Now a session can have at most 16 open surfaces. A `show_ui` over that fails like any invalid call, and the model reads which surfaces are open so it can close or reuse one.
 
-1. **Form values skip the URL check (rules 2 and 4).** When the user fires an action, `Session::store_values` writes the `with` values into both copies of the data model and checks only the size limits. It does not check the props bound to those paths again. A `javascript:` URL typed into a field bound to `Image.src` is stored, and the next `ui.snapshot` sends it to the client. The renderer refuses it (core `rule2_the_renderer_rejects_bad_urls_in_every_server_message`), so it is not exploitable in the web renderer, but invalid output does reach the client. Fix: run the same binding check that `update_ui` data goes through before accepting form values, and reject the action when it fails.
-2. **No backpressure on outgoing messages.** Each session writes its replies into an unbounded channel, and the WebSocket reader never waits for the writer. A client that sends without reading made the server accept 400 000 messages in under 2 seconds, with every reply queued in memory. Fix: a bounded channel, and close the connection when it is full.
-3. **No limit on queued turns.** Every `user.say` goes into an unbounded turn queue and later becomes at least one model call. 300 messages sent at once got no refusal; the server worked through them one by one. That is unbounded memory and unbounded model spend from one connection. Fix: allow one running turn and a small queue per session, and answer the rest with `ui.error` or close the connection.
-4. **`max_sessions` does not count WebSocket sessions.** The cap is checked only when `POST /send` starts an SSE session. With `max_sessions = 2`, four WebSocket sessions opened. Fix: count WebSocket sessions in the same table and refuse the upgrade when it is full.
-5. **No limit on open surfaces per session.** One model reply with 300 `show_ui` calls opened 300 surfaces, all held in memory, each with its own data model of up to 128 KiB. Fix: a per-session cap on open surfaces, returned to the model as a normal problem so it can close one first.
+One more gap was closed at the same time: a turn kept running after its client left. Now closing the session stops the turn and drops the model stream, and `AnthropicProvider` aborts the HTTP request as soon as nobody reads its events.

@@ -6,7 +6,7 @@ use polyui_server::{Agent, AgentConfig, ScriptedProvider, ScriptedReply, Session
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 const GAS_BILL: &str = "b_gas_2611";
 
@@ -14,7 +14,7 @@ struct Harness {
     provider: Arc<ScriptedProvider>,
     host: Arc<BillsHost>,
     session: Arc<Session>,
-    outgoing: UnboundedReceiver<Value>,
+    outgoing: Receiver<Value>,
 }
 
 fn hello(catalogs: &[&str]) -> Hello {

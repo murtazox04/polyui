@@ -156,7 +156,7 @@ impl AnthropicProvider {
         Value::Object(body)
     }
 
-    async fn run(self, request: ModelRequest, events: mpsc::UnboundedSender<ModelEvent>) {
+    async fn run(&self, request: ModelRequest, events: &mpsc::UnboundedSender<ModelEvent>) {
         let mut body = self.body(&request);
         let mut attempt = 0;
         let response = loop {
@@ -236,7 +236,13 @@ impl AnthropicProvider {
 impl ModelProvider for AnthropicProvider {
     fn stream(&self, request: ModelRequest) -> BoxStream<'static, ModelEvent> {
         let (sender, receiver) = mpsc::unbounded_channel();
-        tokio::spawn(self.clone().run(request, sender));
+        let provider = self.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                () = sender.closed() => {}
+                () = provider.run(request, &sender) => {}
+            }
+        });
         UnboundedReceiverStream::new(receiver).boxed()
     }
 }

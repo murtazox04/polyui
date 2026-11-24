@@ -17,4 +17,4 @@ pub use host::{ActionCall, ActionOutcome, ConfirmText, Host, User};
 pub use provider::{ModelEvent, ModelProvider, ModelRequest, ProviderError, StopReason, Usage};
 pub use scripted::{ScriptedProvider, ScriptedReply};
 pub use server::{ServerConfig, router, serve};
-pub use session::{Agent, AgentConfig, Session, ToolOutcome};
+pub use session::{Agent, AgentConfig, CloseReason, Outgoing, Session, ToolOutcome, TurnRate};

@@ -48,7 +48,22 @@ Step by step:
 5. The client gets `ui.open`, `ui.patch`, `ui.data` or `ui.close` with a per-surface `seq`. The model gets a one-line summary of what is on screen. `$ref` props show as `[ref]` in that summary, so private values never enter the model's context.
 6. If the model reply stops on `max_tokens` or `refusal`, its tool calls are not run. The client gets `agent.error`.
 
-The server keeps two copies of every surface. The model copy is what the model wrote, and the summaries are built from it. The client copy has the resolved values, the chart scenes and the sealed handles, and it is what `ui.snapshot` returns after a `ui.resync`. When the user fires an action with form values (the paths listed in the action's `with`), both copies are updated, so the next summary shows what the user typed.
+### Streaming UI while the model writes
+
+A client that lists `stream` in the `features` of its `hello` does not have to wait for the whole `show_ui` call. The Anthropic API streams the tool input as `input_json_delta` fragments, and the server feeds them to `polyui-core`'s `ShowUiStream`, which reports each component as soon as its closing brace arrives and checks it on its own:
+
+1. When the root component has arrived, the client gets `ui.open` with the root and every finished component the root already reaches.
+2. Each later component goes out in a `ui.patch` with the next `seq`. Section 5.1 of the spec allows a component in such a patch that no parent reaches yet, because its parent may still be on the way.
+3. When the model has finished, the whole call is checked as usual. If it passes, the server compares the result with what it already sent and sends only the difference: a `ui.data` for the data model, which usually comes last in the input, and a `ui.patch` for any component that changed. Components that did not change keep their action handles.
+4. If the full check fails, or the model reply breaks off, the server sends `ui.close` for that surface and the model gets the problems and tries again, as without streaming. The client never keeps UI that did not pass.
+
+Buttons on a surface that is still streaming are not live yet. A `ui.action` on such a surface gets `ui.action.result` with `rejected` and "This screen is still loading.", and the model cannot `update_ui` or `close_ui` it until it is complete. Streaming stops early (and the final check decides) as soon as a component fails its own check, a `$ref` cannot be resolved, the surface would go over a limit, or 16 surfaces are already open.
+
+How much sooner the UI appears depends on how long the call is. In a live run against `claude-haiku-5-5` ("Show all four of my bills with a pay button for each", 2357 bytes of `show_ui` input in 148 fragments over 3.1 s, about 15 bytes every 21 ms), the first `ui.open` came at 4.9 s after the user message, while the full input was only complete at 7.7 s. A second call without streaming opened its surface at 6.8 s, right when its input was complete. With the same timing replayed by `ScriptedProvider` for a bills card with 15 components, the first `ui.open` comes after 0.32 s with streaming and after 2.47 s without (`cargo test -p polyui-server --test streaming -- --nocapture` prints both).
+
+The server checks the input again from the start each time a fragment that can close a component arrives. `ShowUiStream` borrows a `Validator`, and `Validator` holds `&dyn ActionRegistry` and `&dyn RefResolver` without `Sync`, so it cannot be kept across an `await` in a spawned task. For tool inputs up to the 256 KiB limit this costs little, but it is quadratic in the worst case.
+
+The server keeps two copies of every surface. The model copy is what the model wrote, and the summaries are built from it. The client copy has the resolved values, the chart scenes and the sealed handles, and it is what `ui.snapshot` returns after a `ui.resync`. When the user fires an action with form values (the paths listed in the action's `with`), both copies are updated, so the next summary shows what the user typed. Before that, every component that binds to the data model is checked again against the data with the new values, the same way `show_ui` data is checked. A value that does not fit a prop, for example `javascript:alert(1)` typed into a field bound to `Image.src`, is refused: the action does not run and the client gets `ui.action.result` with `rejected`. Charts that bind to the data model are drawn again, and the client gets a `ui.patch` with the new scene.
 
 ### Actions and confirmation
 
@@ -100,6 +115,21 @@ The model sits behind the `ModelProvider` trait. `AnthropicProvider` streams fro
 
 Every incoming message is size checked before it is parsed: the WebSocket frame and message limit and the HTTP body limit are both 256 KiB, and the text then goes through `polyui-core`'s guarded parser. Bad input gets `ui.error`; it never reaches the model.
 
+### Limits per session and per server
+
+Memory, CPU and model spend have to stay bounded whatever a client sends. These limits are in `AgentConfig` and `ServerConfig`:
+
+| Limit | Default | What happens when it is reached |
+|---|---|---|
+| `max_sessions` | 1000 | Counts WebSocket and SSE sessions together. A WebSocket upgrade or a new `POST /send` session gets HTTP 503 "too many sessions". A WebSocket counts from the upgrade until it closes, an SSE session until its event stream closes or the 60 second attach timeout. |
+| `outgoing_queue` | 256 messages | Server messages for one session wait in a queue of this size. Before the server handles a client message or a model event, it waits until at least 16 places are free, so a client that sends faster than it reads is slowed down instead of filling memory. |
+| `slow_consumer_after` | 10 s | If those places do not free up in time, the session is closed as a slow consumer. A WebSocket gets close code 1008 with the reason "the client did not read server messages in time" when the frame still fits in the socket; an SSE stream ends with an event named `close` whose data is the same text. A client that reads nothing at all may only see the connection drop. |
+| `waiting_turns` | 2 | One turn runs at a time per session, and at most this many `user.say` messages or action reports wait behind it. A `user.say` beyond that gets `agent.error` "The assistant is still working on your earlier messages. Please wait for it to finish." An action that would start a turn is refused with `ui.action.result` `rejected` and the same text, before it runs. |
+| `turn_rate` | 8 at once, then one more every 4 s | Each `user.say` and each action that runs takes one. When none is left, a `user.say` gets `agent.error` "You are sending messages too quickly. Please wait a moment and try again." and an action is refused before it runs. Set `refill` to zero to turn the limit off. |
+| `max_open_surfaces` | 16 | A `show_ui` that would open one more surface fails like any other invalid call, and the model reads "16 surfaces are already open, which is the most one conversation can have. Close one with close_ui or change one with update_ui." with the list of open surfaces. |
+
+When a client goes away (its WebSocket closes, or its SSE stream is dropped or never attached), the session is closed and a running turn is stopped where it is. The model stream is dropped, and `AnthropicProvider` stops reading and closes the HTTP request at once, so no more tokens are generated for nobody.
+
 ## Running the demo
 
 The `bills` demo host is a household in Tashkent with gas, electricity, water and internet accounts, six months of usage, and three internet tariffs. It has three actions: `pay_bill` (needs confirmation), `pick_offer` and `show_usage`, plus a `get_usage` tool for charts. `{"$ref": "account:gas"}` resolves to a masked account number like `**** 0083`.
@@ -110,7 +140,7 @@ polyui serve --env-file ~/.config/polyui/anthropic.env --static js/polyui-web/de
 
 Options: `--addr` (default `127.0.0.1:8787`), `--model` (default `claude-haiku-5-5`), `--static DIR`, `--host bills|shop`, `--data DIR`. Without `--env-file` the key is read from `ANTHROPIC_API_KEY`. The key is never printed or logged.
 
-`--host shop` runs a small store whose dashboards are built from SQL over local CSV and Parquet files. It needs the `query` feature, which the `polyui` binary has on by default. See [dashboards.md](dashboards.md).
+`--host shop` runs a small store whose dashboards are built from SQL over local CSV and Parquet files. It needs the `query` feature, which is off by default because DataFusion grows the binary from about 7 MB to about 92 MB. Build with `cargo run -p polyui --features query -- serve --host shop ...` or `cargo install --path crates/polyui-cli --features query`. A binary built without it stops with a message that says so. See [dashboards.md](dashboards.md).
 
 Two more commands help when writing prompts or catalogs:
 
@@ -121,19 +151,19 @@ polyui validate surface.json                       # problems, or the summary if
 
 ## Tests
 
-`cargo test -p polyui-server -p polyui` runs everything that does not need the network: the stream parser, the agent loop with `ScriptedProvider` (valid calls, a fixed retry, the retry limit, cut-off replies, the confirm flow, reused and expired nonces, forged handles, `$ref` values never reaching the model, chart scenes, patches and snapshots) and the WebSocket, SSE and static file transports on a real socket.
+`cargo test -p polyui-server -p polyui` runs everything that does not need the network: the stream parser, the agent loop with `ScriptedProvider` (valid calls, a fixed retry, the retry limit, cut-off replies, the confirm flow, reused and expired nonces, forged handles, `$ref` values never reaching the model, chart scenes, patches and snapshots, streamed surfaces), the session limits and the WebSocket, SSE and static file transports on a real socket. `cargo test -p polyui-server --features query` adds the dashboard tests. `ScriptedReply::paced(bytes, every)` splits text and tool input into fragments of that many bytes and waits between them, so tests can replay realistic model timing.
 
-One test talks to the real API. It is ignored by default:
+Two tests in `tests/live.rs` talk to the real API. They are ignored by default:
 
 ```sh
 set -a; . ~/.config/polyui/anthropic.env; set +a
-POLYUI_LIVE=1 cargo test -p polyui-server live -- --ignored --nocapture
+POLYUI_LIVE=1 cargo test -p polyui-server --test live -- --ignored --nocapture
 ```
 
-It asks for the gas bill, checks that a valid `ui.open` arrives, and prints whether the first `show_ui` was valid and how many tokens were used.
+`live_gas_bill_opens_valid_ui` asks for the gas bill, checks that a valid `ui.open` arrives, and prints whether the first `show_ui` was valid and how many tokens were used. `live_streaming_opens_ui_sooner` makes one model call with the `stream` feature and one without, and prints when the first `ui.open` arrived, when the `show_ui` input was complete, and the size and timing of the input fragments.
 
 ## Known limits
 
 - The Anthropic API limits strict tool schemas to 24 optional parameters and 16 parameters with union types across one request. `polyui-core` builds strict schemas with no optional parameters (null stands for a missing value), and marks a tool `strict` only when it fits what is left of those limits, counting host tools too. With the built-in catalogs every bindable prop is a union, so `show_ui` and `update_ui` go without `strict` and `close_ui` (and small host tools such as `get_usage`) go with it. Sending all three strict returns HTTP 400 "Schemas contains too many parameters with union types (116 parameters with type arrays or anyOf) ... (limit: 16 parameters with unions)". If the API still refuses strict schemas (for example "Schema is too complex for compilation"), the provider logs it once and sends the same tools without `strict` from then on. Validation on the server is unchanged, so nothing invalid reaches a client either way.
 - Sessions live in memory. A WebSocket session ends when the socket closes. An SSE session ends when its event stream closes, or after 60 seconds if no stream was opened.
-- A turn that is running finishes even if the client leaves; its messages are dropped.
+- A turn that is running stops when the client leaves. If a host action had already run, its report to the model is lost with the turn.

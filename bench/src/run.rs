@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 pub const TURN_TIMEOUT: Duration = Duration::from_secs(240);
 const TEXT_KEPT: usize = 400;
@@ -180,7 +180,7 @@ struct Outcome {
     first_open: Option<Duration>,
 }
 
-async fn drain(outgoing: &mut UnboundedReceiver<Value>, started: Instant) -> Outcome {
+async fn drain(outgoing: &mut Receiver<Value>, started: Instant) -> Outcome {
     let mut outcome = Outcome {
         ending: "timeout".into(),
         text: String::new(),
@@ -308,7 +308,7 @@ fn tool_result_block(id: &str, content: &str, is_error: bool) -> Value {
     block
 }
 
-fn count_opens(outgoing: &mut UnboundedReceiver<Value>) -> usize {
+fn count_opens(outgoing: &mut Receiver<Value>) -> usize {
     let mut opens = 0;
     while let Ok(message) = outgoing.try_recv() {
         if message["t"] == "ui.open" {

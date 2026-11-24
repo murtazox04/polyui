@@ -12,7 +12,7 @@ use polyui_server::{
 use serde_json::{Map, Value, json};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
@@ -112,6 +112,32 @@ impl ModelProvider for SlowProvider {
                 content: vec![json!({ "type": "text", "text": "ok" })],
                 usage: Usage::default(),
             }
+        })
+        .boxed()
+    }
+}
+
+struct DropFlag(Arc<AtomicBool>);
+
+impl Drop for DropFlag {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+struct HangingProvider {
+    calls: AtomicUsize,
+    dropped: Arc<AtomicBool>,
+}
+
+impl ModelProvider for HangingProvider {
+    fn stream(&self, request: ModelRequest) -> BoxStream<'static, ModelEvent> {
+        drop(request);
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let flag = DropFlag(self.dropped.clone());
+        stream::unfold(flag, |flag| async move {
+            std::future::pending::<()>().await;
+            Some((ModelEvent::TextDelta(String::new()), flag))
         })
         .boxed()
     }
@@ -320,7 +346,6 @@ async fn ws_flood_of_bad_messages_keeps_the_server_responsive() {
 }
 
 #[tokio::test]
-#[ignore = "known defect: the WebSocket reader never waits for the writer; replies go into an unbounded mpsc channel per session, so a client that sends without reading makes server memory grow without limit"]
 async fn ws_flood_from_a_client_that_never_reads_is_bounded() {
     let addr = spawn(Arc::new(ScriptedProvider::new())).await;
     let mut socket = joined(addr).await;
@@ -349,7 +374,6 @@ async fn ws_flood_from_a_client_that_never_reads_is_bounded() {
 }
 
 #[tokio::test]
-#[ignore = "known defect: user.say goes into an unbounded per-session turn queue; every queued message later becomes a model call, with no limit and no refusal"]
 async fn ws_user_say_flood_is_bounded_per_session() {
     let provider = Arc::new(SlowProvider {
         calls: AtomicUsize::new(0),
@@ -374,7 +398,7 @@ async fn ws_user_say_flood_is_bounded_per_session() {
         match tokio::time::timeout(Duration::from_millis(500), socket.next()).await {
             Ok(Some(Ok(Message::Text(text)))) => {
                 let value: Value = serde_json::from_str(text.as_str()).unwrap_or_default();
-                if value["t"] == "ui.error" {
+                if value["t"] == "agent.error" {
                     refused += 1;
                 }
             }
@@ -393,7 +417,6 @@ async fn ws_user_say_flood_is_bounded_per_session() {
 }
 
 #[tokio::test]
-#[ignore = "known defect: ServerConfig::max_sessions is only checked for POST /send; WebSocket sessions are never counted, so any number of them can be opened"]
 async fn ws_sessions_count_against_max_sessions() {
     let agent = Agent::new(
         Arc::new(BillsHost::new()),
@@ -581,5 +604,85 @@ async fn sessions_are_bound_to_the_user_who_opened_them() {
     assert!(
         refused.is_err(),
         "a WebSocket without a user must be refused"
+    );
+}
+
+#[tokio::test]
+async fn a_disconnect_cancels_the_running_turn() {
+    let provider = Arc::new(HangingProvider {
+        calls: AtomicUsize::new(0),
+        dropped: Arc::new(AtomicBool::new(false)),
+    });
+    let addr = spawn(provider.clone()).await;
+    let mut socket = joined(addr).await;
+    socket
+        .send(Message::text(
+            json!({ "v": 1, "t": "user.say", "text": "hi" }).to_string(),
+        ))
+        .await
+        .unwrap();
+    let deadline = Instant::now() + WAIT;
+    while provider.calls.load(Ordering::SeqCst) == 0 && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+    assert!(!provider.dropped.load(Ordering::SeqCst));
+    drop(socket);
+    let deadline = Instant::now() + WAIT;
+    while !provider.dropped.load(Ordering::SeqCst) && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        provider.dropped.load(Ordering::SeqCst),
+        "the model stream kept running after the client left"
+    );
+}
+
+#[tokio::test]
+async fn sse_and_websocket_sessions_share_max_sessions() {
+    let agent = Agent::new(
+        Arc::new(BillsHost::new()),
+        Arc::new(ScriptedProvider::new()),
+    );
+    let addr = spawn_with(
+        agent,
+        ServerConfig {
+            max_sessions: 1,
+            ..ServerConfig::default()
+        },
+    )
+    .await;
+    let socket = joined(addr).await;
+    let http = reqwest::Client::new();
+    let refused = http
+        .post(format!("http://{addr}/send"))
+        .body(hello())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), 503);
+    drop(socket);
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let status = http
+            .post(format!("http://{addr}/send"))
+            .body(hello())
+            .send()
+            .await
+            .unwrap()
+            .status();
+        if status == 200 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the closed WebSocket session was never released"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+            .await
+            .is_err()
     );
 }

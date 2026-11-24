@@ -90,7 +90,8 @@ jobs:
                   i += 1
               return "".join(out), comments
 
-          files = subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout.decode().split("\0")
+          listed = ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+          files = sorted(set(subprocess.run(listed, capture_output=True, check=True).stdout.decode().split("\0")))
           failures = []
           for path in filter(None, files):
               if any(part in path for part in SKIP):
@@ -134,7 +135,15 @@ jobs:
           restore-keys: rust-${{ runner.os }}-
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy for the query and client-lite feature sets
+        run: |
+          cargo clippy -p polyui-server -p polyui --features polyui-server/query,polyui/query --all-targets -- -D warnings
+          cargo clippy -p polyui-core --no-default-features --features client-lite --lib --test conformance -- -D warnings
       - run: cargo test
+      - name: Tests with the query feature
+        run: cargo test -p polyui-server -p polyui --features polyui-server/query,polyui/query
+      - name: Tests for the client-lite core used by the wasm build
+        run: cargo test -p polyui-core --no-default-features --features client-lite --lib --test conformance
 
   web:
     name: Wasm size gate, web renderer and chat example

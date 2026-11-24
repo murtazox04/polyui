@@ -14,7 +14,7 @@ function app(overrides: JsonObject = {}): JsonObject {
       uri,
       mimeType: mcpAppMimeType,
       text: "<!doctype html><p>Forecast</p>",
-      _meta: { ui: { csp: { connectDomains: ["https://api.example.com", "'unsafe-eval'", "https://a.com; script-src *"] } } },
+      "_meta": { ui: { csp: { connectDomains: ["https://api.example.com", "'unsafe-eval'", "https://a.com; script-src *"] } } },
     },
     tool_input: { city: "Tashkent" },
     ...overrides,

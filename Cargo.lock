@@ -2796,6 +2796,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "polyui-ffi"
+version = "0.1.0"
+dependencies = [
+ "polyui-core",
+ "serde_json",
+]
+
+[[package]]
 name = "polyui-node"
 version = "0.1.0"
 dependencies = [

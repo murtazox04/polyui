@@ -2,11 +2,14 @@ use polyui_core::protocol::{self, Hello};
 use polyui_core::{Client, validate};
 use polyui_server::anthropic::{AnthropicProvider, ApiKey};
 use polyui_server::bills::{BillsHost, CARD_MASK, HOUSEHOLD_USER, SERVICES, mask};
-use polyui_server::{Agent, AgentConfig, ScriptedProvider, ScriptedReply, Session, User};
+use polyui_server::session::{FORM_REFUSED, TOO_FAST};
+use polyui_server::{
+    Agent, AgentConfig, CloseReason, ScriptedProvider, ScriptedReply, Session, TurnRate, User,
+};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 const GAS_BILL: &str = "b_gas_2611";
 const POWER_BILL: &str = "b_power_2611";
@@ -16,7 +19,7 @@ struct Harness {
     provider: Arc<ScriptedProvider>,
     host: Arc<BillsHost>,
     session: Arc<Session>,
-    outgoing: UnboundedReceiver<Value>,
+    outgoing: Receiver<Value>,
 }
 
 fn hello() -> Hello {
@@ -650,7 +653,6 @@ async fn ref_values_never_appear_in_error_text() {
 }
 
 #[tokio::test]
-#[ignore = "known defect: Session::store_values writes ui.action form values into the data model without re-checking $bind props, so a ui.snapshot after ui.resync carries javascript: bound to Image.src (rules 2 and 4)"]
 async fn bound_urls_stay_safe_when_the_user_writes_form_values() {
     let mut harness = start();
     harness
@@ -672,9 +674,9 @@ async fn bound_urls_stay_safe_when_the_user_writes_form_values() {
     let tap = json!({ "v": 1, "t": "ui.action", "surface": "s1", "action_id": save, "values": { "/img": "javascript:alert(document.cookie)" }, "source": "tap" });
     harness.session.receive(&tap.to_string()).await;
     let result = harness.next().await;
-    if result["status"] == "ok" {
-        harness.until_end().await;
-    }
+    assert_eq!(result["t"], "ui.action.result");
+    assert_eq!(result["status"], "rejected", "{result}");
+    assert_eq!(result["message"], FORM_REFUSED);
     harness
         .session
         .receive(r#"{"v":1,"t":"ui.resync","surface":"s1"}"#)
@@ -688,7 +690,6 @@ async fn bound_urls_stay_safe_when_the_user_writes_form_values() {
 }
 
 #[tokio::test]
-#[ignore = "known defect: polyui-server has no per-session limit on open surfaces; one model reply with 300 show_ui calls opens 300 surfaces and the server keeps all of them in memory"]
 async fn the_number_of_open_surfaces_per_session_is_capped() {
     let mut harness = start();
     let mut reply = ScriptedReply::new();
@@ -705,6 +706,64 @@ async fn the_number_of_open_surfaces_per_session_is_capped() {
     harness.say("open many").await;
     let open = harness.session.open_surfaces().len();
     assert!(open < 300, "{open} surfaces are open in one session");
+    assert_eq!(open, AgentConfig::default().max_open_surfaces);
+    harness.say("thanks").await;
+    let results = harness.tool_results();
+    let refused = &results[open];
+    assert_eq!(refused["is_error"], true);
+    assert!(
+        refused["content"]
+            .as_str()
+            .unwrap()
+            .contains("Close one with close_ui"),
+        "{refused}"
+    );
+}
+
+#[tokio::test]
+async fn user_say_is_rate_limited_with_a_user_safe_agent_error() {
+    let mut harness = start_as(
+        HOUSEHOLD_USER,
+        AgentConfig {
+            turn_rate: TurnRate {
+                burst: 2,
+                refill: Duration::from_secs(60),
+            },
+            ..AgentConfig::default()
+        },
+    );
+    harness
+        .reply(ScriptedReply::new().text("One."))
+        .reply(ScriptedReply::new().text("Two."));
+    harness.say("first").await;
+    harness.say("second").await;
+    harness
+        .session
+        .receive(&json!({ "v": 1, "t": "user.say", "text": "third" }).to_string())
+        .await;
+    let refused = harness.next().await;
+    assert_eq!(refused["t"], "agent.error");
+    assert_eq!(refused["message"], TOO_FAST);
+    assert_eq!(harness.provider.requests().len(), 2);
+}
+
+#[tokio::test]
+async fn a_client_that_stops_reading_is_closed_as_a_slow_consumer() {
+    let harness = start_as(
+        HOUSEHOLD_USER,
+        AgentConfig {
+            outgoing_queue: 32,
+            slow_consumer_after: Duration::from_millis(100),
+            ..AgentConfig::default()
+        },
+    );
+    for _ in 0..64 {
+        harness.session.receive("{").await;
+    }
+    assert_eq!(
+        harness.session.close_reason(),
+        Some(CloseReason::SlowConsumer)
+    );
 }
 
 #[tokio::test]

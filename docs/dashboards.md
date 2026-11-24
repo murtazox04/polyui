@@ -119,9 +119,13 @@ cargo run -p polyui-query --example shop_data -- examples/data/shop
 
 That writes `products.csv` (12 products), `customers.csv` (240 customers) and `orders.parquet` (1169 orders from 2026-01-01 to 2026-11-23). The customers file has `email` and `phone`, and products have `supplier_cost`. None of these is whitelisted, so the model cannot read them.
 
+The `polyui` binary is built without the `query` feature by default, because DataFusion makes it about 12 times larger (see the table at the end). Build it with the feature to run the shop:
+
 ```sh
-polyui serve --host shop --env-file ~/.config/polyui/anthropic.env --static examples/chat/dist
+cargo run --release -p polyui --features query -- serve --host shop --env-file ~/.config/polyui/anthropic.env --static examples/chat/dist
 ```
+
+A binary built without the feature still accepts `--host shop`, and stops with a message that says how to rebuild it.
 
 `--data DIR` points at another copy of the data. The system prompt teaches the model to look at the schema, plan three or four panels, run one query per panel, and show one `chart:Dashboard`.
 
@@ -152,4 +156,4 @@ The test caps the turn at 6 model calls and overwrites the fixture.
 | Binary size | 7.3 MB | 92.0 MB |
 | Binary size after `strip` | 6.2 MB | 75.6 MB |
 
-Measured on an Apple Silicon Mac with the workspace release profile (fat LTO, one codegen unit, `opt-level = 3`), each build in its own empty target directory: `cargo build --release -p polyui --no-default-features` and `cargo build --release -p polyui`. Almost all of the difference is DataFusion and Arrow. If size matters more than query speed, a host can build `polyui-server` without the feature and run the queries in a separate service.
+Measured on an Apple Silicon Mac with the workspace release profile (fat LTO, one codegen unit, `opt-level = 3`), each build in its own empty target directory: `cargo build --release -p polyui` and `cargo build --release -p polyui --features query`. These numbers were measured when `query` was still on by default and were not measured again after the default changed. Almost all of the difference is DataFusion and Arrow. If size matters more than query speed, a host can build `polyui-server` without the feature and run the queries in a separate service.

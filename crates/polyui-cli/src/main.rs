@@ -24,7 +24,6 @@ struct Cli {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum HostChoice {
     Bills,
-    #[cfg(feature = "query")]
     Shop,
     None,
 }
@@ -107,15 +106,26 @@ const DEFAULT_DATA_DIR: &str = polyui_server::shop::DEFAULT_DATA_DIR;
 #[cfg(not(feature = "query"))]
 const DEFAULT_DATA_DIR: &str = "examples/data/shop";
 
+#[cfg(not(feature = "query"))]
+const SHOP_NEEDS_QUERY: &str = "the shop host needs the query feature, which this polyui binary was built without; rebuild it with `cargo install --path crates/polyui-cli --features query` or run `cargo run -p polyui --features query -- serve --host shop`";
+
+#[cfg(feature = "query")]
+async fn shop_host(data: &Path) -> Result<Option<Arc<dyn Host>>, String> {
+    polyui_server::shop::ShopHost::open(data)
+        .await
+        .map(|host| Some(Arc::new(host) as Arc<dyn Host>))
+        .map_err(|error| format!("cannot open the shop data in {}: {error}", data.display()))
+}
+
+#[cfg(not(feature = "query"))]
+async fn shop_host(_: &Path) -> Result<Option<Arc<dyn Host>>, String> {
+    Err(SHOP_NEEDS_QUERY.to_string())
+}
+
 async fn host_for(choice: HostChoice, data: &Path) -> Result<Option<Arc<dyn Host>>, String> {
-    let _ = data;
     match choice {
         HostChoice::Bills => Ok(Some(Arc::new(BillsHost::new()))),
-        #[cfg(feature = "query")]
-        HostChoice::Shop => polyui_server::shop::ShopHost::open(data)
-            .await
-            .map(|host| Some(Arc::new(host) as Arc<dyn Host>))
-            .map_err(|error| format!("cannot open the shop data in {}: {error}", data.display())),
+        HostChoice::Shop => shop_host(data).await,
         HostChoice::None => Ok(None),
     }
 }
@@ -211,6 +221,17 @@ async fn serve(
     choice: HostChoice,
     data: PathBuf,
 ) -> ExitCode {
+    let host = match host_for(choice, &data).await {
+        Ok(Some(host)) => host,
+        Ok(None) => {
+            eprintln!("serve needs a host; use --host bills or --host shop");
+            return ExitCode::FAILURE;
+        }
+        Err(message) => {
+            eprintln!("{message}");
+            return ExitCode::FAILURE;
+        }
+    };
     let key = match &env_file {
         Some(path) => ApiKey::from_env_file(path),
         None => ApiKey::from_env()
@@ -218,17 +239,6 @@ async fn serve(
     };
     let key = match key {
         Ok(key) => key,
-        Err(message) => {
-            eprintln!("{message}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let host = match host_for(choice, &data).await {
-        Ok(Some(host)) => host,
-        Ok(None) => {
-            eprintln!("serve needs a host; use --host bills or --host shop");
-            return ExitCode::FAILURE;
-        }
         Err(message) => {
             eprintln!("{message}");
             return ExitCode::FAILURE;

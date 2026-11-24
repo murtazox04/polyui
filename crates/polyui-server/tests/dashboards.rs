@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 const HELLO: &str =
     r#"{"v":1,"t":"hello","catalogs":["core@1","chart@1"],"modalities":["screen"],"locale":"en"}"#;
@@ -26,7 +26,7 @@ struct Harness {
     provider: Arc<ScriptedProvider>,
     host: Arc<ShopHost>,
     session: Arc<Session>,
-    outgoing: UnboundedReceiver<Value>,
+    outgoing: Receiver<Value>,
 }
 
 async fn start(provider: ScriptedProvider) -> Harness {

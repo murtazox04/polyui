@@ -5,19 +5,21 @@ use crate::provider::{ModelEvent, ModelProvider, ModelRequest, StopReason, Usage
 use futures_util::StreamExt;
 use polyui_chart::ChartOptions;
 use polyui_core::protocol::{
-    self, Action, ActionResult, ActionStatus, Close, Confirm, DataUpdate, ErrorReason, Hello,
-    Incoming, Message, Modality, Open, Patch, Snapshot, Welcome,
+    self, Action, ActionResult, ActionStatus, Close, Component, Confirm, DataOp, DataUpdate,
+    ErrorReason, Hello, Incoming, Message, Modality, Open, Patch, Snapshot, Welcome,
 };
+use polyui_core::stream::{ShowUiStream, StreamEvent};
 use polyui_core::tools::{self, ToolOptions};
 use polyui_core::validate::{
     self, Location, Operation, Problem, Problems, SealedAction, Surface, Update, Validator,
 };
 use polyui_core::{CatalogSet, Limits, Locale, PropKind, RefResolver, pointer, summary};
 use serde_json::{Map, Value, json};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::{mpsc, watch};
 
 pub const SAY: &str = "user.say";
 pub const DELTA: &str = "agent.delta";
@@ -25,6 +27,15 @@ pub const DONE: &str = "agent.done";
 pub const ERROR: &str = "agent.error";
 pub const UI_TOOLS: [&str; 3] = ["show_ui", "update_ui", "close_ui"];
 pub const MAX_SAY_CHARS: usize = 4000;
+pub const STREAM_FEATURE: &str = "stream";
+pub const BUSY: &str =
+    "The assistant is still working on your earlier messages. Please wait for it to finish.";
+pub const TOO_FAST: &str =
+    "You are sending messages too quickly. Please wait a moment and try again.";
+pub const FORM_REFUSED: &str =
+    "Some of the values in this form are not allowed here. Please check them and try again.";
+
+const ROOM: usize = 16;
 
 const GUIDE: &str = "How to answer with UI:
 - Call show_ui to put UI on the user's screen. Components are a flat list. A parent lists the ids of its children in children. Every id is unique and every component must be reachable from root.
@@ -34,6 +45,8 @@ const GUIDE: &str = "How to answer with UI:
 - A Button fires a host action through on_press: {\"action\": \"name\", \"args\": {...}}. Actions that move money ask the user to confirm on their own, so do not build your own confirm step for them.
 - When the user uses the UI you get a message that starts with [UI event]. Answer it briefly and update the UI when the result changes what is shown.
 - Keep your text short. The UI carries the details.";
+
+pub type Outgoing = mpsc::Receiver<Value>;
 
 struct Layered<'a> {
     first: Option<&'a dyn RefResolver>,
@@ -55,6 +68,12 @@ impl RefResolver for Layered<'_> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TurnRate {
+    pub burst: u32,
+    pub refill: Duration,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct AgentConfig {
     pub max_tokens: u32,
@@ -62,6 +81,11 @@ pub struct AgentConfig {
     pub max_model_calls: u32,
     pub confirm_ttl: Duration,
     pub limits: Limits,
+    pub max_open_surfaces: usize,
+    pub outgoing_queue: usize,
+    pub slow_consumer_after: Duration,
+    pub waiting_turns: usize,
+    pub turn_rate: TurnRate,
 }
 
 impl Default for AgentConfig {
@@ -72,6 +96,29 @@ impl Default for AgentConfig {
             max_model_calls: 8,
             confirm_ttl: Duration::from_secs(60),
             limits: Limits::default(),
+            max_open_surfaces: 16,
+            outgoing_queue: 256,
+            slow_consumer_after: Duration::from_secs(10),
+            waiting_turns: 2,
+            turn_rate: TurnRate {
+                burst: 8,
+                refill: Duration::from_secs(4),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloseReason {
+    SlowConsumer,
+    ClientGone,
+}
+
+impl CloseReason {
+    pub fn detail(self) -> &'static str {
+        match self {
+            Self::SlowConsumer => "the client did not read server messages in time",
+            Self::ClientGone => "the client went away",
         }
     }
 }
@@ -105,11 +152,7 @@ impl Agent {
         &self.config
     }
 
-    pub fn open_session(
-        &self,
-        hello: Hello,
-        user: User,
-    ) -> (Arc<Session>, mpsc::UnboundedReceiver<Value>) {
+    pub fn open_session(&self, hello: Hello, user: User) -> (Arc<Session>, Outgoing) {
         Session::start(self.clone(), hello, user)
     }
 }
@@ -119,6 +162,7 @@ struct SurfaceState {
     model: Surface,
     client: Surface,
     seq: u64,
+    pending: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -175,11 +219,21 @@ impl UiState {
             .retain(|pending| !(pending.surface == surface && gone.contains(&pending.action_id)));
     }
 
+    fn settled(&self, id: &str) -> Option<&SurfaceState> {
+        self.surfaces.get(id).filter(|state| !state.pending)
+    }
+
     fn open_list(&self) -> String {
-        if self.surfaces.is_empty() {
+        let open: Vec<&str> = self
+            .surfaces
+            .iter()
+            .filter(|(_, state)| !state.pending)
+            .map(|(id, _)| id.as_str())
+            .collect();
+        if open.is_empty() {
             "none".into()
         } else {
-            self.surfaces.keys().cloned().collect::<Vec<_>>().join(", ")
+            open.join(", ")
         }
     }
 }
@@ -221,6 +275,56 @@ enum ActionStep {
     },
 }
 
+#[derive(Debug)]
+struct Bucket {
+    tokens: u32,
+    updated: Instant,
+}
+
+impl Bucket {
+    fn full(rate: TurnRate) -> Self {
+        Self {
+            tokens: rate.burst,
+            updated: Instant::now(),
+        }
+    }
+
+    fn take(&mut self, rate: TurnRate, now: Instant) -> bool {
+        if rate.refill.is_zero() {
+            return true;
+        }
+        if self.tokens >= rate.burst {
+            self.updated = now;
+        } else {
+            let earned =
+                now.saturating_duration_since(self.updated).as_nanos() / rate.refill.as_nanos();
+            let earned = u32::try_from(earned)
+                .unwrap_or(u32::MAX)
+                .min(rate.burst - self.tokens);
+            self.tokens += earned;
+            self.updated += rate.refill * earned;
+        }
+        if self.tokens == 0 {
+            return false;
+        }
+        self.tokens -= 1;
+        true
+    }
+}
+
+#[derive(Debug, Default)]
+struct Draft {
+    text: String,
+    dead: bool,
+    surface: Option<String>,
+    named: Option<String>,
+    root: Option<String>,
+    model: Vec<Component>,
+    prepared: Vec<Component>,
+    sealed: Vec<SealedAction>,
+    sent: HashSet<String>,
+}
+
 pub struct Session {
     id: String,
     user: User,
@@ -229,15 +333,18 @@ pub struct Session {
     client_catalogs: CatalogSet,
     negotiated: Vec<String>,
     locale: Locale,
+    streams: bool,
     chart_options: ChartOptions,
     system: String,
     tools: Vec<Value>,
     ui: Mutex<UiState>,
     usage: Mutex<Usage>,
+    bucket: Mutex<Bucket>,
     #[cfg(feature = "query")]
     saved: Mutex<crate::dashboards::SavedQueries>,
-    out: mpsc::UnboundedSender<Value>,
-    turns: mpsc::UnboundedSender<TurnInput>,
+    out: mpsc::Sender<Value>,
+    turns: mpsc::Sender<TurnInput>,
+    closing: watch::Sender<Option<CloseReason>>,
 }
 
 fn chat(kind: &str) -> Value {
@@ -285,6 +392,59 @@ fn set_value(surface: &mut Surface, path: &str, value: Value) -> Result<(), poin
     Ok(())
 }
 
+fn binds(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => map.contains_key("$bind") || map.values().any(binds),
+        Value::Array(items) => items.iter().any(binds),
+        _ => false,
+    }
+}
+
+fn props_bind(props: &Map<String, Value>) -> bool {
+    props.values().any(binds)
+}
+
+fn reachable(root: &str, components: &[Component]) -> HashSet<String> {
+    let mut seen = HashSet::new();
+    let mut pending = vec![root.to_string()];
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        if let Some(component) = components.iter().find(|component| component.id == id) {
+            pending.extend(component.children.iter().cloned());
+        }
+    }
+    seen
+}
+
+fn reindex(problems: &mut Problems, positions: &[usize]) {
+    for problem in &mut problems.items {
+        if let Location::Item { index, .. } = &mut problem.location
+            && let Some(position) = positions.get(*index)
+        {
+            *index = *position;
+        }
+    }
+}
+
+fn data_changes(before: &Map<String, Value>, after: &Map<String, Value>) -> Vec<DataOp> {
+    let removed = before
+        .keys()
+        .filter(|key| !after.contains_key(*key))
+        .map(|key| DataOp::Remove {
+            path: format!("/{}", pointer::escape_token(key)),
+        });
+    let changed = after
+        .iter()
+        .filter(|(key, value)| before.get(*key) != Some(*value))
+        .map(|(key, value)| DataOp::Set {
+            path: format!("/{}", pointer::escape_token(key)),
+            value: value.clone(),
+        });
+    removed.chain(changed).collect()
+}
+
 fn system_prompt(
     host_prompt: &str,
     hello: &Hello,
@@ -310,11 +470,7 @@ fn system_prompt(
 }
 
 impl Session {
-    fn start(
-        agent: Agent,
-        hello: Hello,
-        user: User,
-    ) -> (Arc<Self>, mpsc::UnboundedReceiver<Value>) {
+    fn start(agent: Agent, hello: Hello, user: User) -> (Arc<Self>, Outgoing) {
         let catalogs = agent.host.catalogs();
         let negotiated = catalogs.negotiate(&hello.catalogs);
         let client_catalogs = catalogs.restrict(&negotiated);
@@ -347,8 +503,14 @@ impl Session {
         let host_prompt = agent.host.system_prompt(&user, locale);
         tools::limit_strict(&mut tool_list);
         let system = system_prompt(&host_prompt, &hello, &negotiated, locale);
-        let (out, outgoing) = mpsc::unbounded_channel();
-        let (turns, mut incoming) = mpsc::unbounded_channel();
+        let streams = hello
+            .features
+            .iter()
+            .any(|feature| feature == STREAM_FEATURE);
+        let config = agent.config;
+        let (out, outgoing) = mpsc::channel(config.outgoing_queue.max(1));
+        let (turns, mut incoming) = mpsc::channel(config.waiting_turns.max(1));
+        let (closing, _) = watch::channel(None);
         let session = Arc::new(Self {
             id: ids::session_id(),
             user,
@@ -357,15 +519,18 @@ impl Session {
             client_catalogs,
             negotiated,
             locale,
+            streams,
             chart_options,
             system,
             tools: tool_list,
             ui: Mutex::new(UiState::default()),
             usage: Mutex::new(Usage::default()),
+            bucket: Mutex::new(Bucket::full(config.turn_rate)),
             #[cfg(feature = "query")]
             saved: Mutex::new(crate::dashboards::SavedQueries::default()),
             out,
             turns,
+            closing,
         });
         let weak: Weak<Self> = Arc::downgrade(&session);
         tokio::spawn(async move {
@@ -374,7 +539,14 @@ impl Session {
                 let Some(session) = weak.upgrade() else {
                     break;
                 };
-                session.run_turn(&mut history, input).await;
+                let finished = tokio::select! {
+                    biased;
+                    _ = session.closed() => false,
+                    () = session.run_turn(&mut history, input) => true,
+                };
+                if !finished {
+                    break;
+                }
             }
         });
         (session, outgoing)
@@ -418,9 +590,42 @@ impl Session {
 
     pub fn model_summary(&self, surface: &str) -> Option<String> {
         self.lock()
-            .surfaces
-            .get(surface)
+            .settled(surface)
             .map(|state| state.model.summary(surface, &self.catalogs, self.locale))
+    }
+
+    pub fn close(&self, reason: CloseReason) {
+        self.closing.send_if_modified(|current| {
+            if current.is_some() {
+                return false;
+            }
+            *current = Some(reason);
+            true
+        });
+    }
+
+    pub fn close_reason(&self) -> Option<CloseReason> {
+        *self.closing.borrow()
+    }
+
+    pub async fn closed(&self) -> CloseReason {
+        let mut watcher = self.closing.subscribe();
+        let marked = async {
+            loop {
+                let current = *watcher.borrow_and_update();
+                if let Some(reason) = current {
+                    return reason;
+                }
+                if watcher.changed().await.is_err() {
+                    return CloseReason::ClientGone;
+                }
+            }
+        };
+        tokio::select! {
+            biased;
+            reason = marked => reason,
+            () = self.out.closed() => CloseReason::ClientGone,
+        }
     }
 
     fn lock(&self) -> MutexGuard<'_, UiState> {
@@ -430,7 +635,37 @@ impl Session {
     }
 
     fn send(&self, message: Value) {
-        let _ = self.out.send(message);
+        if let Err(TrySendError::Full(_)) = self.out.try_send(message) {
+            self.close(CloseReason::SlowConsumer);
+        }
+    }
+
+    async fn wait_for_room(&self) -> bool {
+        let room = ROOM.min(self.out.max_capacity());
+        let patience = self.agent.config.slow_consumer_after;
+        tokio::select! {
+            biased;
+            _ = self.closed() => false,
+            reserved = tokio::time::timeout(patience, self.out.reserve_many(room)) => match reserved {
+                Ok(Ok(permits)) => {
+                    drop(permits);
+                    true
+                }
+                Ok(Err(_)) => false,
+                Err(_) => {
+                    self.close(CloseReason::SlowConsumer);
+                    false
+                }
+            },
+        }
+    }
+
+    fn take_turn(&self) -> bool {
+        let rate = self.agent.config.turn_rate;
+        self.bucket
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take(rate, Instant::now())
     }
 
     pub fn send_bad_message(&self, detail: &str) {
@@ -446,6 +681,9 @@ impl Session {
     }
 
     pub async fn receive(&self, text: &str) {
+        if !self.wait_for_room().await {
+            return;
+        }
         let limits = self.agent.config.limits;
         match protocol::parse_with(text, &limits) {
             Err(error) => self.send_error(None, ErrorReason::BadMessage, error.to_string()),
@@ -465,9 +703,7 @@ impl Session {
                 });
                 match said {
                     Some(said) if said.trim().is_empty() => {}
-                    Some(said) if said.chars().count() <= MAX_SAY_CHARS => {
-                        let _ = self.turns.send(TurnInput::Say(said));
-                    }
+                    Some(said) if said.chars().count() <= MAX_SAY_CHARS => self.queue_say(said),
                     Some(_) => self.send_error(
                         None,
                         ErrorReason::BadMessage,
@@ -511,6 +747,18 @@ impl Session {
                     format!("{} is not a client message", other.message_type()),
                 ),
             },
+        }
+    }
+
+    fn queue_say(&self, text: String) {
+        match self.turns.try_reserve() {
+            Ok(permit) if self.take_turn() => permit.send(TurnInput::Say(text)),
+            Ok(permit) => {
+                drop(permit);
+                self.send(chat_text(ERROR, "message", TOO_FAST));
+            }
+            Err(TrySendError::Full(())) => self.send(chat_text(ERROR, "message", BUSY)),
+            Err(TrySendError::Closed(())) => {}
         }
     }
 
@@ -561,10 +809,16 @@ impl Session {
         let mut ui = self.lock();
         ui.confirms
             .retain(|pending| pending.expires + ttl * 4 > now);
-        if !ui.surfaces.contains_key(&action.surface) {
+        let Some(state) = ui.surfaces.get(&action.surface) else {
             return ActionStep::Reply(
                 ActionStatus::Rejected,
                 "This screen is no longer open.".into(),
+            );
+        };
+        if state.pending {
+            return ActionStep::Reply(
+                ActionStatus::Rejected,
+                "This screen is still loading. Please try again in a moment.".into(),
             );
         }
         let Some(handle) = ui
@@ -584,6 +838,9 @@ impl Session {
             .filter(|(path, _)| handle.sealed.with.contains(path))
             .map(|(path, value)| (path.clone(), value.clone()))
             .collect();
+        if !values.is_empty() && self.with_values(state, &values).is_none() {
+            return ActionStep::Reply(ActionStatus::Rejected, FORM_REFUSED.into());
+        }
         if !handle.sealed.requires_confirm {
             return ActionStep::Run {
                 sealed: Box::new(handle.sealed),
@@ -653,30 +910,105 @@ impl Session {
         }
     }
 
+    fn with_values(
+        &self,
+        state: &SurfaceState,
+        values: &Map<String, Value>,
+    ) -> Option<(Surface, Surface)> {
+        let mut model = state.model.clone();
+        let mut client = state.client.clone();
+        for (path, value) in values {
+            set_value(&mut model, path, value.clone()).ok()?;
+            set_value(&mut client, path, value.clone()).ok()?;
+        }
+        let data = client.data_value();
+        polyui_core::limits::check_data_model(&data, &self.agent.config.limits).ok()?;
+        let host_refs = self.agent.host.refs(&self.user);
+        #[cfg(feature = "query")]
+        let declared = crate::dashboards::QueryRefs::new(&self.catalogs);
+        #[cfg(feature = "query")]
+        let first: Option<&dyn RefResolver> = Some(&declared);
+        #[cfg(not(feature = "query"))]
+        let first: Option<&dyn RefResolver> = None;
+        let refs = Layered {
+            first,
+            then: host_refs.as_ref(),
+        };
+        let validator = self.validator(&refs);
+        for (index, component) in model.components.iter().enumerate() {
+            if !props_bind(&component.props) {
+                continue;
+            }
+            let raw = serde_json::to_value(component).ok()?;
+            validator
+                .component("components", index, &raw, Some(&data))
+                .ok()?;
+        }
+        for component in client.components.iter_mut() {
+            if component.type_name != charts::CHART_TYPE || !props_bind(&component.props) {
+                continue;
+            }
+            let mut chart = component.clone();
+            chart.props.remove(charts::SCENE_PROP);
+            chart.say = model
+                .get(&component.id)
+                .and_then(|written| written.say.clone());
+            let mut redrawn = [chart];
+            if !charts::attach_scenes(&mut redrawn, &data, "components", &self.chart_options)
+                .is_empty()
+            {
+                return None;
+            }
+            let [chart] = redrawn;
+            *component = chart;
+        }
+        Some((model, client))
+    }
+
     fn store_values(&self, surface: &str, values: &Map<String, Value>) -> bool {
         if values.is_empty() {
             return true;
         }
         let mut ui = self.lock();
-        let Some(state) = ui.surfaces.get_mut(surface) else {
+        let Some(state) = ui.settled(surface).cloned() else {
             return false;
         };
-        let mut model = state.model.clone();
-        let mut client = state.client.clone();
-        for (path, value) in values {
-            if set_value(&mut model, path, value.clone()).is_err()
-                || set_value(&mut client, path, value.clone()).is_err()
-            {
-                return false;
-            }
-        }
-        if polyui_core::limits::check_data_model(&client.data_value(), &self.agent.config.limits)
-            .is_err()
-        {
+        let Some((model, client)) = self.with_values(&state, values) else {
             return false;
+        };
+        let before = self.client_view(&state.client);
+        let after = self.client_view(&client);
+        let redrawn: Vec<Component> = after
+            .components
+            .iter()
+            .filter(|component| before.get(&component.id) != Some(*component))
+            .cloned()
+            .collect();
+        let mut seq = state.seq;
+        let patch = (!redrawn.is_empty()).then(|| {
+            seq += 1;
+            Message::Patch(Patch {
+                surface: surface.to_string(),
+                seq,
+                upsert: redrawn,
+                remove: Vec::new(),
+                root: None,
+            })
+            .to_value()
+        });
+        ui.surfaces.insert(
+            surface.to_string(),
+            SurfaceState {
+                model,
+                client,
+                seq,
+                pending: false,
+            },
+        );
+        drop(ui);
+        if let Some(patch) = patch {
+            self.send(patch);
         }
-        state.model = model;
-        state.client = client;
         true
     }
 
@@ -696,12 +1028,33 @@ impl Session {
                 detail,
             } => (sealed, values, detail),
         };
+        let refusal = match self.turns.try_reserve() {
+            Ok(permit) if self.take_turn() => Ok(permit),
+            Ok(permit) => {
+                drop(permit);
+                Err(TOO_FAST)
+            }
+            Err(TrySendError::Full(())) => Err(BUSY),
+            Err(TrySendError::Closed(())) => return,
+        };
+        let permit = match refusal {
+            Ok(permit) => permit,
+            Err(message) => {
+                self.action_result(
+                    &action.surface,
+                    &action.action_id,
+                    ActionStatus::Rejected,
+                    Some(message.into()),
+                );
+                return;
+            }
+        };
         if !self.store_values(&action.surface, &values) {
             self.action_result(
                 &action.surface,
                 &action.action_id,
                 ActionStatus::Rejected,
-                Some("The form values could not be used.".into()),
+                Some(FORM_REFUSED.into()),
             );
             return;
         }
@@ -732,7 +1085,7 @@ impl Session {
             outcome.message.clone(),
         );
         let report = self.report(&action, &sealed, &values, detail.as_ref(), &outcome);
-        let _ = self.turns.send(TurnInput::Report(report));
+        permit.send(TurnInput::Report(report));
     }
 
     fn report(
@@ -797,11 +1150,25 @@ impl Session {
             };
             let mut stream = self.agent.provider.stream(request);
             let mut calls = Vec::new();
+            let mut drafts: HashMap<String, Draft> = HashMap::new();
             let mut finished = None;
             while let Some(event) = stream.next().await {
+                if !self.wait_for_room().await {
+                    return;
+                }
                 match event {
                     ModelEvent::TextDelta(delta) if !delta.is_empty() => {
                         self.send(chat_text(DELTA, "text", &delta));
+                    }
+                    ModelEvent::ToolCallStarted { id, name }
+                        if self.streams && name == "show_ui" =>
+                    {
+                        drafts.insert(id, Draft::default());
+                    }
+                    ModelEvent::ToolInputDelta { id, partial_json } => {
+                        if let Some(draft) = drafts.get_mut(&id) {
+                            self.grow(draft, &partial_json);
+                        }
                     }
                     ModelEvent::ToolCallFinished { id, name, input } => {
                         calls.push((id, name, input));
@@ -816,13 +1183,16 @@ impl Session {
                     }
                     ModelEvent::Error(error) => {
                         eprintln!("polyui: session {} model error: {error}", self.id);
+                        self.close_pending(None);
                         self.send(chat_text(ERROR, "message", error.user_message()));
                         return;
                     }
                     _ => {}
                 }
             }
+            drop(stream);
             let Some((stop_reason, content, usage)) = finished else {
+                self.close_pending(None);
                 self.send(chat_text(
                     ERROR,
                     "message",
@@ -842,6 +1212,7 @@ impl Session {
                 history.push(json!({ "role": "assistant", "content": content }));
             }
             if stop_reason.is_cut_off() {
+                self.close_pending(None);
                 push_user(
                     history,
                     tool_ids
@@ -858,16 +1229,24 @@ impl Session {
                 return;
             }
             if calls.is_empty() {
+                self.close_pending(None);
                 self.send(chat(DONE));
                 return;
             }
             let mut results = Vec::new();
             let mut gave_up = false;
             for (id, name, input) in calls {
+                if !self.wait_for_room().await {
+                    return;
+                }
+                let draft = drafts.remove(&id);
                 let mut outcome = match input {
                     Err(raw) => ToolOutcome::error(json!({ "INVALID_JSON": raw }).to_string()),
-                    Ok(input) => self.call_tool(&name, &input).await,
+                    Ok(input) => self.dispatch(&name, &input, draft.as_ref()).await,
                 };
+                if let Some(surface) = draft.as_ref().and_then(|draft| draft.surface.as_deref()) {
+                    self.close_pending(Some(surface));
+                }
                 if UI_TOOLS.contains(&name.as_str()) {
                     if outcome.is_error {
                         let count = failures.entry(name.clone()).or_default();
@@ -884,6 +1263,7 @@ impl Session {
                 }
                 results.push(tool_result(&id, &outcome.content, outcome.is_error));
             }
+            self.close_pending(None);
             push_user(history, results);
             if gave_up {
                 self.send(chat_text(
@@ -898,13 +1278,211 @@ impl Session {
         self.send(chat(DONE));
     }
 
+    fn grow(&self, draft: &mut Draft, chunk: &str) {
+        if draft.dead {
+            return;
+        }
+        draft.text.push_str(chunk);
+        if !chunk.contains(['}', ']']) {
+            return;
+        }
+        let host_refs = self.agent.host.refs(&self.user);
+        let validator = self.validator(host_refs.as_ref());
+        let mut stream = ShowUiStream::new(&validator);
+        let mut found = Vec::new();
+        for event in stream.feed(&draft.text) {
+            match event {
+                StreamEvent::Surface(id) => draft.named = Some(id),
+                StreamEvent::Root(id) => draft.root = Some(id),
+                StreamEvent::Component { component, .. } => found.push(component),
+                StreamEvent::Rejected { .. } | StreamEvent::Invalid(_) => {
+                    draft.dead = true;
+                    return;
+                }
+                StreamEvent::Data(_) => {}
+            }
+        }
+        let fresh: Vec<Component> = found.into_iter().skip(draft.model.len()).collect();
+        if !fresh.is_empty() {
+            let mut prepared = fresh.clone();
+            match self.prepare(
+                &validator,
+                &mut prepared,
+                &Value::Object(Map::new()),
+                Operation::Show,
+            ) {
+                Ok(sealed) => {
+                    draft.model.extend(fresh);
+                    draft.prepared.extend(prepared);
+                    draft.sealed.extend(sealed);
+                }
+                Err(_) => {
+                    draft.dead = true;
+                    return;
+                }
+            }
+        }
+        if !self.publish(draft) {
+            draft.dead = true;
+        }
+    }
+
+    fn publish(&self, draft: &mut Draft) -> bool {
+        let mut ui = self.lock();
+        let Some(id) = draft.surface.clone() else {
+            let Some(root) = draft.root.clone() else {
+                return true;
+            };
+            if !draft.model.iter().any(|component| component.id == root) {
+                return true;
+            }
+            if ui.surfaces.len() >= self.agent.config.max_open_surfaces {
+                return false;
+            }
+            let id = match &draft.named {
+                Some(named) if ui.surfaces.contains_key(named) => return false,
+                Some(named) => named.clone(),
+                None => ui.next_surface_id(),
+            };
+            let shown = reachable(&root, &draft.prepared);
+            let client = Surface {
+                id: Some(id.clone()),
+                root: root.clone(),
+                components: draft
+                    .prepared
+                    .iter()
+                    .filter(|component| shown.contains(&component.id))
+                    .cloned()
+                    .collect(),
+                data: Map::new(),
+            };
+            let view = self.client_view(&client);
+            let open = Message::Open(Open {
+                surface: id.clone(),
+                seq: 1,
+                root: view.root,
+                components: view.components,
+                data: view.data,
+                fallback: Some(client.fallback(&self.catalogs, self.locale)),
+            })
+            .to_value();
+            if self.fits_client(Operation::Show, &[&open]).is_err() {
+                return false;
+            }
+            draft.sent = client
+                .components
+                .iter()
+                .map(|component| component.id.clone())
+                .collect();
+            let model = Surface {
+                id: Some(id.clone()),
+                root,
+                components: draft.model.clone(),
+                data: Map::new(),
+            };
+            ui.surfaces.insert(
+                id.clone(),
+                SurfaceState {
+                    model,
+                    client,
+                    seq: 1,
+                    pending: true,
+                },
+            );
+            draft.surface = Some(id);
+            drop(ui);
+            self.send(open);
+            return true;
+        };
+        let Some(state) = ui.surfaces.get_mut(&id).filter(|state| state.pending) else {
+            return false;
+        };
+        let fresh: Vec<Component> = draft
+            .prepared
+            .iter()
+            .filter(|component| !draft.sent.contains(&component.id))
+            .cloned()
+            .collect();
+        if fresh.is_empty() {
+            return true;
+        }
+        let mut client = state.client.clone();
+        client.components.extend(fresh.iter().cloned());
+        let view = self.client_view(&client);
+        let upsert: Vec<Component> = view
+            .components
+            .iter()
+            .filter(|component| fresh.iter().any(|added| added.id == component.id))
+            .cloned()
+            .collect();
+        let seq = state.seq + 1;
+        let patch = Message::Patch(Patch {
+            surface: id.clone(),
+            seq,
+            upsert,
+            remove: Vec::new(),
+            root: None,
+        })
+        .to_value();
+        let snapshot = Message::Snapshot(Snapshot {
+            surface: id.clone(),
+            seq,
+            root: view.root.clone(),
+            components: view.components.clone(),
+            data: view.data.clone(),
+        })
+        .to_value();
+        if self
+            .fits_client(Operation::Show, &[&patch, &snapshot])
+            .is_err()
+        {
+            return false;
+        }
+        state.client = client;
+        state.model.components = draft.model.clone();
+        state.seq = seq;
+        draft
+            .sent
+            .extend(fresh.into_iter().map(|component| component.id));
+        drop(ui);
+        self.send(patch);
+        true
+    }
+
+    fn close_pending(&self, only: Option<&str>) {
+        let mut ui = self.lock();
+        let gone: Vec<(String, u64)> = ui
+            .surfaces
+            .iter()
+            .filter(|(id, state)| state.pending && only.is_none_or(|only| only == id.as_str()))
+            .map(|(id, state)| (id.clone(), state.seq))
+            .collect();
+        for (id, _) in &gone {
+            ui.surfaces.remove(id);
+        }
+        drop(ui);
+        for (surface, seq) in gone {
+            self.send(
+                Message::Close(Close {
+                    surface,
+                    seq: seq + 1,
+                })
+                .to_value(),
+            );
+        }
+    }
+
     pub async fn call_tool(&self, name: &str, input: &Value) -> ToolOutcome {
+        self.dispatch(name, input, None).await
+    }
+
+    async fn dispatch(&self, name: &str, input: &Value, draft: Option<&Draft>) -> ToolOutcome {
         #[cfg(feature = "query")]
-        if let Some(outcome) = self.call_data_tool(name, input).await {
+        if let Some(outcome) = self.call_data_tool(name, input, draft).await {
             return outcome;
         }
         match name {
-            "show_ui" => self.show_ui(input),
+            "show_ui" => self.show_ui_with(input, None, draft),
             "update_ui" => self.update_ui(input),
             "close_ui" => self.close_ui(input),
             _ => {
@@ -929,6 +1507,34 @@ impl Session {
             .allow_http(self.agent.host.allow_http())
     }
 
+    fn prepare(
+        &self,
+        validator: &Validator<'_>,
+        components: &mut Vec<Component>,
+        data: &Value,
+        operation: Operation,
+    ) -> Result<Vec<SealedAction>, Problems> {
+        let list = if operation == Operation::Update {
+            "upsert"
+        } else {
+            "components"
+        };
+        *components = validator.resolve_refs(components, operation)?;
+        let problems = charts::attach_scenes(components, data, list, &self.chart_options);
+        if !problems.is_empty() {
+            return Err(Problems {
+                operation,
+                items: problems,
+            });
+        }
+        Ok(validate::seal_actions(
+            components,
+            &self.catalogs,
+            self.agent.host.actions(),
+            ids::action_id,
+        ))
+    }
+
     fn register(ui: &mut UiState, surface: &str, sealed: Vec<SealedAction>) {
         for action in sealed {
             ui.handles.insert(
@@ -942,10 +1548,32 @@ impl Session {
     }
 
     pub fn show_ui(&self, input: &Value) -> ToolOutcome {
-        self.show_ui_with(input, None)
+        self.show_ui_with(input, None, None)
     }
 
-    fn show_ui_with(&self, input: &Value, extra: Option<&dyn RefResolver>) -> ToolOutcome {
+    fn too_many_surfaces(&self, ui: &UiState) -> ToolOutcome {
+        let max = self.agent.config.max_open_surfaces;
+        ToolOutcome::error(
+            Problems {
+                operation: Operation::Show,
+                items: vec![Problem::new(
+                    Location::Input,
+                    format!(
+                        "{max} surfaces are already open, which is the most one conversation can have. Close one with close_ui or change one with update_ui. Open surfaces: {}.",
+                        ui.open_list()
+                    ),
+                )],
+            }
+            .to_string(),
+        )
+    }
+
+    fn show_ui_with(
+        &self,
+        input: &Value,
+        extra: Option<&dyn RefResolver>,
+        draft: Option<&Draft>,
+    ) -> ToolOutcome {
         let host_refs = self.agent.host.refs(&self.user);
         let refs = Layered {
             first: extra,
@@ -956,30 +1584,62 @@ impl Session {
             Ok(surface) => surface,
             Err(problems) => return ToolOutcome::error(problems.to_string()),
         };
+        let streamed = draft
+            .and_then(|draft| draft.surface.as_ref().map(|id| (draft, id.clone())))
+            .filter(|(_, id)| surface.id.as_ref().is_none_or(|named| named == id));
+        let data = surface.data_value();
         let mut client = surface.clone();
-        client.components = match validator.resolve_refs(&surface.components, Operation::Show) {
-            Ok(components) => components,
-            Err(problems) => return ToolOutcome::error(problems.to_string()),
-        };
-        let data = client.data_value();
-        let problems = charts::attach_scenes(
-            &mut client.components,
-            &data,
-            "components",
-            &self.chart_options,
-        );
-        if !problems.is_empty() {
-            return ToolOutcome::error(
-                Problems {
-                    operation: Operation::Show,
-                    items: problems,
+        let mut sealed = Vec::new();
+        let mut positions = Vec::new();
+        let mut fresh = Vec::new();
+        for (index, component) in surface.components.iter().enumerate() {
+            let earlier = streamed.as_ref().and_then(|(draft, _)| {
+                let at = draft.model.iter().position(|seen| seen == component)?;
+                (component.type_name != charts::CHART_TYPE || surface.data.is_empty())
+                    .then_some((draft, at))
+            });
+            match earlier {
+                Some((draft, at)) => {
+                    client.components[index] = draft.prepared[at].clone();
+                    sealed.extend(
+                        draft
+                            .sealed
+                            .iter()
+                            .filter(|action| action.component == component.id)
+                            .cloned(),
+                    );
                 }
-                .to_string(),
-            );
+                None => {
+                    positions.push(index);
+                    fresh.push(component.clone());
+                }
+            }
+        }
+        if !fresh.is_empty() {
+            match self.prepare(&validator, &mut fresh, &data, Operation::Show) {
+                Ok(more) => sealed.extend(more),
+                Err(mut problems) => {
+                    reindex(&mut problems, &positions);
+                    return ToolOutcome::error(problems.to_string());
+                }
+            }
+            for (index, component) in positions.into_iter().zip(fresh) {
+                client.components[index] = component;
+            }
         }
         let mut ui = self.lock();
-        let id = match surface.id.clone() {
-            Some(id) if ui.surfaces.contains_key(&id) => {
+        let own = streamed.as_ref().map(|(_, id)| id.clone());
+        let others = ui
+            .surfaces
+            .keys()
+            .filter(|key| own.as_ref() != Some(*key))
+            .count();
+        if others >= self.agent.config.max_open_surfaces {
+            return self.too_many_surfaces(&ui);
+        }
+        let id = match (own, surface.id.clone()) {
+            (Some(own), _) => own,
+            (None, Some(id)) if ui.surfaces.contains_key(&id) => {
                 return ToolOutcome::error(
                     Problems {
                         operation: Operation::Show,
@@ -991,31 +1651,91 @@ impl Session {
                     .to_string(),
                 );
             }
-            Some(id) => id,
-            None => ui.next_surface_id(),
+            (None, Some(id)) => id,
+            (None, None) => ui.next_surface_id(),
         };
-        let sealed = validate::seal_actions(
-            &mut client.components,
-            &self.catalogs,
-            self.agent.host.actions(),
-            ids::action_id,
-        );
         surface.id = Some(id.clone());
         client.id = Some(id.clone());
         let view = self.client_view(&client);
-        let fallback = client.fallback(&self.catalogs, self.locale);
-        let open = Message::Open(Open {
-            surface: id.clone(),
-            seq: 1,
-            root: view.root,
-            components: view.components,
-            data: view.data,
-            fallback: Some(fallback),
-        })
-        .to_value();
-        if let Err(outcome) = self.fits_client(Operation::Show, &[&open]) {
-            return outcome;
-        }
+        let earlier = streamed
+            .as_ref()
+            .and_then(|_| ui.surfaces.get(&id))
+            .filter(|state| state.pending)
+            .cloned();
+        let (messages, seq) = match earlier {
+            None => {
+                let fallback = client.fallback(&self.catalogs, self.locale);
+                let open = Message::Open(Open {
+                    surface: id.clone(),
+                    seq: 1,
+                    root: view.root,
+                    components: view.components,
+                    data: view.data,
+                    fallback: Some(fallback),
+                })
+                .to_value();
+                if let Err(outcome) = self.fits_client(Operation::Show, &[&open]) {
+                    return outcome;
+                }
+                (vec![open], 1)
+            }
+            Some(state) => {
+                let before = self.client_view(&state.client);
+                let mut seq = state.seq;
+                let mut messages = Vec::new();
+                let ops = data_changes(&before.data, &view.data);
+                if !ops.is_empty() {
+                    seq += 1;
+                    messages.push(
+                        Message::Data(DataUpdate {
+                            surface: id.clone(),
+                            seq,
+                            ops,
+                        })
+                        .to_value(),
+                    );
+                }
+                let upsert: Vec<Component> = view
+                    .components
+                    .iter()
+                    .filter(|component| before.get(&component.id) != Some(*component))
+                    .cloned()
+                    .collect();
+                let remove: Vec<String> = before
+                    .components
+                    .iter()
+                    .filter(|component| view.get(&component.id).is_none())
+                    .map(|component| component.id.clone())
+                    .collect();
+                let root = (before.root != view.root).then(|| view.root.clone());
+                if !upsert.is_empty() || !remove.is_empty() || root.is_some() {
+                    seq += 1;
+                    messages.push(
+                        Message::Patch(Patch {
+                            surface: id.clone(),
+                            seq,
+                            upsert,
+                            remove,
+                            root,
+                        })
+                        .to_value(),
+                    );
+                }
+                let snapshot = Message::Snapshot(Snapshot {
+                    surface: id.clone(),
+                    seq,
+                    root: view.root,
+                    components: view.components,
+                    data: view.data,
+                })
+                .to_value();
+                let outgoing: Vec<&Value> = messages.iter().chain([&snapshot]).collect();
+                if let Err(outcome) = self.fits_client(Operation::Show, &outgoing) {
+                    return outcome;
+                }
+                (messages, seq)
+            }
+        };
         Self::register(&mut ui, &id, sealed);
         let summary = surface.summary(&id, &self.catalogs, self.locale);
         ui.surfaces.insert(
@@ -1023,11 +1743,14 @@ impl Session {
             SurfaceState {
                 model: surface,
                 client,
-                seq: 1,
+                seq,
+                pending: false,
             },
         );
         drop(ui);
-        self.send(open);
+        for message in messages {
+            self.send(message);
+        }
         ToolOutcome::ok(summary)
     }
 
@@ -1084,7 +1807,7 @@ impl Session {
             .to_string();
         let mut ui = self.lock();
         let open = ui.open_list();
-        let Some(state) = ui.surfaces.get(&id).cloned() else {
+        let Some(state) = ui.settled(&id).cloned() else {
             return self.not_open(Operation::Update, &id, &open);
         };
         let update = match validator.update_ui(input, &state.model) {
@@ -1202,8 +1925,15 @@ impl Session {
         ui.forget_actions(&id, Some(&touched));
         Self::register(&mut ui, &id, sealed);
         let summary = model.summary(&id, &self.catalogs, self.locale);
-        ui.surfaces
-            .insert(id.clone(), SurfaceState { model, client, seq });
+        ui.surfaces.insert(
+            id.clone(),
+            SurfaceState {
+                model,
+                client,
+                seq,
+                pending: false,
+            },
+        );
         drop(ui);
         for message in messages {
             self.send(message);
@@ -1238,11 +1968,7 @@ impl Session {
                 .get("surface")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let model = self
-                .lock()
-                .surfaces
-                .get(id)
-                .map(|state| state.model.clone());
+            let model = self.lock().settled(id).map(|state| state.model.clone());
             match model {
                 Some(model) => validator.update_ui(input, &model).map(|_| ()),
                 None => Ok(()),
@@ -1252,7 +1978,12 @@ impl Session {
     }
 
     #[cfg(feature = "query")]
-    async fn call_data_tool(&self, name: &str, input: &Value) -> Option<ToolOutcome> {
+    async fn call_data_tool(
+        &self,
+        name: &str,
+        input: &Value,
+        draft: Option<&Draft>,
+    ) -> Option<ToolOutcome> {
         use crate::dashboards::{self, QueryRefs};
         let engine = self.agent.host.data()?;
         match name {
@@ -1305,7 +2036,7 @@ impl Session {
                     }
                 };
                 Some(if name == "show_ui" {
-                    self.show_ui_with(input, Some(&refs))
+                    self.show_ui_with(input, Some(&refs), draft)
                 } else {
                     self.update_ui_with(input, Some(&refs))
                 })
@@ -1323,6 +2054,9 @@ impl Session {
         };
         let mut ui = self.lock();
         let open = ui.open_list();
+        if ui.settled(&id).is_none() {
+            return self.not_open(Operation::Close, &id, &open);
+        }
         let Some(state) = ui.surfaces.remove(&id) else {
             return self.not_open(Operation::Close, &id, &open);
         };

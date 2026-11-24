@@ -1,27 +1,29 @@
 use crate::host::User;
-use crate::session::{Agent, Session};
+use crate::session::{Agent, CloseReason, Outgoing, Session};
 use axum::Router;
-use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{
+    CloseFrame, Message as WsMessage, WebSocket, WebSocketUpgrade, close_code,
+};
 use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use futures_util::{SinkExt, Stream, StreamExt};
+use futures_util::stream::{self, SplitSink};
+use futures_util::{SinkExt, StreamExt};
 use polyui_core::protocol::{self, ErrorReason};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tower_http::services::ServeDir;
+
+const CLOSE_WAIT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -42,13 +44,14 @@ impl Default for ServerConfig {
 
 struct Slot {
     session: Arc<Session>,
-    outgoing: Option<mpsc::UnboundedReceiver<Value>>,
+    outgoing: Option<Outgoing>,
 }
 
 struct AppState {
     agent: Agent,
     config: ServerConfig,
     sessions: Mutex<HashMap<String, Slot>>,
+    capacity: Arc<Semaphore>,
 }
 
 impl AppState {
@@ -65,6 +68,14 @@ impl AppState {
     fn authenticate(&self, headers: &HeaderMap) -> Result<User, String> {
         self.agent.host().authenticate(headers)
     }
+
+    fn admit(&self) -> Option<OwnedSemaphorePermit> {
+        self.capacity.clone().try_acquire_owned().ok()
+    }
+}
+
+fn too_many_sessions() -> Response {
+    (StatusCode::SERVICE_UNAVAILABLE, "too many sessions").into_response()
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,10 +86,14 @@ struct SessionQuery {
 pub fn router(agent: Agent, config: ServerConfig) -> Router {
     let limit = agent.config().limits.max_message_bytes;
     let static_dir = config.static_dir.clone();
+    let capacity = Arc::new(Semaphore::new(
+        config.max_sessions.min(Semaphore::MAX_PERMITS),
+    ));
     let state = Arc::new(AppState {
         agent,
         config,
         sessions: Mutex::new(HashMap::new()),
+        capacity,
     });
     let app = Router::new()
         .route("/ws", get(websocket))
@@ -118,14 +133,22 @@ async fn websocket(
         Ok(user) => user,
         Err(message) => return (StatusCode::UNAUTHORIZED, message).into_response(),
     };
+    let Some(permit) = state.admit() else {
+        return too_many_sessions();
+    };
     let limit = state.message_limit();
     upgrade
         .max_message_size(limit)
         .max_frame_size(limit)
-        .on_upgrade(move |socket| run_socket(state, socket, user))
+        .on_upgrade(move |socket| run_socket(state, socket, user, permit))
 }
 
-async fn run_socket(state: Arc<AppState>, mut socket: WebSocket, user: User) {
+async fn run_socket(
+    state: Arc<AppState>,
+    mut socket: WebSocket,
+    user: User,
+    permit: OwnedSemaphorePermit,
+) {
     let limits = state.agent.config().limits;
     let hello = loop {
         match socket.recv().await {
@@ -144,35 +167,75 @@ async fn run_socket(state: Arc<AppState>, mut socket: WebSocket, user: User) {
             _ => return,
         }
     };
-    let (session, mut outgoing) = state.agent.open_session(hello, user);
+    let (session, outgoing) = state.agent.open_session(hello, user);
     if socket
         .send(WsMessage::Text(session.welcome().to_string().into()))
         .await
         .is_err()
     {
+        session.close(CloseReason::ClientGone);
         return;
     }
-    let (mut sink, mut stream) = socket.split();
-    let writer = tokio::spawn(async move {
-        while let Some(message) = outgoing.recv().await {
-            if sink
-                .send(WsMessage::Text(message.to_string().into()))
-                .await
-                .is_err()
-            {
-                break;
+    let (sink, mut stream) = socket.split();
+    let writer = tokio::spawn(write_socket(session.clone(), sink, outgoing));
+    loop {
+        let next = tokio::select! {
+            biased;
+            _ = session.closed() => break,
+            next = stream.next() => next,
+        };
+        match next {
+            Some(Ok(WsMessage::Text(text))) => session.receive(text.as_str()).await,
+            Some(Ok(WsMessage::Binary(_))) => {
+                session.send_bad_message("binary frames are not supported");
             }
-        }
-    });
-    while let Some(Ok(message)) = stream.next().await {
-        match message {
-            WsMessage::Text(text) => session.receive(text.as_str()).await,
-            WsMessage::Binary(_) => session.send_bad_message("binary frames are not supported"),
-            WsMessage::Close(_) => break,
-            WsMessage::Ping(_) | WsMessage::Pong(_) => {}
+            Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_))) => {}
+            Some(Ok(WsMessage::Close(_)) | Err(_)) | None => break,
         }
     }
-    writer.abort();
+    session.close(CloseReason::ClientGone);
+    let _ = writer.await;
+    drop(permit);
+}
+
+async fn write_socket(
+    session: Arc<Session>,
+    mut sink: SplitSink<WebSocket, WsMessage>,
+    mut outgoing: Outgoing,
+) {
+    loop {
+        let next = tokio::select! {
+            biased;
+            reason = session.closed() => Err(reason),
+            message = outgoing.recv() => message.ok_or(CloseReason::ClientGone),
+        };
+        let reason = match next {
+            Ok(message) => {
+                let sent = tokio::select! {
+                    biased;
+                    reason = session.closed() => Err(reason),
+                    sent = sink.send(WsMessage::Text(message.to_string().into())) => {
+                        sent.map_err(|_| CloseReason::ClientGone)
+                    }
+                };
+                match sent {
+                    Ok(()) => continue,
+                    Err(reason) => reason,
+                }
+            }
+            Err(reason) => reason,
+        };
+        if reason == CloseReason::SlowConsumer {
+            let frame = CloseFrame {
+                code: close_code::POLICY,
+                reason: reason.detail().into(),
+            };
+            let _ =
+                tokio::time::timeout(CLOSE_WAIT, sink.send(WsMessage::Close(Some(frame)))).await;
+        }
+        session.close(reason);
+        return;
+    }
 }
 
 async fn send(
@@ -208,12 +271,17 @@ fn start_session(state: &Arc<AppState>, user: User, body: &str) -> Response {
             return json_response(StatusCode::BAD_REQUEST, &bad_message(error.to_string()));
         }
     };
-    if state.sessions().len() >= state.config.max_sessions {
-        return (StatusCode::SERVICE_UNAVAILABLE, "too many sessions").into_response();
-    }
+    let Some(permit) = state.admit() else {
+        return too_many_sessions();
+    };
     let (session, outgoing) = state.agent.open_session(hello, user);
     let id = session.id().to_string();
     let welcome = session.welcome();
+    let counted = session.clone();
+    tokio::spawn(async move {
+        counted.closed().await;
+        drop(permit);
+    });
     state.sessions().insert(
         id.clone(),
         Slot {
@@ -230,34 +298,43 @@ fn start_session(state: &Arc<AppState>, user: User, body: &str) -> Response {
             if sessions
                 .get(&id)
                 .is_some_and(|slot| slot.outgoing.is_some())
+                && let Some(slot) = sessions.remove(&id)
             {
-                sessions.remove(&id);
+                slot.session.close(CloseReason::ClientGone);
             }
         }
     });
     json_response(StatusCode::OK, &welcome)
 }
 
-struct SessionEvents {
-    inner: UnboundedReceiverStream<Value>,
+struct EventFeed {
+    session: Arc<Session>,
+    outgoing: Outgoing,
     state: Arc<AppState>,
     id: String,
+    finished: bool,
 }
 
-impl Stream for SessionEvents {
-    type Item = Result<Event, Infallible>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.inner)
-            .poll_next(cx)
-            .map(|item| item.map(|value| Ok(Event::default().data(value.to_string()))))
-    }
-}
-
-impl Drop for SessionEvents {
+impl Drop for EventFeed {
     fn drop(&mut self) {
+        self.session.close(CloseReason::ClientGone);
         self.state.sessions().remove(&self.id);
     }
+}
+
+async fn next_event(mut feed: EventFeed) -> Option<(Result<Event, Infallible>, EventFeed)> {
+    if feed.finished {
+        return None;
+    }
+    let event = tokio::select! {
+        biased;
+        reason = feed.session.closed() => {
+            feed.finished = true;
+            Event::default().event("close").data(reason.detail())
+        }
+        message = feed.outgoing.recv() => Event::default().data(message?.to_string()),
+    };
+    Some((Ok(event), feed))
 }
 
 async fn events(
@@ -272,11 +349,11 @@ async fn events(
     let Some(id) = query.session else {
         return (StatusCode::BAD_REQUEST, "missing session").into_response();
     };
-    let outgoing = {
+    let (session, outgoing) = {
         let mut sessions = state.sessions();
         match sessions.get_mut(&id) {
             Some(slot) if slot.session.user().id == user.id => match slot.outgoing.take() {
-                Some(outgoing) => outgoing,
+                Some(outgoing) => (slot.session.clone(), outgoing),
                 None => {
                     return (StatusCode::CONFLICT, "events are already streaming").into_response();
                 }
@@ -284,12 +361,14 @@ async fn events(
             _ => return (StatusCode::NOT_FOUND, "unknown session").into_response(),
         }
     };
-    let stream = SessionEvents {
-        inner: UnboundedReceiverStream::new(outgoing),
+    let feed = EventFeed {
+        session,
+        outgoing,
         state: state.clone(),
         id,
+        finished: false,
     };
-    Sse::new(stream)
+    Sse::new(stream::unfold(feed, next_event))
         .keep_alive(KeepAlive::default())
         .into_response()
 }

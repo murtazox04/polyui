@@ -13,7 +13,7 @@ name = "polyui"
 path = "src/main.rs"
 
 [features]
-default = ["query"]
+default = []
 query = ["polyui-server/query"]
 
 [dependencies]
