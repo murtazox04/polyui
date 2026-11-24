@@ -21,6 +21,7 @@ jobs:
   rules:
     name: House rules
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: No em dash, no comments in Rust or TypeScript, no leading-underscore names
@@ -119,6 +120,7 @@ jobs:
   rust:
     name: Rust fmt, clippy and tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - name: Install the toolchain from rust-toolchain.toml
@@ -165,6 +167,7 @@ jobs:
   ffi-c:
     name: C ABI test from C and C++ (macOS, where the script's link line and leaks check were written and run)
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - name: Install the toolchain from rust-toolchain.toml
@@ -177,6 +180,7 @@ jobs:
   web:
     name: Wasm size gate, web renderer and chat example
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Install the toolchain from rust-toolchain.toml
