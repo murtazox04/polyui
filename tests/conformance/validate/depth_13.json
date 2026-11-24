@@ -1,0 +1,101 @@
+{
+  "description": "Depth from root is at most 12, counting the root as 1.",
+  "input": {
+    "root": "c1",
+    "components": [
+      {
+        "id": "c1",
+        "type": "Card",
+        "children": [
+          "c2"
+        ]
+      },
+      {
+        "id": "c2",
+        "type": "Card",
+        "children": [
+          "c3"
+        ]
+      },
+      {
+        "id": "c3",
+        "type": "Card",
+        "children": [
+          "c4"
+        ]
+      },
+      {
+        "id": "c4",
+        "type": "Card",
+        "children": [
+          "c5"
+        ]
+      },
+      {
+        "id": "c5",
+        "type": "Card",
+        "children": [
+          "c6"
+        ]
+      },
+      {
+        "id": "c6",
+        "type": "Card",
+        "children": [
+          "c7"
+        ]
+      },
+      {
+        "id": "c7",
+        "type": "Card",
+        "children": [
+          "c8"
+        ]
+      },
+      {
+        "id": "c8",
+        "type": "Card",
+        "children": [
+          "c9"
+        ]
+      },
+      {
+        "id": "c9",
+        "type": "Card",
+        "children": [
+          "c10"
+        ]
+      },
+      {
+        "id": "c10",
+        "type": "Card",
+        "children": [
+          "c11"
+        ]
+      },
+      {
+        "id": "c11",
+        "type": "Card",
+        "children": [
+          "c12"
+        ]
+      },
+      {
+        "id": "c12",
+        "type": "Card",
+        "children": [
+          "c13"
+        ]
+      },
+      {
+        "id": "c13",
+        "type": "Divider"
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[12] id \"c13\": is 13 levels deep, max is 12."
+    ]
+  }
+}

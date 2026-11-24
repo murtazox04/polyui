@@ -1,0 +1,27 @@
+{
+  "description": "An unknown component type is reported with the list of known types.",
+  "input": {
+    "root": "card",
+    "components": [
+      {
+        "id": "card",
+        "type": "Card",
+        "children": [
+          "pay"
+        ]
+      },
+      {
+        "id": "pay",
+        "type": "PayButton",
+        "props": {
+          "label": "Pay"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[1] id \"pay\": type \"PayButton\" is not in the catalog. Known: Badge, Button, Card, ChoiceGroup, ConfirmSheet, Divider, Image, Input, List, Row, Stat, Text, chart:Chart, chart:Dashboard."
+    ]
+  }
+}

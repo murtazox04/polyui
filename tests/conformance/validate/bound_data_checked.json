@@ -1,0 +1,29 @@
+{
+  "description": "When a $bind target exists in data, its value must fit the prop: no javascript: through data.",
+  "input": {
+    "root": "i",
+    "components": [
+      {
+        "id": "i",
+        "type": "Image",
+        "props": {
+          "src": {
+            "$bind": "/img"
+          },
+          "alt": "x"
+        }
+      }
+    ],
+    "data": [
+      {
+        "path": "/img",
+        "value": "javascript:alert(1)"
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"i\" prop \"src\": data at \"/img\" does not fit: URL scheme \"javascript\" is never allowed."
+    ]
+  }
+}

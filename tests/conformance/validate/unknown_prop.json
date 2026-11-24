@@ -1,0 +1,21 @@
+{
+  "description": "Unknown props are an error and the known props are listed.",
+  "input": {
+    "root": "t",
+    "components": [
+      {
+        "id": "t",
+        "type": "Text",
+        "props": {
+          "text": "hi",
+          "colour": "red"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"t\" prop \"colour\": unknown prop for Text. Known: text, style."
+    ]
+  }
+}

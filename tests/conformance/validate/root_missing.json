@@ -1,0 +1,17 @@
+{
+  "description": "root must name a component in the list.",
+  "input": {
+    "root": "card",
+    "components": [
+      {
+        "id": "box",
+        "type": "Card"
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "root: \"card\" is not in components."
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "description": "Required props must be present.",
+  "input": {
+    "root": "s",
+    "components": [
+      {
+        "id": "s",
+        "type": "Stat",
+        "props": {
+          "label": "Total"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"s\" prop \"value\": required prop is missing."
+    ]
+  }
+}

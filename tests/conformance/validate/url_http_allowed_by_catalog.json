@@ -1,0 +1,48 @@
+{
+  "description": "An extension prop that lists http accepts it when the host allows http.",
+  "allow_http": true,
+  "extension": {
+    "id": "acme",
+    "version": 1,
+    "types": {
+      "Link": {
+        "description": "A link.",
+        "role": "button",
+        "props": {
+          "href": {
+            "kind": "url",
+            "schemes": [
+              "https",
+              "http"
+            ],
+            "required": true
+          },
+          "label": {
+            "kind": "string",
+            "max": 40
+          }
+        },
+        "alt": "{label}",
+        "say": "{label}"
+      }
+    }
+  },
+  "input": {
+    "root": "a",
+    "components": [
+      {
+        "id": "a",
+        "type": "acme:Link",
+        "props": {
+          "href": "http://example.com",
+          "label": "Docs"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "ok": true,
+    "summary": "surface s1 open: acme:Link \"Docs\"",
+    "fallback": "Docs"
+  }
+}

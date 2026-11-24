@@ -1,0 +1,65 @@
+{
+  "description": "args are checked against the registered schema.",
+  "actions": {
+    "pay_bill": {
+      "args": {
+        "bill": {
+          "kind": "string",
+          "required": true,
+          "max": 32
+        }
+      },
+      "requires_confirm": true
+    },
+    "pick_store": {
+      "args": {}
+    }
+  },
+  "input": {
+    "root": "r",
+    "components": [
+      {
+        "id": "r",
+        "type": "Row",
+        "children": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "id": "a",
+        "type": "Button",
+        "props": {
+          "label": "A",
+          "on_press": {
+            "action": "pay_bill",
+            "args": {
+              "bill": 17,
+              "amount": 5
+            }
+          }
+        }
+      },
+      {
+        "id": "b",
+        "type": "Button",
+        "props": {
+          "label": "B",
+          "on_press": {
+            "action": "pay_bill",
+            "args": {},
+            "confirm": false
+          }
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[1] id \"a\" prop \"on_press.args.bill\": expected text, got a number.",
+      "components[1] id \"a\" prop \"on_press.args.amount\": unknown argument for \"pay_bill\". Known: bill.",
+      "components[2] id \"b\" prop \"on_press\": unknown field \"confirm\" in action. Known: action, args, with.",
+      "components[2] id \"b\" prop \"on_press.args.bill\": required argument is missing."
+    ]
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "description": "update_ui upserts, removes and sets data against the current surface.",
+  "tool": "update_ui",
+  "actions": {
+    "pay_bill": {
+      "args": {
+        "bill": {
+          "kind": "string",
+          "required": true,
+          "max": 32
+        }
+      },
+      "requires_confirm": true
+    },
+    "pick_store": {
+      "args": {}
+    }
+  },
+  "current": {
+    "root": "card",
+    "components": [
+      {
+        "id": "card",
+        "type": "Card",
+        "props": {
+          "title": "Your bills"
+        },
+        "children": [
+          "list"
+        ]
+      },
+      {
+        "id": "list",
+        "type": "List",
+        "children": [
+          "gas",
+          "power"
+        ]
+      },
+      {
+        "id": "gas",
+        "type": "Button",
+        "props": {
+          "label": "Gas",
+          "on_press": {
+            "action": "pay_bill",
+            "args": {
+              "bill": "b_17"
+            }
+          }
+        }
+      },
+      {
+        "id": "power",
+        "type": "Button",
+        "props": {
+          "label": "Power",
+          "on_press": {
+            "action": "pay_bill",
+            "args": {
+              "bill": "b_18"
+            }
+          }
+        }
+      }
+    ],
+    "data": {}
+  },
+  "input": {
+    "surface": "s1",
+    "upsert": [
+      {
+        "id": "list",
+        "type": "List",
+        "children": [
+          "gas",
+          "note"
+        ]
+      },
+      {
+        "id": "note",
+        "type": "Text",
+        "props": {
+          "text": {
+            "$bind": "/note"
+          },
+          "style": "caption"
+        }
+      }
+    ],
+    "remove": [
+      "power"
+    ],
+    "data": [
+      {
+        "path": "/note",
+        "value": "Power is paid"
+      }
+    ]
+  },
+  "expect": {
+    "ok": true,
+    "summary": "surface s1 open: Card \"Your bills\" > List(2) > [Button \"Gas\" (act), Text \"Power is paid\"]"
+  }
+}

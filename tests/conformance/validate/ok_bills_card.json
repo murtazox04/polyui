@@ -1,0 +1,85 @@
+{
+  "description": "The protocol section 10 example: a card with a list of two pay buttons, one label behind $ref.",
+  "actions": {
+    "pay_bill": {
+      "args": {
+        "bill": {
+          "kind": "string",
+          "required": true,
+          "max": 32
+        }
+      },
+      "requires_confirm": true
+    },
+    "pick_store": {
+      "args": {}
+    }
+  },
+  "refs": {
+    "bill": {
+      "power": "Power 12 000 so'm",
+      "gas_amount": "29 322"
+    },
+    "account": {
+      "card": "4471"
+    }
+  },
+  "input": {
+    "surface": "s1",
+    "root": "card",
+    "components": [
+      {
+        "id": "card",
+        "type": "Card",
+        "props": {
+          "title": "Your bills"
+        },
+        "children": [
+          "list"
+        ]
+      },
+      {
+        "id": "list",
+        "type": "List",
+        "children": [
+          "gas",
+          "power"
+        ]
+      },
+      {
+        "id": "gas",
+        "type": "Button",
+        "props": {
+          "label": "Gas 29 322 so'm",
+          "on_press": {
+            "action": "pay_bill",
+            "args": {
+              "bill": "b_17"
+            }
+          },
+          "tone": "primary"
+        }
+      },
+      {
+        "id": "power",
+        "type": "Button",
+        "props": {
+          "label": {
+            "$ref": "bill:power"
+          },
+          "on_press": {
+            "action": "pay_bill",
+            "args": {
+              "bill": "b_18"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "expect": {
+    "ok": true,
+    "summary": "surface s1 open: Card \"Your bills\" > List(2) > [Button \"Gas 29 322 so'm\" (act), Button \"[ref]\" (act)]",
+    "fallback": "Your bills. [Gas 29 322 so'm]"
+  }
+}

@@ -19,7 +19,7 @@ Every binding exposes the same five calls. Arguments and results are JSON string
 | `Client::new(hello)` | the `hello` object the client will send | a client |
 | `client.receive(message)` | one server message | a `RenderBatch` |
 | `client.set_value(surface, path, value)` | a local edit from an input or choice | a `RenderBatch` with every component bound to `path` |
-| `client.fire(surface, component, prop)` | the user pressed something | the `ui.action` message to send, or `null` |
+| `client.fire(surface, component, prop, detail?)` | the user pressed something; `detail` is an optional JSON object, for example `{"row": 3}` when a chart bar is tapped | the `ui.action` message to send (with `detail` copied in), or `null` |
 | `client.confirm(surface, action_id, nonce)` | the user accepted a `confirm` sheet | the `ui.action` message with the nonce |
 
 Two helpers are also exposed: `client.say(surface)` returns the utterances for voice (section below) and `client.match_voice(surface, text)` returns a voice match or `null`.
@@ -47,6 +47,8 @@ Rules the core guarantees, so renderers do not have to check:
 
 - `props` are complete: defaults are filled and `$bind` values are resolved. A renderer never sees `$bind`, `$ref` or action `args`.
 - `create` comes before any `children` op that references the new id.
+- Components with a `path` prop (Input, ChoiceGroup) also carry an op-level `value`: the current data model value at that path, or `null`.
+- `chart:Chart` props carry a `scene` object built by the server with `polyui-chart`. The client core never compiles charts, which keeps the wasm small.
 - `update` carries all props of the component, not a delta. Renderers replace, they do not merge.
 - Ops for one batch are applied together. A renderer should apply a whole batch in one frame.
 - A component whose required prop resolved to nothing arrives as `{ "op": "create", "type": "Text", "props": { "text": "<its alt>", "style": "muted" } }` instead.

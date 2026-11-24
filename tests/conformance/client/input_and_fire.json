@@ -1,0 +1,230 @@
+{
+  "description": "set_value updates every component bound to the path, Input carries an op-level value, fire collects with paths.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "form",
+        "components": [
+          {
+            "id": "form",
+            "type": "Card",
+            "props": {
+              "title": "Top up"
+            },
+            "children": [
+              "phone",
+              "echo",
+              "send"
+            ]
+          },
+          {
+            "id": "phone",
+            "type": "Input",
+            "props": {
+              "label": "Phone",
+              "value": "/form/phone",
+              "input": "phone"
+            }
+          },
+          {
+            "id": "echo",
+            "type": "Text",
+            "props": {
+              "text": {
+                "$bind": "/form/phone"
+              },
+              "style": "caption"
+            }
+          },
+          {
+            "id": "send",
+            "type": "Button",
+            "props": {
+              "label": "Send",
+              "on_press": {
+                "action_id": "act_send",
+                "confirm": false,
+                "with": [
+                  "/form/phone"
+                ]
+              }
+            }
+          }
+        ],
+        "data": {
+          "form": {}
+        }
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "form",
+            "type": "Card",
+            "props": {
+              "title": "Top up",
+              "tone": "plain"
+            },
+            "a11y": {
+              "role": "group",
+              "label": "Top up"
+            }
+          },
+          {
+            "op": "create",
+            "id": "phone",
+            "type": "Input",
+            "props": {
+              "label": "Phone",
+              "value": "/form/phone",
+              "input": "phone",
+              "max_length": 200,
+              "required": false
+            },
+            "value": null,
+            "a11y": {
+              "role": "textbox",
+              "label": "Phone"
+            }
+          },
+          {
+            "op": "create",
+            "id": "echo",
+            "type": "Text",
+            "props": {
+              "text": "",
+              "style": "muted"
+            },
+            "a11y": {
+              "role": "text",
+              "label": ""
+            }
+          },
+          {
+            "op": "create",
+            "id": "send",
+            "type": "Button",
+            "props": {
+              "label": "Send",
+              "tone": "secondary",
+              "on_press": {
+                "action_id": "act_send",
+                "confirm": false
+              },
+              "disabled": false
+            },
+            "a11y": {
+              "role": "button",
+              "label": "Send"
+            }
+          },
+          {
+            "op": "children",
+            "id": "form",
+            "children": [
+              "phone",
+              "echo",
+              "send"
+            ]
+          },
+          {
+            "op": "root",
+            "id": "form"
+          }
+        ],
+        "fallback": "Top up. Phone: ____. [Send]"
+      }
+    },
+    {
+      "set_value": {
+        "surface": "s1",
+        "path": "/form/phone",
+        "value": "+998901234567"
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "update",
+            "id": "phone",
+            "props": {
+              "label": "Phone",
+              "value": "/form/phone",
+              "input": "phone",
+              "max_length": 200,
+              "required": false
+            },
+            "value": "+998901234567",
+            "a11y": {
+              "role": "textbox",
+              "label": "Phone"
+            }
+          },
+          {
+            "op": "update",
+            "id": "echo",
+            "props": {
+              "text": "+998901234567",
+              "style": "caption"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "+998901234567"
+            }
+          }
+        ],
+        "fallback": "Top up. Phone: ____. +998901234567. [Send]"
+      }
+    },
+    {
+      "fire": {
+        "surface": "s1",
+        "component": "send",
+        "prop": "on_press"
+      },
+      "expect": {
+        "v": 1,
+        "t": "ui.action",
+        "surface": "s1",
+        "action_id": "act_send",
+        "values": {
+          "/form/phone": "+998901234567"
+        },
+        "source": "tap"
+      }
+    },
+    {
+      "fire": {
+        "surface": "s1",
+        "component": "phone",
+        "prop": "label"
+      },
+      "expect": null
+    }
+  ]
+}

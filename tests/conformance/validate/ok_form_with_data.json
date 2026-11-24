@@ -1,0 +1,113 @@
+{
+  "description": "Input and ChoiceGroup write into data built from path and value entries; a Text reads it with $bind.",
+  "actions": {
+    "pay_bill": {
+      "args": {
+        "bill": {
+          "kind": "string",
+          "required": true,
+          "max": 32
+        }
+      },
+      "requires_confirm": true
+    },
+    "pick_store": {
+      "args": {}
+    }
+  },
+  "input": {
+    "root": "form",
+    "components": [
+      {
+        "id": "form",
+        "type": "Card",
+        "props": {
+          "title": "Top up"
+        },
+        "children": [
+          "who",
+          "phone",
+          "store",
+          "send"
+        ]
+      },
+      {
+        "id": "who",
+        "type": "Text",
+        "props": {
+          "text": {
+            "$bind": "/user/name"
+          },
+          "style": "subtitle"
+        }
+      },
+      {
+        "id": "phone",
+        "type": "Input",
+        "props": {
+          "label": "Phone",
+          "value": "/form/phone",
+          "input": "phone"
+        }
+      },
+      {
+        "id": "store",
+        "type": "ChoiceGroup",
+        "props": {
+          "label": "Pick a store",
+          "value": "/form/store",
+          "options": [
+            {
+              "id": "chilonzor",
+              "label": "Chilonzor"
+            },
+            {
+              "id": "yunusobod",
+              "label": "Yunusobod",
+              "detail": "open late"
+            }
+          ],
+          "on_change": {
+            "action": "pick_store"
+          }
+        }
+      },
+      {
+        "id": "send",
+        "type": "Button",
+        "props": {
+          "label": "Send",
+          "on_press": {
+            "action": "pay_bill",
+            "args": {
+              "bill": "top_up"
+            },
+            "with": [
+              "/form/phone",
+              "/form/store"
+            ]
+          }
+        }
+      }
+    ],
+    "data": [
+      {
+        "path": "/user/name",
+        "value": "Aziza"
+      },
+      {
+        "path": "/form/phone",
+        "value": "+998901234567"
+      },
+      {
+        "path": "/form/store",
+        "value": "yunusobod"
+      }
+    ]
+  },
+  "expect": {
+    "ok": true,
+    "summary": "surface s1 open: Card(4) \"Top up\" > [Text \"Aziza\", Input \"Phone\" = \"+998901234567\", ChoiceGroup \"Pick a store: Chilonzor and Yunusobod\" (act) = \"yunusobod\", Button \"Send\" (act)]",
+    "fallback": "Top up. Aziza. Phone: ____. Pick a store: Chilonzor and Yunusobod. [Send]"
+  }
+}

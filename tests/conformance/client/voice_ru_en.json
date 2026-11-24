@@ -1,0 +1,322 @@
+{
+  "description": "Russian and English ordinals select options; the English labels match too.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "ru"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "card",
+        "components": [
+          {
+            "id": "card",
+            "type": "Card",
+            "props": {
+              "title": "Your bills"
+            },
+            "children": [
+              "choices",
+              "pay"
+            ]
+          },
+          {
+            "id": "choices",
+            "type": "ChoiceGroup",
+            "props": {
+              "label": "Pick one",
+              "value": "/pick",
+              "options": [
+                {
+                  "id": "gas",
+                  "label": "Gas"
+                },
+                {
+                  "id": "power",
+                  "label": "Power"
+                }
+              ],
+              "on_change": {
+                "action_id": "act_pick",
+                "confirm": false
+              }
+            },
+            "voice": {
+              "synonyms": [
+                "bill"
+              ]
+            }
+          },
+          {
+            "id": "pay",
+            "type": "Button",
+            "props": {
+              "label": "Pay now",
+              "on_press": {
+                "action_id": "act_pay",
+                "confirm": true,
+                "with": [
+                  "/pick"
+                ]
+              }
+            },
+            "voice": {
+              "synonyms": [
+                "to'la",
+                "tolash"
+              ]
+            }
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "card",
+            "type": "Card",
+            "props": {
+              "title": "Your bills",
+              "tone": "plain"
+            },
+            "a11y": {
+              "role": "group",
+              "label": "Your bills"
+            }
+          },
+          {
+            "op": "create",
+            "id": "choices",
+            "type": "ChoiceGroup",
+            "props": {
+              "label": "Pick one",
+              "options": [
+                {
+                  "id": "gas",
+                  "label": "Gas"
+                },
+                {
+                  "id": "power",
+                  "label": "Power"
+                }
+              ],
+              "multiple": false,
+              "value": "/pick",
+              "on_change": {
+                "action_id": "act_pick",
+                "confirm": false
+              }
+            },
+            "value": null,
+            "a11y": {
+              "role": "radiogroup",
+              "label": "Pick one: Gas и Power"
+            }
+          },
+          {
+            "op": "create",
+            "id": "pay",
+            "type": "Button",
+            "props": {
+              "label": "Pay now",
+              "tone": "secondary",
+              "on_press": {
+                "action_id": "act_pay",
+                "confirm": true
+              },
+              "disabled": false
+            },
+            "a11y": {
+              "role": "button",
+              "label": "Pay now"
+            }
+          },
+          {
+            "op": "children",
+            "id": "card",
+            "children": [
+              "choices",
+              "pay"
+            ]
+          },
+          {
+            "op": "root",
+            "id": "card"
+          }
+        ],
+        "fallback": "Your bills. Pick one: Gas и Power. [Pay now]"
+      }
+    },
+    {
+      "say": "s1",
+      "expect": [
+        {
+          "id": "card",
+          "text": "Your bills."
+        },
+        {
+          "id": "choices",
+          "text": "Pick one. Первый, Gas; второй, Power."
+        },
+        {
+          "id": "pay",
+          "text": "Pay now."
+        }
+      ]
+    },
+    {
+      "match_voice": {
+        "surface": "s1",
+        "text": "Первый"
+      },
+      "expect": {
+        "component": "choices",
+        "option": "gas",
+        "batch": {
+          "surface": "s1",
+          "ops": [
+            {
+              "op": "update",
+              "id": "choices",
+              "props": {
+                "label": "Pick one",
+                "options": [
+                  {
+                    "id": "gas",
+                    "label": "Gas"
+                  },
+                  {
+                    "id": "power",
+                    "label": "Power"
+                  }
+                ],
+                "multiple": false,
+                "value": "/pick",
+                "on_change": {
+                  "action_id": "act_pick",
+                  "confirm": false
+                }
+              },
+              "value": "gas",
+              "a11y": {
+                "role": "radiogroup",
+                "label": "Pick one: Gas и Power"
+              }
+            }
+          ],
+          "fallback": "Your bills. Pick one: Gas и Power. [Pay now]"
+        },
+        "action": {
+          "v": 1,
+          "t": "ui.action",
+          "surface": "s1",
+          "action_id": "act_pick",
+          "values": {
+            "/pick": "gas"
+          },
+          "source": "voice"
+        }
+      }
+    },
+    {
+      "match_voice": {
+        "surface": "s1",
+        "text": "the second one"
+      },
+      "expect": {
+        "component": "choices",
+        "option": "power",
+        "batch": {
+          "surface": "s1",
+          "ops": [
+            {
+              "op": "update",
+              "id": "choices",
+              "props": {
+                "label": "Pick one",
+                "options": [
+                  {
+                    "id": "gas",
+                    "label": "Gas"
+                  },
+                  {
+                    "id": "power",
+                    "label": "Power"
+                  }
+                ],
+                "multiple": false,
+                "value": "/pick",
+                "on_change": {
+                  "action_id": "act_pick",
+                  "confirm": false
+                }
+              },
+              "value": "power",
+              "a11y": {
+                "role": "radiogroup",
+                "label": "Pick one: Gas и Power"
+              }
+            }
+          ],
+          "fallback": "Your bills. Pick one: Gas и Power. [Pay now]"
+        },
+        "action": {
+          "v": 1,
+          "t": "ui.action",
+          "surface": "s1",
+          "action_id": "act_pick",
+          "values": {
+            "/pick": "power"
+          },
+          "source": "voice"
+        }
+      }
+    },
+    {
+      "match_voice": {
+        "surface": "s1",
+        "text": "power"
+      },
+      "expect": {
+        "component": "choices",
+        "option": "power",
+        "batch": {
+          "surface": "s1",
+          "ops": []
+        },
+        "action": {
+          "v": 1,
+          "t": "ui.action",
+          "surface": "s1",
+          "action_id": "act_pick",
+          "values": {
+            "/pick": "power"
+          },
+          "source": "voice"
+        }
+      }
+    }
+  ]
+}

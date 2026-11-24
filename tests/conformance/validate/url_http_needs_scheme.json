@@ -1,0 +1,22 @@
+{
+  "description": "Allowing http on the host is not enough: core Image only lists https in its schemes.",
+  "allow_http": true,
+  "input": {
+    "root": "a",
+    "components": [
+      {
+        "id": "a",
+        "type": "Image",
+        "props": {
+          "src": "http://example.com/a.png",
+          "alt": "A cat"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"a\" prop \"src\": URL scheme \"http\" is not allowed, allowed: https."
+    ]
+  }
+}

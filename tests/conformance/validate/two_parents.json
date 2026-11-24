@@ -1,0 +1,39 @@
+{
+  "description": "A component has at most one parent.",
+  "input": {
+    "root": "a",
+    "components": [
+      {
+        "id": "a",
+        "type": "Row",
+        "children": [
+          "b",
+          "c"
+        ]
+      },
+      {
+        "id": "b",
+        "type": "Card",
+        "children": [
+          "x"
+        ]
+      },
+      {
+        "id": "c",
+        "type": "Card",
+        "children": [
+          "x"
+        ]
+      },
+      {
+        "id": "x",
+        "type": "Divider"
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[2] id \"c\": children references \"x\" which already has parent \"b\"."
+    ]
+  }
+}

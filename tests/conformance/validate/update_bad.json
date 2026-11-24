@@ -1,0 +1,76 @@
+{
+  "description": "update_ui problems: missing ids, dangling children, orphans after a remove.",
+  "tool": "update_ui",
+  "actions": {
+    "pay_bill": {
+      "args": {
+        "bill": {
+          "kind": "string",
+          "required": true,
+          "max": 32
+        }
+      },
+      "requires_confirm": true
+    },
+    "pick_store": {
+      "args": {}
+    }
+  },
+  "current": {
+    "root": "card",
+    "components": [
+      {
+        "id": "card",
+        "type": "Card",
+        "children": [
+          "list"
+        ]
+      },
+      {
+        "id": "list",
+        "type": "List",
+        "children": [
+          "gas"
+        ]
+      },
+      {
+        "id": "gas",
+        "type": "Button",
+        "props": {
+          "label": "Gas",
+          "on_press": {
+            "action": "pay_bill",
+            "args": {
+              "bill": "b_17"
+            }
+          }
+        }
+      }
+    ],
+    "data": {}
+  },
+  "input": {
+    "surface": "s1",
+    "upsert": [
+      {
+        "id": "list",
+        "type": "List",
+        "children": [
+          "gas",
+          "ghost"
+        ]
+      }
+    ],
+    "remove": [
+      "nothing_here",
+      "card"
+    ]
+  },
+  "expect": {
+    "problems": [
+      "remove[0]: \"nothing_here\" does not exist.",
+      "root: \"card\" is not in components.",
+      "upsert[0] id \"list\": children references \"ghost\" which does not exist."
+    ]
+  }
+}

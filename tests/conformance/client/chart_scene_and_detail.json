@@ -1,0 +1,140 @@
+{
+  "description": "A server-built scene on chart:Chart passes through; fire copies a detail object into ui.action.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "c",
+        "components": [
+          {
+            "id": "c",
+            "type": "chart:Chart",
+            "props": {
+              "title": "By month",
+              "kind": "bar",
+              "rows": [
+                {
+                  "x": "Jan",
+                  "y": 1
+                }
+              ],
+              "scene": {
+                "w": 320,
+                "h": 200,
+                "marks": [
+                  {
+                    "row": 0,
+                    "d": "M0 0H10V10H0Z"
+                  }
+                ]
+              },
+              "on_select": {
+                "action_id": "act_sel",
+                "confirm": false
+              }
+            }
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "c",
+            "type": "chart:Chart",
+            "props": {
+              "title": "By month",
+              "kind": "bar",
+              "rows": [
+                {
+                  "x": "Jan",
+                  "y": 1
+                }
+              ],
+              "on_select": {
+                "action_id": "act_sel",
+                "confirm": false
+              },
+              "scene": {
+                "w": 320,
+                "h": 200,
+                "marks": [
+                  {
+                    "row": 0,
+                    "d": "M0 0H10V10H0Z"
+                  }
+                ]
+              }
+            },
+            "a11y": {
+              "role": "figure",
+              "label": "By month"
+            }
+          },
+          {
+            "op": "root",
+            "id": "c"
+          }
+        ],
+        "fallback": "By month"
+      }
+    },
+    {
+      "fire": {
+        "surface": "s1",
+        "component": "c",
+        "prop": "on_select",
+        "detail": {
+          "row": 0
+        }
+      },
+      "expect": {
+        "v": 1,
+        "t": "ui.action",
+        "surface": "s1",
+        "action_id": "act_sel",
+        "source": "tap",
+        "detail": {
+          "row": 0
+        }
+      }
+    },
+    {
+      "fire": {
+        "surface": "s1",
+        "component": "c",
+        "prop": "on_select",
+        "detail": [
+          1,
+          2
+        ]
+      },
+      "expect": null
+    }
+  ]
+}

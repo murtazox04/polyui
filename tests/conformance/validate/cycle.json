@@ -1,0 +1,31 @@
+{
+  "description": "Two components that list each other form a cycle and are not orphans.",
+  "input": {
+    "root": "r",
+    "components": [
+      {
+        "id": "r",
+        "type": "Row"
+      },
+      {
+        "id": "x",
+        "type": "Card",
+        "children": [
+          "y"
+        ]
+      },
+      {
+        "id": "y",
+        "type": "Card",
+        "children": [
+          "x"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[1] id \"x\": children make a cycle: y > x > y."
+    ]
+  }
+}

@@ -1,0 +1,199 @@
+{
+  "description": "ui.data updates only the components whose resolved props changed.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "card",
+        "components": [
+          {
+            "id": "card",
+            "type": "Card",
+            "props": {
+              "title": {
+                "$bind": "/title"
+              }
+            },
+            "children": [
+              "name",
+              "fixed"
+            ]
+          },
+          {
+            "id": "name",
+            "type": "Text",
+            "props": {
+              "text": {
+                "$bind": "/user/name"
+              }
+            }
+          },
+          {
+            "id": "fixed",
+            "type": "Badge",
+            "props": {
+              "text": "new"
+            }
+          }
+        ],
+        "data": {
+          "title": "Profile",
+          "user": {
+            "name": "Aziza"
+          }
+        }
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "card",
+            "type": "Card",
+            "props": {
+              "title": "Profile",
+              "tone": "plain"
+            },
+            "a11y": {
+              "role": "group",
+              "label": "Profile"
+            }
+          },
+          {
+            "op": "create",
+            "id": "name",
+            "type": "Text",
+            "props": {
+              "text": "Aziza",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "Aziza"
+            }
+          },
+          {
+            "op": "create",
+            "id": "fixed",
+            "type": "Badge",
+            "props": {
+              "text": "new",
+              "tone": "neutral"
+            },
+            "a11y": {
+              "role": "status",
+              "label": "new"
+            }
+          },
+          {
+            "op": "children",
+            "id": "card",
+            "children": [
+              "name",
+              "fixed"
+            ]
+          },
+          {
+            "op": "root",
+            "id": "card"
+          }
+        ],
+        "fallback": "Profile. Aziza. (new)"
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.data",
+        "surface": "s1",
+        "seq": 2,
+        "ops": [
+          {
+            "op": "set",
+            "path": "/user/name",
+            "value": "Bobur"
+          }
+        ]
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "update",
+            "id": "name",
+            "props": {
+              "text": "Bobur",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "Bobur"
+            }
+          }
+        ],
+        "fallback": "Profile. Bobur. (new)"
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.data",
+        "surface": "s1",
+        "seq": 3,
+        "ops": [
+          {
+            "op": "merge",
+            "path": "/user",
+            "value": {
+              "age": 30
+            }
+          },
+          {
+            "op": "remove",
+            "path": "/title"
+          }
+        ]
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "update",
+            "id": "card",
+            "props": {
+              "tone": "plain"
+            },
+            "a11y": {
+              "role": "group",
+              "label": ""
+            }
+          }
+        ],
+        "fallback": "Bobur. (new)"
+      }
+    }
+  ]
+}

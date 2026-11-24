@@ -1,0 +1,130 @@
+{
+  "description": "The renderer contract example: defaults filled, creates before children, root last, fallback built from alt.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "card",
+        "components": [
+          {
+            "id": "card",
+            "type": "Card",
+            "children": [
+              "total",
+              "pay"
+            ]
+          },
+          {
+            "id": "total",
+            "type": "Stat",
+            "props": {
+              "label": "Total",
+              "value": "29 322",
+              "unit": "so'm",
+              "tone": "negative"
+            }
+          },
+          {
+            "id": "pay",
+            "type": "Button",
+            "props": {
+              "label": "Pay",
+              "tone": "primary",
+              "on_press": {
+                "action_id": "act_4kq9",
+                "confirm": true
+              }
+            }
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "card",
+            "type": "Card",
+            "props": {
+              "tone": "plain"
+            },
+            "a11y": {
+              "role": "group",
+              "label": ""
+            }
+          },
+          {
+            "op": "create",
+            "id": "total",
+            "type": "Stat",
+            "props": {
+              "label": "Total",
+              "value": "29 322",
+              "unit": "so'm",
+              "tone": "negative"
+            },
+            "a11y": {
+              "role": "status",
+              "label": "Total: 29 322 so'm"
+            }
+          },
+          {
+            "op": "create",
+            "id": "pay",
+            "type": "Button",
+            "props": {
+              "label": "Pay",
+              "tone": "primary",
+              "on_press": {
+                "action_id": "act_4kq9",
+                "confirm": true
+              },
+              "disabled": false
+            },
+            "a11y": {
+              "role": "button",
+              "label": "Pay"
+            }
+          },
+          {
+            "op": "children",
+            "id": "card",
+            "children": [
+              "total",
+              "pay"
+            ]
+          },
+          {
+            "op": "root",
+            "id": "card"
+          }
+        ],
+        "fallback": "Total: 29 322 so'm. [Pay]"
+      }
+    }
+  ]
+}

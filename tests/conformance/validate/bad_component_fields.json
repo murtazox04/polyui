@@ -1,0 +1,36 @@
+{
+  "description": "Unknown component fields, bad ids and bad voice hints are reported.",
+  "input": {
+    "root": "a b",
+    "extra": 1,
+    "components": [
+      {
+        "id": "a b",
+        "type": "Text",
+        "props": {
+          "text": "x"
+        },
+        "colour": "red",
+        "voice": {
+          "ordinal": 0,
+          "synonyms": "gas"
+        }
+      },
+      {
+        "type": "Text"
+      },
+      "not an object"
+    ]
+  },
+  "expect": {
+    "problems": [
+      "input: unknown field \"extra\". Known: surface, root, components, data.",
+      "components[0] id \"a b\": id must be 1 to 64 characters from A-Z, a-z, 0-9, _ and -.",
+      "components[0] id \"a b\": unknown field \"colour\". Known: id, type, props, children, alt, say, voice.",
+      "components[0] id \"a b\" prop \"voice\": voice.ordinal must be a whole number from 1 to 1000.",
+      "components[0] id \"a b\" prop \"voice\": voice.synonyms must be up to 12 strings of up to 80 characters.",
+      "components[1]: missing \"id\".",
+      "components[2]: expected an object with id and type."
+    ]
+  }
+}

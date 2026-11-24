@@ -1,0 +1,141 @@
+{
+  "description": "ui.confirm becomes a confirm op; confirm() returns ui.action with the nonce once.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "pay",
+        "components": [
+          {
+            "id": "pay",
+            "type": "Button",
+            "props": {
+              "label": "Pay",
+              "tone": "primary",
+              "on_press": {
+                "action_id": "act_4kq9",
+                "confirm": true
+              }
+            }
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "pay",
+            "type": "Button",
+            "props": {
+              "label": "Pay",
+              "tone": "primary",
+              "on_press": {
+                "action_id": "act_4kq9",
+                "confirm": true
+              },
+              "disabled": false
+            },
+            "a11y": {
+              "role": "button",
+              "label": "Pay"
+            }
+          },
+          {
+            "op": "root",
+            "id": "pay"
+          }
+        ],
+        "fallback": "[Pay]"
+      }
+    },
+    {
+      "fire": {
+        "surface": "s1",
+        "component": "pay",
+        "prop": "on_press"
+      },
+      "expect": {
+        "v": 1,
+        "t": "ui.action",
+        "surface": "s1",
+        "action_id": "act_4kq9",
+        "source": "tap"
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.confirm",
+        "surface": "s1",
+        "action_id": "act_4kq9",
+        "nonce": "n_77ad",
+        "title": "Pay Hududgaz",
+        "body": "29 322,19 so'm from card 4471",
+        "confirm_label": "Pay",
+        "expires_ms": 60000
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "confirm",
+            "action_id": "act_4kq9",
+            "nonce": "n_77ad",
+            "title": "Pay Hududgaz",
+            "body": "29 322,19 so'm from card 4471",
+            "confirm_label": "Pay",
+            "expires_ms": 60000
+          }
+        ]
+      }
+    },
+    {
+      "confirm": {
+        "surface": "s1",
+        "action_id": "act_4kq9",
+        "nonce": "n_77ad"
+      },
+      "expect": {
+        "v": 1,
+        "t": "ui.action",
+        "surface": "s1",
+        "action_id": "act_4kq9",
+        "confirm": "n_77ad",
+        "source": "tap"
+      }
+    },
+    {
+      "confirm": {
+        "surface": "s1",
+        "action_id": "act_4kq9",
+        "nonce": "n_77ad"
+      },
+      "expect": null
+    }
+  ]
+}

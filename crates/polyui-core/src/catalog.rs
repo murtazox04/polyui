@@ -1,0 +1,752 @@
+use serde_json::{Map, Value};
+use std::fmt;
+
+pub const CORE_JSON: &str = include_str!("../../../spec/catalogs/core.json");
+pub const CHART_JSON: &str = include_str!("../../../spec/catalogs/chart.json");
+
+pub const ROLES: [&str; 11] = [
+    "text",
+    "group",
+    "list",
+    "listitem",
+    "button",
+    "radiogroup",
+    "img",
+    "textbox",
+    "dialog",
+    "figure",
+    "status",
+];
+
+const RESERVED_IDS: [&str; 2] = ["core", "chart"];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogError {
+    pub path: String,
+    pub message: String,
+}
+
+impl CatalogError {
+    fn new(path: &str, message: impl Into<String>) -> Self {
+        Self {
+            path: path.to_string(),
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for CatalogError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.path.is_empty() {
+            write!(f, "{}", self.message)
+        } else {
+            write!(f, "{}: {}", self.path, self.message)
+        }
+    }
+}
+
+impl std::error::Error for CatalogError {}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PropKind {
+    String { min: Option<u64>, max: Option<u64> },
+    Int { min: Option<i64>, max: Option<i64> },
+    Number { min: Option<f64>, max: Option<f64> },
+    Bool,
+    Scalar,
+    Enum { values: Vec<String> },
+    Url { schemes: Vec<String> },
+    Action,
+    Path,
+    Array { of: Box<PropSpec>, max: Option<u64> },
+    Object { fields: Vec<(String, PropSpec)> },
+}
+
+impl PropKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::String { .. } => "string",
+            Self::Int { .. } => "int",
+            Self::Number { .. } => "number",
+            Self::Bool => "bool",
+            Self::Scalar => "scalar",
+            Self::Enum { .. } => "enum",
+            Self::Url { .. } => "url",
+            Self::Action => "action",
+            Self::Path => "path",
+            Self::Array { .. } => "array",
+            Self::Object { .. } => "object",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropSpec {
+    pub kind: PropKind,
+    pub required: bool,
+    pub default: Option<Value>,
+    pub bindable: bool,
+    pub description: Option<String>,
+}
+
+impl PropSpec {
+    pub fn from_value(value: &Value) -> Result<Self, CatalogError> {
+        parse_prop(value, "")
+    }
+
+    pub fn field(&self, name: &str) -> Option<&PropSpec> {
+        match &self.kind {
+            PropKind::Object { fields } => lookup(fields, name),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) fn lookup<'a>(entries: &'a [(String, PropSpec)], name: &str) -> Option<&'a PropSpec> {
+    entries
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, spec)| spec)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChildRule {
+    None,
+    Any,
+    Only(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeDef {
+    pub name: String,
+    pub qualified: String,
+    pub description: String,
+    pub role: String,
+    pub children: ChildRule,
+    pub props: Vec<(String, PropSpec)>,
+    pub alt: String,
+    pub say: String,
+}
+
+impl TypeDef {
+    pub fn prop(&self, name: &str) -> Option<&PropSpec> {
+        lookup(&self.props, name)
+    }
+
+    pub fn prop_names(&self) -> Vec<&str> {
+        self.props.iter().map(|(name, _)| name.as_str()).collect()
+    }
+
+    pub fn has_children(&self) -> bool {
+        self.children != ChildRule::None
+    }
+
+    pub fn allows_child(&self, qualified: &str) -> bool {
+        match &self.children {
+            ChildRule::None => false,
+            ChildRule::Any => true,
+            ChildRule::Only(names) => names.iter().any(|name| name == qualified),
+        }
+    }
+
+    pub fn action_props(&self) -> impl Iterator<Item = &str> {
+        self.props
+            .iter()
+            .filter(|(_, spec)| spec.kind == PropKind::Action)
+            .map(|(name, _)| name.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Catalog {
+    pub id: String,
+    pub version: u64,
+    pub types: Vec<TypeDef>,
+}
+
+impl Catalog {
+    pub fn from_json(text: &str) -> Result<Self, CatalogError> {
+        let value: Value = serde_json::from_str(text)
+            .map_err(|error| CatalogError::new("", format!("invalid JSON: {error}")))?;
+        Self::from_value(&value)
+    }
+
+    pub fn from_value(value: &Value) -> Result<Self, CatalogError> {
+        let map = as_object(value, "")?;
+        reject_unknown(map, "", &["id", "version", "types"])?;
+        let id = map
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| CatalogError::new("id", "must be a string"))?;
+        if id.is_empty()
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        {
+            return Err(CatalogError::new(
+                "id",
+                "must be lowercase letters and digits",
+            ));
+        }
+        let version = map
+            .get("version")
+            .and_then(Value::as_u64)
+            .filter(|version| *version >= 1)
+            .ok_or_else(|| CatalogError::new("version", "must be a positive integer"))?;
+        let types_map = map
+            .get("types")
+            .and_then(Value::as_object)
+            .ok_or_else(|| CatalogError::new("types", "must be an object"))?;
+        let mut types = Vec::with_capacity(types_map.len());
+        for (name, definition) in types_map {
+            types.push(parse_type(id, name, definition)?);
+        }
+        Ok(Self {
+            id: id.to_string(),
+            version,
+            types,
+        })
+    }
+
+    pub fn get(&self, name: &str) -> Option<&TypeDef> {
+        self.types.iter().find(|definition| definition.name == name)
+    }
+
+    pub fn tag(&self) -> String {
+        format!("{}@{}", self.id, self.version)
+    }
+}
+
+fn as_object<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>, CatalogError> {
+    value
+        .as_object()
+        .ok_or_else(|| CatalogError::new(path, "must be an object"))
+}
+
+fn reject_unknown(
+    map: &Map<String, Value>,
+    path: &str,
+    known: &[&str],
+) -> Result<(), CatalogError> {
+    match map.keys().find(|key| !known.contains(&key.as_str())) {
+        Some(key) => Err(CatalogError::new(path, format!("unknown field \"{key}\""))),
+        None => Ok(()),
+    }
+}
+
+fn join_path(base: &str, key: &str) -> String {
+    if base.is_empty() {
+        key.to_string()
+    } else {
+        format!("{base}.{key}")
+    }
+}
+
+pub(crate) fn is_type_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_uppercase()) && chars.all(|c| c.is_ascii_alphanumeric())
+}
+
+fn is_qualified_type_name(name: &str) -> bool {
+    match name.split_once(':') {
+        Some((namespace, local)) => {
+            !namespace.is_empty()
+                && namespace
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+                && is_type_name(local)
+        }
+        None => is_type_name(name),
+    }
+}
+
+fn is_prop_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn parse_type(catalog_id: &str, name: &str, value: &Value) -> Result<TypeDef, CatalogError> {
+    let path = format!("types.{name}");
+    if !is_type_name(name) {
+        return Err(CatalogError::new(&path, "type names must be PascalCase"));
+    }
+    let map = as_object(value, &path)?;
+    reject_unknown(
+        map,
+        &path,
+        &["description", "role", "children", "props", "alt", "say"],
+    )?;
+    let text_field = |key: &str, required: bool| -> Result<String, CatalogError> {
+        match map.get(key) {
+            Some(Value::String(text)) => Ok(text.clone()),
+            None if !required => Ok(String::new()),
+            _ => Err(CatalogError::new(
+                &join_path(&path, key),
+                "must be a string",
+            )),
+        }
+    };
+    let description = text_field("description", true)?;
+    let role = text_field("role", true)?;
+    if !ROLES.contains(&role.as_str()) {
+        return Err(CatalogError::new(
+            &join_path(&path, "role"),
+            format!("unknown role \"{role}\""),
+        ));
+    }
+    let children = match map.get("children") {
+        None | Some(Value::Bool(false)) => ChildRule::None,
+        Some(Value::Bool(true)) => ChildRule::Any,
+        Some(Value::Array(items)) => {
+            let mut names = Vec::with_capacity(items.len());
+            for item in items {
+                match item.as_str() {
+                    Some(child) if is_qualified_type_name(child) => names.push(child.to_string()),
+                    _ => {
+                        return Err(CatalogError::new(
+                            &join_path(&path, "children"),
+                            "must list type names",
+                        ));
+                    }
+                }
+            }
+            ChildRule::Only(names)
+        }
+        Some(_) => {
+            return Err(CatalogError::new(
+                &join_path(&path, "children"),
+                "must be true, false or a list of type names",
+            ));
+        }
+    };
+    let mut props = Vec::new();
+    if let Some(value) = map.get("props") {
+        let props_path = join_path(&path, "props");
+        for (prop_name, spec) in as_object(value, &props_path)? {
+            let prop_path = join_path(&props_path, prop_name);
+            if !is_prop_name(prop_name) {
+                return Err(CatalogError::new(
+                    &prop_path,
+                    "prop names must be snake_case",
+                ));
+            }
+            props.push((prop_name.clone(), parse_prop(spec, &prop_path)?));
+        }
+    }
+    let qualified = if catalog_id == "core" {
+        name.to_string()
+    } else {
+        format!("{catalog_id}:{name}")
+    };
+    Ok(TypeDef {
+        name: name.to_string(),
+        qualified,
+        description,
+        role,
+        children,
+        props,
+        alt: text_field("alt", false)?,
+        say: text_field("say", false)?,
+    })
+}
+
+fn parse_prop(value: &Value, path: &str) -> Result<PropSpec, CatalogError> {
+    let map = as_object(value, path)?;
+    let kind_name = map
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or_else(|| CatalogError::new(path, "missing \"kind\""))?;
+    let common = ["kind", "required", "default", "bindable", "description"];
+    let allowed: &[&str] = match kind_name {
+        "string" | "int" | "number" => &["min", "max"],
+        "enum" => &["values"],
+        "url" => &["schemes"],
+        "array" => &["of", "max"],
+        "object" => &["fields"],
+        "bool" | "scalar" | "action" | "path" => &[],
+        other => {
+            return Err(CatalogError::new(path, format!("unknown kind \"{other}\"")));
+        }
+    };
+    if let Some(key) = map
+        .keys()
+        .find(|key| !common.contains(&key.as_str()) && !allowed.contains(&key.as_str()))
+    {
+        return Err(CatalogError::new(path, format!("unknown field \"{key}\"")));
+    }
+    let unsigned = |key: &str| -> Result<Option<u64>, CatalogError> {
+        match map.get(key) {
+            None => Ok(None),
+            Some(value) => value
+                .as_u64()
+                .map(Some)
+                .ok_or_else(|| CatalogError::new(&join_path(path, key), "must be a whole number")),
+        }
+    };
+    let kind = match kind_name {
+        "string" => PropKind::String {
+            min: unsigned("min")?,
+            max: unsigned("max")?,
+        },
+        "int" => {
+            let signed = |key: &str| -> Result<Option<i64>, CatalogError> {
+                match map.get(key) {
+                    None => Ok(None),
+                    Some(value) => value.as_i64().map(Some).ok_or_else(|| {
+                        CatalogError::new(&join_path(path, key), "must be a whole number")
+                    }),
+                }
+            };
+            PropKind::Int {
+                min: signed("min")?,
+                max: signed("max")?,
+            }
+        }
+        "number" => {
+            let float = |key: &str| -> Result<Option<f64>, CatalogError> {
+                match map.get(key) {
+                    None => Ok(None),
+                    Some(value) => value.as_f64().map(Some).ok_or_else(|| {
+                        CatalogError::new(&join_path(path, key), "must be a number")
+                    }),
+                }
+            };
+            PropKind::Number {
+                min: float("min")?,
+                max: float("max")?,
+            }
+        }
+        "bool" => PropKind::Bool,
+        "scalar" => PropKind::Scalar,
+        "enum" => {
+            let values = string_list(map.get("values"), &join_path(path, "values"))?;
+            if values.is_empty() {
+                return Err(CatalogError::new(
+                    &join_path(path, "values"),
+                    "must not be empty",
+                ));
+            }
+            PropKind::Enum { values }
+        }
+        "url" => {
+            let schemes = match map.get("schemes") {
+                None => vec!["https".to_string()],
+                Some(value) => string_list(Some(value), &join_path(path, "schemes"))?
+                    .into_iter()
+                    .map(|scheme| scheme.to_ascii_lowercase())
+                    .collect(),
+            };
+            if let Some(blocked) = schemes
+                .iter()
+                .find(|scheme| crate::sanitize::BLOCKED_SCHEMES.contains(&scheme.as_str()))
+            {
+                return Err(CatalogError::new(
+                    &join_path(path, "schemes"),
+                    format!("scheme \"{blocked}\" is never allowed"),
+                ));
+            }
+            PropKind::Url { schemes }
+        }
+        "action" => PropKind::Action,
+        "path" => PropKind::Path,
+        "array" => {
+            let of_path = join_path(path, "of");
+            let of = map
+                .get("of")
+                .ok_or_else(|| CatalogError::new(&of_path, "is required for arrays"))?;
+            PropKind::Array {
+                of: Box::new(parse_prop(of, &of_path)?),
+                max: unsigned("max")?,
+            }
+        }
+        _ => {
+            let fields_path = join_path(path, "fields");
+            let fields_map = map
+                .get("fields")
+                .ok_or_else(|| CatalogError::new(&fields_path, "is required for objects"))
+                .and_then(|value| as_object(value, &fields_path))?;
+            let mut fields = Vec::with_capacity(fields_map.len());
+            for (field_name, spec) in fields_map {
+                let field_path = join_path(&fields_path, field_name);
+                if !is_prop_name(field_name) {
+                    return Err(CatalogError::new(
+                        &field_path,
+                        "field names must be snake_case",
+                    ));
+                }
+                fields.push((field_name.clone(), parse_prop(spec, &field_path)?));
+            }
+            PropKind::Object { fields }
+        }
+    };
+    let flag = |key: &str| -> Result<Option<bool>, CatalogError> {
+        match map.get(key) {
+            None => Ok(None),
+            Some(Value::Bool(flag)) => Ok(Some(*flag)),
+            Some(_) => Err(CatalogError::new(
+                &join_path(path, key),
+                "must be true or false",
+            )),
+        }
+    };
+    let never_bindable = matches!(kind, PropKind::Action | PropKind::Path);
+    let bindable = match flag("bindable")? {
+        Some(true) if never_bindable => {
+            return Err(CatalogError::new(
+                &join_path(path, "bindable"),
+                format!("{kind_name} props can never be bound"),
+            ));
+        }
+        Some(flag) => flag,
+        None => !never_bindable,
+    };
+    let description = match map.get("description") {
+        None => None,
+        Some(Value::String(text)) => Some(text.clone()),
+        Some(_) => {
+            return Err(CatalogError::new(
+                &join_path(path, "description"),
+                "must be a string",
+            ));
+        }
+    };
+    let spec = PropSpec {
+        kind,
+        required: flag("required")?.unwrap_or(false),
+        default: map.get("default").cloned(),
+        bindable,
+        description,
+    };
+    if let Some(default) = &spec.default
+        && let Err(message) = crate::validate::check_literal(&spec, default)
+    {
+        return Err(CatalogError::new(
+            &join_path(path, "default"),
+            format!("default does not fit the prop: {message}"),
+        ));
+    }
+    Ok(spec)
+}
+
+fn string_list(value: Option<&Value>, path: &str) -> Result<Vec<String>, CatalogError> {
+    let items = value
+        .and_then(Value::as_array)
+        .ok_or_else(|| CatalogError::new(path, "must be a list of strings"))?;
+    let mut out: Vec<String> = Vec::with_capacity(items.len());
+    for item in items {
+        let text = item
+            .as_str()
+            .ok_or_else(|| CatalogError::new(path, "must be a list of strings"))?;
+        if out.iter().any(|existing| existing == text) {
+            return Err(CatalogError::new(
+                path,
+                format!("\"{text}\" is listed twice"),
+            ));
+        }
+        out.push(text.to_string());
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CatalogSet {
+    catalogs: Vec<Catalog>,
+}
+
+impl CatalogSet {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn builtin() -> Self {
+        Self {
+            catalogs: [CORE_JSON, CHART_JSON]
+                .into_iter()
+                .filter_map(|text| Catalog::from_json(text).ok())
+                .collect(),
+        }
+    }
+
+    pub fn with(mut self, catalog: Catalog) -> Result<Self, CatalogError> {
+        if RESERVED_IDS.contains(&catalog.id.as_str()) {
+            return Err(CatalogError::new(
+                "id",
+                format!("\"{}\" is reserved", catalog.id),
+            ));
+        }
+        if self
+            .catalogs
+            .iter()
+            .any(|existing| existing.id == catalog.id)
+        {
+            return Err(CatalogError::new(
+                "id",
+                format!("catalog \"{}\" is already in the set", catalog.id),
+            ));
+        }
+        self.catalogs.push(catalog);
+        Ok(self)
+    }
+
+    pub fn catalogs(&self) -> &[Catalog] {
+        &self.catalogs
+    }
+
+    pub fn get(&self, type_name: &str) -> Option<&TypeDef> {
+        let (namespace, local) = type_name.split_once(':').unwrap_or(("core", type_name));
+        if namespace == "core" && type_name.contains(':') {
+            return None;
+        }
+        self.catalogs
+            .iter()
+            .find(|catalog| catalog.id == namespace)
+            .and_then(|catalog| catalog.get(local))
+    }
+
+    pub fn type_names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self
+            .catalogs
+            .iter()
+            .flat_map(|catalog| {
+                catalog
+                    .types
+                    .iter()
+                    .map(|definition| definition.qualified.as_str())
+            })
+            .collect();
+        names.sort_unstable();
+        names
+    }
+
+    pub fn types(&self) -> impl Iterator<Item = &TypeDef> {
+        self.catalogs
+            .iter()
+            .flat_map(|catalog| catalog.types.iter())
+    }
+
+    pub fn restrict(&self, declared: &[String]) -> Self {
+        Self {
+            catalogs: self
+                .catalogs
+                .iter()
+                .filter(|catalog| declares(declared, catalog))
+                .cloned()
+                .collect(),
+        }
+    }
+
+    pub fn negotiate(&self, declared: &[String]) -> Vec<String> {
+        self.catalogs
+            .iter()
+            .filter(|catalog| declares(declared, catalog))
+            .map(Catalog::tag)
+            .collect()
+    }
+}
+
+fn declares(declared: &[String], catalog: &Catalog) -> bool {
+    declared.iter().any(|entry| {
+        entry.split_once('@').is_some_and(|(id, major)| {
+            id == catalog.id && major.parse::<u64>().ok() == Some(catalog.version)
+        })
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn builtin_catalogs_load() {
+        let set = CatalogSet::builtin();
+        assert_eq!(set.catalogs().len(), 2);
+        assert!(set.get("Button").is_some());
+        assert!(set.get("chart:Chart").is_some());
+        assert!(set.get("Chart").is_none());
+        assert!(set.get("core:Button").is_none());
+        assert_eq!(
+            set.get("chart:Dashboard").map(|t| t.role.as_str()),
+            Some("group")
+        );
+        assert!(Catalog::from_json(CORE_JSON).is_ok());
+        assert!(Catalog::from_json(CHART_JSON).is_ok());
+    }
+
+    #[test]
+    fn restriction_uses_major_versions() {
+        let set = CatalogSet::builtin();
+        let core_only = set.restrict(&["core@1".to_string(), "chart@2".to_string()]);
+        assert!(core_only.get("Button").is_some());
+        assert!(core_only.get("chart:Chart").is_none());
+        assert_eq!(
+            set.negotiate(&["chart@1".into(), "core@1".into(), "acme@1".into()]),
+            vec!["core@1", "chart@1"]
+        );
+        assert!(
+            set.restrict(&["core".into(), "@1".into()])
+                .catalogs()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn extensions_are_namespaced() {
+        let acme = Catalog::from_value(&json!({
+            "id": "acme",
+            "version": 1,
+            "types": { "Card": { "description": "x", "role": "group", "children": ["Text", "acme:Card"], "props": {} } }
+        }))
+        .unwrap();
+        let set = CatalogSet::builtin().with(acme).unwrap();
+        let card = set.get("acme:Card").unwrap();
+        assert_eq!(card.qualified, "acme:Card");
+        assert!(card.allows_child("Text"));
+        assert!(!card.allows_child("Button"));
+        assert!(set.get("Card").is_some());
+        let again =
+            Catalog::from_value(&json!({ "id": "acme", "version": 1, "types": {} })).unwrap();
+        assert!(set.clone().with(again).is_err());
+        let reserved =
+            Catalog::from_value(&json!({ "id": "core", "version": 1, "types": {} })).unwrap();
+        assert!(set.with(reserved).is_err());
+    }
+
+    #[test]
+    fn bad_catalogs_are_rejected() {
+        let cases = [
+            json!({ "id": "Acme", "version": 1, "types": {} }),
+            json!({ "id": "acme", "version": 0, "types": {} }),
+            json!({ "id": "acme", "version": 1, "types": { "card": { "description": "", "role": "group" } } }),
+            json!({ "id": "acme", "version": 1, "types": { "Card": { "description": "", "role": "box" } } }),
+            json!({ "id": "acme", "version": 1, "types": { "Card": { "description": "", "role": "group", "props": { "x": { "kind": "strng" } } } } }),
+            json!({ "id": "acme", "version": 1, "types": { "Card": { "description": "", "role": "group", "props": { "x": { "kind": "action", "bindable": true } } } } }),
+            json!({ "id": "acme", "version": 1, "types": { "Card": { "description": "", "role": "group", "props": { "x": { "kind": "url", "schemes": ["javascript"] } } } } }),
+            json!({ "id": "acme", "version": 1, "types": { "Card": { "description": "", "role": "group", "props": { "x": { "kind": "enum", "values": ["a"], "default": "b" } } } } }),
+            json!({ "id": "acme", "version": 1, "types": { "Card": { "description": "", "role": "group", "props": { "Bad": { "kind": "bool" } } } } }),
+            json!({ "id": "acme", "version": 1, "types": { "Card": { "description": "", "role": "group", "props": { "x": { "kind": "array" } } } } }),
+        ];
+        for case in cases {
+            assert!(Catalog::from_value(&case).is_err(), "accepted {case}");
+        }
+    }
+
+    #[test]
+    fn defaults_and_bindable_flags() {
+        let set = CatalogSet::builtin();
+        let button = set.get("Button").unwrap();
+        assert_eq!(
+            button.prop("tone").unwrap().default,
+            Some(json!("secondary"))
+        );
+        assert!(button.prop("label").unwrap().bindable);
+        assert!(!button.prop("on_press").unwrap().bindable);
+        assert_eq!(button.action_props().collect::<Vec<_>>(), vec!["on_press"]);
+        let rows = set.get("chart:Chart").unwrap().prop("rows").unwrap();
+        let PropKind::Array { of, .. } = &rows.kind else {
+            panic!("rows must be an array");
+        };
+        assert_eq!(of.field("x").map(|spec| spec.kind.name()), Some("scalar"));
+    }
+}

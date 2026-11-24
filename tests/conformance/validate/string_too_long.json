@@ -1,0 +1,20 @@
+{
+  "description": "A string prop longer than the catalog max is rejected.",
+  "input": {
+    "root": "b",
+    "components": [
+      {
+        "id": "b",
+        "type": "Badge",
+        "props": {
+          "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"b\" prop \"text\": text is 33 characters, max is 32."
+    ]
+  }
+}

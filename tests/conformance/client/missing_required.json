@@ -1,0 +1,185 @@
+{
+  "description": "A required prop that resolves to nothing draws the component as muted Text with its alt; a javascript: URL in data counts as nothing.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "card",
+        "components": [
+          {
+            "id": "card",
+            "type": "Card",
+            "children": [
+              "who",
+              "pic"
+            ]
+          },
+          {
+            "id": "who",
+            "type": "Stat",
+            "props": {
+              "label": "Balance",
+              "value": {
+                "$bind": "/balance"
+              }
+            }
+          },
+          {
+            "id": "pic",
+            "type": "Image",
+            "props": {
+              "src": {
+                "$bind": "/img"
+              },
+              "alt": "Logo"
+            }
+          }
+        ],
+        "data": {
+          "img": "javascript:alert(1)"
+        }
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "card",
+            "type": "Card",
+            "props": {
+              "tone": "plain"
+            },
+            "a11y": {
+              "role": "group",
+              "label": ""
+            }
+          },
+          {
+            "op": "create",
+            "id": "who",
+            "type": "Text",
+            "props": {
+              "text": "Balance",
+              "style": "muted"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "Balance"
+            }
+          },
+          {
+            "op": "create",
+            "id": "pic",
+            "type": "Text",
+            "props": {
+              "text": "[image: Logo]",
+              "style": "muted"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "[image: Logo]"
+            }
+          },
+          {
+            "op": "children",
+            "id": "card",
+            "children": [
+              "who",
+              "pic"
+            ]
+          },
+          {
+            "op": "root",
+            "id": "card"
+          }
+        ],
+        "fallback": "Balance. [image: Logo]"
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.data",
+        "surface": "s1",
+        "seq": 2,
+        "ops": [
+          {
+            "op": "set",
+            "path": "/balance",
+            "value": "1 200"
+          },
+          {
+            "op": "set",
+            "path": "/img",
+            "value": "https://example.com/logo.png"
+          }
+        ]
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "remove",
+            "id": "who"
+          },
+          {
+            "op": "remove",
+            "id": "pic"
+          },
+          {
+            "op": "create",
+            "id": "who",
+            "type": "Stat",
+            "props": {
+              "label": "Balance",
+              "value": "1 200",
+              "tone": "neutral"
+            },
+            "a11y": {
+              "role": "status",
+              "label": "Balance: 1 200"
+            }
+          },
+          {
+            "op": "create",
+            "id": "pic",
+            "type": "Image",
+            "props": {
+              "src": "https://example.com/logo.png",
+              "alt": "Logo",
+              "aspect": "auto"
+            },
+            "a11y": {
+              "role": "img",
+              "label": "image: Logo"
+            }
+          }
+        ],
+        "fallback": "Balance: 1 200. [image: Logo]"
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "description": "chart:Dashboard holding a chart:Chart and a Stat.",
+  "input": {
+    "root": "dash",
+    "components": [
+      {
+        "id": "dash",
+        "type": "chart:Dashboard",
+        "props": {
+          "title": "Spending",
+          "columns": 2
+        },
+        "children": [
+          "by_month",
+          "total"
+        ]
+      },
+      {
+        "id": "by_month",
+        "type": "chart:Chart",
+        "props": {
+          "title": "By month",
+          "kind": "bar",
+          "x_label": "Month",
+          "y_label": "So'm",
+          "rows": [
+            {
+              "x": "Jan",
+              "y": 120
+            },
+            {
+              "x": "Feb",
+              "y": 95.5,
+              "series": "gas"
+            }
+          ]
+        }
+      },
+      {
+        "id": "total",
+        "type": "Stat",
+        "props": {
+          "label": "Total",
+          "value": "215 500",
+          "unit": "so'm"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "ok": true,
+    "summary": "surface s1 open: chart:Dashboard(2) \"Spending\" > [chart:Chart \"By month\", Stat \"Total: 215 500 so'm\"]",
+    "fallback": "Spending. By month. Total: 215 500 so'm"
+  }
+}

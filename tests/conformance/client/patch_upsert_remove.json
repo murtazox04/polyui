@@ -1,0 +1,206 @@
+{
+  "description": "ui.patch replaces whole components, removes ids from children lists and can move the root.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "card",
+        "components": [
+          {
+            "id": "card",
+            "type": "Card",
+            "props": {
+              "title": "Bills"
+            },
+            "children": [
+              "old_note",
+              "gas"
+            ]
+          },
+          {
+            "id": "old_note",
+            "type": "Text",
+            "props": {
+              "text": "Loading"
+            }
+          },
+          {
+            "id": "gas",
+            "type": "Text",
+            "props": {
+              "text": "Gas"
+            }
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "card",
+            "type": "Card",
+            "props": {
+              "title": "Bills",
+              "tone": "plain"
+            },
+            "a11y": {
+              "role": "group",
+              "label": "Bills"
+            }
+          },
+          {
+            "op": "create",
+            "id": "old_note",
+            "type": "Text",
+            "props": {
+              "text": "Loading",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "Loading"
+            }
+          },
+          {
+            "op": "create",
+            "id": "gas",
+            "type": "Text",
+            "props": {
+              "text": "Gas",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "Gas"
+            }
+          },
+          {
+            "op": "children",
+            "id": "card",
+            "children": [
+              "old_note",
+              "gas"
+            ]
+          },
+          {
+            "op": "root",
+            "id": "card"
+          }
+        ],
+        "fallback": "Bills. Loading. Gas"
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.patch",
+        "surface": "s1",
+        "seq": 2,
+        "upsert": [
+          {
+            "id": "gas",
+            "type": "Badge",
+            "props": {
+              "text": "Gas paid",
+              "tone": "success"
+            }
+          },
+          {
+            "id": "wrap",
+            "type": "Row",
+            "children": [
+              "card"
+            ]
+          }
+        ],
+        "remove": [
+          "old_note"
+        ],
+        "root": "wrap"
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "remove",
+            "id": "gas"
+          },
+          {
+            "op": "create",
+            "id": "wrap",
+            "type": "Row",
+            "props": {
+              "gap": "medium",
+              "align": "start"
+            },
+            "a11y": {
+              "role": "group",
+              "label": ""
+            }
+          },
+          {
+            "op": "create",
+            "id": "gas",
+            "type": "Badge",
+            "props": {
+              "text": "Gas paid",
+              "tone": "success"
+            },
+            "a11y": {
+              "role": "status",
+              "label": "Gas paid"
+            }
+          },
+          {
+            "op": "children",
+            "id": "wrap",
+            "children": [
+              "card"
+            ]
+          },
+          {
+            "op": "children",
+            "id": "card",
+            "children": [
+              "gas"
+            ]
+          },
+          {
+            "op": "remove",
+            "id": "old_note"
+          },
+          {
+            "op": "root",
+            "id": "wrap"
+          }
+        ],
+        "fallback": "Bills. (Gas paid)"
+      }
+    }
+  ]
+}

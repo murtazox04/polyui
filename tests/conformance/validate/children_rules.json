@@ -1,0 +1,62 @@
+{
+  "description": "Text cannot have children and Dashboard only allows some types.",
+  "actions": {
+    "pay_bill": {
+      "args": {
+        "bill": {
+          "kind": "string",
+          "required": true,
+          "max": 32
+        }
+      },
+      "requires_confirm": true
+    },
+    "pick_store": {
+      "args": {}
+    }
+  },
+  "input": {
+    "root": "d",
+    "components": [
+      {
+        "id": "d",
+        "type": "chart:Dashboard",
+        "children": [
+          "t",
+          "b"
+        ]
+      },
+      {
+        "id": "t",
+        "type": "Text",
+        "props": {
+          "text": "hi"
+        },
+        "children": [
+          "x"
+        ]
+      },
+      {
+        "id": "x",
+        "type": "Divider"
+      },
+      {
+        "id": "b",
+        "type": "Button",
+        "props": {
+          "label": "Go",
+          "on_press": {
+            "action": "pick_store"
+          }
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"d\": child \"b\" has type Button, allowed: chart:Chart, Stat, Card, Text.",
+      "components[1] id \"t\": Text cannot have children.",
+      "components[2] id \"x\": is not reachable from root \"d\"."
+    ]
+  }
+}
