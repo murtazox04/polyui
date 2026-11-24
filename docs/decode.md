@@ -63,7 +63,7 @@ The main pieces:
 
 | Item | What it does |
 |---|---|
-| `ToolGrammar::new`, `for_client`, `from_tools` | Build from a `CatalogSet` and an `ActionRegistry`, or from any tool list such as the output of `polyui tools`. `only(&["show_ui"])` narrows the list, for example when no surface is open yet. |
+| `ToolGrammar::new`, `for_client`, `from_tools` | Build from a `CatalogSet` and an `ActionRegistry`, or from any tool list such as the output of `polyui tools --profile full`. Use the full profile here: the compact profile the server sends by default describes the catalog in prose, which makes a weak grammar. `only(&["show_ui"])` narrows the list, for example when no surface is open yet. |
 | `lark()` | The grammar text. It always starts with `%llguidance`. |
 | `input_schema(name)`, `call_schema(name)` | The prepared JSON Schema of one tool's input, and the `{"name", "arguments"}` wrapper used inside the grammar. |
 | `tools_prompt()`, `json_prompt(name)` | System prompt text that lists the tools and the call format. |

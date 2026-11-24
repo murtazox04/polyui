@@ -1,6 +1,6 @@
 use polyui_core::Client;
 use polyui_core::protocol::{self, Hello};
-use polyui_core::tools::{STRICT_LIMITS, StrictCost};
+use polyui_core::tools::{STRICT_LIMITS, StrictCost, ToolProfile};
 use polyui_server::bills::{BillsHost, SERVICES, mask};
 use polyui_server::{Agent, AgentConfig, ScriptedProvider, ScriptedReply, Session, StopReason};
 use serde_json::{Value, json};
@@ -212,6 +212,78 @@ async fn invalid_call_gets_problems_and_the_retry_is_shown() {
     assert!(text.contains("\"PayButton\" is not in the catalog"));
     let second = &tool_results(&requests[2].messages)[1];
     assert_eq!(second["is_error"], Value::Null);
+}
+
+#[tokio::test]
+async fn the_tool_profile_changes_the_prompt_but_not_the_checks() {
+    let mut harness = start(ScriptedProvider::new());
+    assert_eq!(AgentConfig::default().tool_profile, ToolProfile::Compact);
+    let tools = harness.session.tools();
+    assert!(!tools[0]["input_schema"].to_string().contains("anyOf"));
+    let description = tools[0]["description"].as_str().unwrap();
+    assert!(
+        description.contains("\npay_bill(bill: b_gas_2611|"),
+        "{description}"
+    );
+    assert!(description.contains("\nchart:Chart("), "{description}");
+    harness.provider.reply(ScriptedReply::new().tool(
+        "t1",
+        "show_ui",
+        json!({ "root": "s", "components": [ { "id": "s", "type": "Stat", "props": { "label": "Gas", "value": "29 322", "tone": "loud", "color": "red" } } ] }),
+    ));
+    harness
+        .provider
+        .reply(ScriptedReply::new().tool("t2", "show_ui", bill_surface()));
+    harness.provider.reply(ScriptedReply::new().text("Done."));
+    harness.say("Show my gas bill").await;
+    let messages = harness.until_end().await;
+    assert_eq!(of_type(&messages, "ui.open").len(), 1);
+    let requests = harness.provider.requests();
+    let first = &tool_results(&requests[1].messages)[0];
+    assert_eq!(first["is_error"], true);
+    let text = first["content"].as_str().unwrap();
+    assert!(text.starts_with("2 problems, nothing was shown:"), "{text}");
+    assert!(
+        text.contains("\"tone\"") && text.contains("\"color\""),
+        "{text}"
+    );
+
+    let full = start_with(
+        ScriptedProvider::new(),
+        AgentConfig {
+            tool_profile: ToolProfile::Full,
+            ..AgentConfig::default()
+        },
+        &["core@1", "chart@1"],
+    );
+    assert!(
+        full.session.tools()[0]["input_schema"]
+            .to_string()
+            .contains("anyOf")
+    );
+
+    let host = Arc::new(BillsHost::new());
+    let subset = Agent::new(host, Arc::new(ScriptedProvider::new())).with_tool_types(vec![
+        "Card".into(),
+        "Stat".into(),
+        "Button".into(),
+    ]);
+    let (session, outgoing) = subset.open_session(
+        hello(&["core@1", "chart@1"]),
+        polyui_server::User::new(polyui_server::bills::HOUSEHOLD_USER),
+    );
+    drop(outgoing);
+    assert_eq!(
+        session.tools()[0]["input_schema"]["properties"]["components"]["items"]["properties"]["type"]
+            ["enum"],
+        json!(["Card", "Stat", "Button"])
+    );
+    assert!(
+        !session.tools()[0]["description"]
+            .as_str()
+            .unwrap()
+            .contains("chart:Chart(")
+    );
 }
 
 #[tokio::test]

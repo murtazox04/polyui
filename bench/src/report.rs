@@ -167,6 +167,7 @@ pub struct VariantReport {
 pub struct Report {
     pub date: String,
     pub model: String,
+    pub tools: ToolSetup,
     pub prices: Prices,
     pub prompts: usize,
     pub total_model_calls: usize,
@@ -175,6 +176,26 @@ pub struct Report {
     pub total_cost_usd: f64,
     pub variants: Vec<VariantReport>,
     pub runs: Vec<RunRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ToolSetup {
+    pub profile: &'static str,
+    pub catalog_subset: Vec<String>,
+}
+
+impl ToolSetup {
+    fn describe(&self) -> String {
+        if self.catalog_subset.is_empty() {
+            format!("the {} tool profile", self.profile)
+        } else {
+            format!(
+                "the {} tool profile and only {}",
+                self.profile,
+                self.catalog_subset.join(", ")
+            )
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -188,6 +209,7 @@ impl Report {
     pub fn build(
         date: String,
         model: String,
+        tools: ToolSetup,
         prices: Prices,
         prompts: usize,
         calls: Calls,
@@ -222,6 +244,7 @@ impl Report {
         Self {
             date,
             model,
+            tools,
             prices,
             prompts,
             total_model_calls: calls.model_calls,
@@ -237,8 +260,13 @@ impl Report {
         let mut out = String::new();
         let _ = write!(
             out,
-            "Run on {} with `{}`: {} prompts, {} model calls, about ${:.4}.",
-            self.date, self.model, self.prompts, self.total_model_calls, self.total_cost_usd
+            "Run on {} with `{}` and {}: {} prompts, {} model calls, about ${:.4}.",
+            self.date,
+            self.model,
+            self.tools.describe(),
+            self.prompts,
+            self.total_model_calls,
+            self.total_cost_usd
         );
         if let Some(requests) = self.provider_requests {
             let _ = write!(out, " {requests} HTTP requests including retries.");

@@ -3,9 +3,28 @@ use crate::limits::Limits;
 use crate::validate::{ActionRegistry, MAX_ID_CHARS};
 use serde_json::{Map, Value, json};
 
+mod compact;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ToolProfile {
+    #[default]
+    Full,
+    Compact,
+}
+
+impl ToolProfile {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Compact => "compact",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ToolOptions {
     pub strict: bool,
+    pub profile: ToolProfile,
 }
 
 const SHOW_UI_DESCRIPTION: &str = "Show UI to the user as a flat list of components. Children are referenced by id. A prop that is not an action or a path can also be {\"$bind\": \"/path\"} to read the data model or {\"$ref\": \"source:key\"} for a host value. Returns a summary of what is on screen, or a numbered list of problems to fix and retry.";
@@ -399,9 +418,9 @@ impl Builder<'_> {
         ))
     }
 
-    fn components_schema(&self, catalogs: &CatalogSet) -> Value {
-        let branches: Vec<Value> = catalogs
-            .types()
+    fn components_schema(&self, definitions: &[&TypeDef]) -> Value {
+        let branches: Vec<Value> = definitions
+            .iter()
             .filter_map(|definition| self.component_schema(definition))
             .collect();
         let mut schema = json!({ "type": "array", "items": { "anyOf": branches } });
@@ -464,11 +483,33 @@ fn builder(actions: &dyn ActionRegistry, options: ToolOptions) -> Builder<'_> {
     }
 }
 
+fn offered<'a>(catalogs: &'a CatalogSet, types: &[String]) -> Vec<&'a TypeDef> {
+    catalogs
+        .types()
+        .filter(|definition| types.is_empty() || types.contains(&definition.qualified))
+        .collect()
+}
+
+pub fn unknown_types(catalogs: &CatalogSet, types: &[String]) -> Vec<String> {
+    types
+        .iter()
+        .filter(|name| catalogs.get(name).is_none())
+        .cloned()
+        .collect()
+}
+
 pub fn show_ui_tool(
     catalogs: &CatalogSet,
     actions: &dyn ActionRegistry,
     options: ToolOptions,
 ) -> Value {
+    show_ui(&offered(catalogs, &[]), actions, options)
+}
+
+fn show_ui(definitions: &[&TypeDef], actions: &dyn ActionRegistry, options: ToolOptions) -> Value {
+    if options.profile == ToolProfile::Compact {
+        return compact::show_ui_tool(definitions, actions);
+    }
     let builder = builder(actions, options);
     let mut properties = Map::new();
     properties.insert(
@@ -479,7 +520,7 @@ pub fn show_ui_tool(
         "root".into(),
         json!({ "type": "string", "description": "Id of the top component." }),
     );
-    properties.insert("components".into(), builder.components_schema(catalogs));
+    properties.insert("components".into(), builder.components_schema(definitions));
     properties.insert("data".into(), builder.data_schema());
     builder.tool(
         "show_ui",
@@ -497,13 +538,24 @@ pub fn update_ui_tool(
     actions: &dyn ActionRegistry,
     options: ToolOptions,
 ) -> Value {
+    update_ui(&offered(catalogs, &[]), actions, options)
+}
+
+fn update_ui(
+    definitions: &[&TypeDef],
+    actions: &dyn ActionRegistry,
+    options: ToolOptions,
+) -> Value {
+    if options.profile == ToolProfile::Compact {
+        return compact::update_ui_tool(definitions, actions);
+    }
     let builder = builder(actions, options);
     let mut properties = Map::new();
     properties.insert(
         "surface".into(),
         builder.surface_schema("Id of the open surface."),
     );
-    properties.insert("upsert".into(), builder.components_schema(catalogs));
+    properties.insert("upsert".into(), builder.components_schema(definitions));
     properties.insert(
         "remove".into(),
         json!({ "type": "array", "items": { "type": "string" }, "description": "Ids of components to remove." }),
@@ -539,19 +591,26 @@ pub fn close_ui_tool(actions: &dyn ActionRegistry, options: ToolOptions) -> Valu
 }
 
 fn every_tool(
-    catalogs: &CatalogSet,
+    definitions: &[&TypeDef],
     actions: &dyn ActionRegistry,
     options: ToolOptions,
 ) -> Vec<Value> {
     vec![
-        show_ui_tool(catalogs, actions, options),
-        update_ui_tool(catalogs, actions, options),
+        show_ui(definitions, actions, options),
+        update_ui(definitions, actions, options),
         close_ui_tool(actions, options),
     ]
 }
 
 pub fn strict_tool_definitions(catalogs: &CatalogSet, actions: &dyn ActionRegistry) -> Value {
-    Value::Array(every_tool(catalogs, actions, ToolOptions { strict: true }))
+    Value::Array(every_tool(
+        &offered(catalogs, &[]),
+        actions,
+        ToolOptions {
+            strict: true,
+            profile: ToolProfile::Full,
+        },
+    ))
 }
 
 pub fn tool_definitions(
@@ -559,12 +618,29 @@ pub fn tool_definitions(
     actions: &dyn ActionRegistry,
     options: ToolOptions,
 ) -> Value {
-    let loose = every_tool(catalogs, actions, ToolOptions { strict: false });
+    definitions(&offered(catalogs, &[]), actions, options)
+}
+
+fn definitions(
+    definitions: &[&TypeDef],
+    actions: &dyn ActionRegistry,
+    options: ToolOptions,
+) -> Value {
+    let loose = every_tool(
+        definitions,
+        actions,
+        ToolOptions {
+            strict: false,
+            ..options
+        },
+    );
     if !options.strict {
         return Value::Array(loose);
     }
-    let strict = every_tool(catalogs, actions, options);
-    let mut order: Vec<usize> = (0..strict.len()).collect();
+    let strict = every_tool(definitions, actions, options);
+    let mut order: Vec<usize> = (0..strict.len())
+        .filter(|&index| is_strict(&strict[index]))
+        .collect();
     order.sort_by_key(|&index| {
         let cost = StrictCost::of_tool(&strict[index]);
         (cost.unions + cost.optional, index)
@@ -590,6 +666,17 @@ pub fn for_client(
     tool_definitions(&catalogs.restrict(declared), actions, options)
 }
 
+pub fn for_client_types(
+    catalogs: &CatalogSet,
+    declared: &[String],
+    types: &[String],
+    actions: &dyn ActionRegistry,
+    options: ToolOptions,
+) -> Value {
+    let restricted = catalogs.restrict(declared);
+    definitions(&offered(&restricted, types), actions, options)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -603,8 +690,14 @@ mod tests {
             json!({ "type": "object", "properties": {}, "additionalProperties": false })
         );
         let actions = ActionTable::new();
-        let loose = builder(&actions, ToolOptions { strict: false });
-        let strict = builder(&actions, ToolOptions { strict: true });
+        let loose = builder(&actions, ToolOptions::default());
+        let strict = builder(
+            &actions,
+            ToolOptions {
+                strict: true,
+                ..ToolOptions::default()
+            },
+        );
         let spec = PropSpec::from_value(&json!({ "kind": "int", "min": 1, "max": 3 })).unwrap();
         assert_eq!(
             loose.literal_schema(&spec),
@@ -616,7 +709,13 @@ mod tests {
         );
         let action = PropSpec::from_value(&json!({ "kind": "action" })).unwrap();
         assert_eq!(strict.prop_schema(&action), None);
-        let close = close_ui_tool(&actions, ToolOptions { strict: true });
+        let close = close_ui_tool(
+            &actions,
+            ToolOptions {
+                strict: true,
+                ..ToolOptions::default()
+            },
+        );
         assert_eq!(close["strict"], json!(true));
         assert_eq!(close["input_schema"]["required"], json!(["surface"]));
     }

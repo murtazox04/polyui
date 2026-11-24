@@ -499,7 +499,14 @@ impl PyValidator {
         };
         to_py(
             py,
-            &tools::tool_definitions(&catalogs, &self.settings.actions, ToolOptions { strict }),
+            &tools::tool_definitions(
+                &catalogs,
+                &self.settings.actions,
+                ToolOptions {
+                    strict,
+                    ..ToolOptions::default()
+                },
+            ),
         )
     }
 

@@ -1,7 +1,7 @@
 use crate::format::{CallFormat, Layout, lark_string, regex_literal};
 use crate::order::schema_order;
 use crate::schema::{Change, SchemaError, prepare};
-use polyui_core::tools::{self, ToolOptions};
+use polyui_core::tools::{self, ToolOptions, ToolProfile};
 use polyui_core::{ActionRegistry, CatalogSet};
 use serde_json::{Map, Value, json};
 use std::fmt;
@@ -47,6 +47,11 @@ pub enum Reply {
     Invalid(String),
 }
 
+const GRAMMAR_TOOLS: ToolOptions = ToolOptions {
+    strict: false,
+    profile: ToolProfile::Full,
+};
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolGrammar {
     tools: Vec<ToolSchema>,
@@ -57,11 +62,7 @@ pub struct ToolGrammar {
 
 impl ToolGrammar {
     pub fn new(catalogs: &CatalogSet, actions: &dyn ActionRegistry) -> Result<Self, DecodeError> {
-        Self::from_tools(&tools::tool_definitions(
-            catalogs,
-            actions,
-            ToolOptions { strict: false },
-        ))
+        Self::from_tools(&tools::tool_definitions(catalogs, actions, GRAMMAR_TOOLS))
     }
 
     pub fn for_client(
@@ -73,7 +74,7 @@ impl ToolGrammar {
             catalogs,
             declared,
             actions,
-            ToolOptions { strict: false },
+            GRAMMAR_TOOLS,
         ))
     }
 

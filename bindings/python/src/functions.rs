@@ -29,7 +29,14 @@ pub fn tool_definitions<'py>(
     let table = host::action_table(&spec).map_err(|failure| catalog_error(py, &failure))?;
     to_py(
         py,
-        &tools::tool_definitions(&catalogs.inner, &table, ToolOptions { strict }),
+        &tools::tool_definitions(
+            &catalogs.inner,
+            &table,
+            ToolOptions {
+                strict,
+                ..ToolOptions::default()
+            },
+        ),
     )
 }
 

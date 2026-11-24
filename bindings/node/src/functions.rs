@@ -56,6 +56,7 @@ pub fn tool_definitions(
         &table,
         ToolOptions {
             strict: strict.unwrap_or(false),
+            ..ToolOptions::default()
         },
     ))
 }

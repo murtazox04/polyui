@@ -1,10 +1,10 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use polyui_core::tools::{self, ToolOptions};
+use polyui_core::tools::{self, ToolOptions, ToolProfile};
 use polyui_core::{ActionTable, CatalogSet, Locale, StaticRefs, Validator};
 use polyui_server::anthropic::{self, AnthropicProvider, ApiKey};
 use polyui_server::bills::{self, BillsHost};
 use polyui_server::openai::{self, OpenAiCompatProvider};
-use polyui_server::{Agent, Host, ModelProvider, ServerConfig, User};
+use polyui_server::{Agent, AgentConfig, Host, ModelProvider, ServerConfig, User};
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -26,6 +26,21 @@ struct Cli {
 enum ProviderChoice {
     Anthropic,
     OpenaiCompat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ProfileChoice {
+    Compact,
+    Full,
+}
+
+impl From<ProfileChoice> for ToolProfile {
+    fn from(choice: ProfileChoice) -> Self {
+        match choice {
+            ProfileChoice::Compact => Self::Compact,
+            ProfileChoice::Full => Self::Full,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -96,6 +111,20 @@ enum Command {
             help = "Directory with the sandbox page, served at a local --embed-origin."
         )]
         embed_sandbox: PathBuf,
+        #[arg(
+            long,
+            value_enum,
+            default_value = "compact",
+            help = "How show_ui and update_ui describe the catalogs: compact puts one line per type in the description, full puts every prop in the input schema."
+        )]
+        tool_profile: ProfileChoice,
+        #[arg(
+            long,
+            value_name = "TYPES",
+            value_delimiter = ',',
+            help = "Offer the model only these component types, for example Text,Card,Stat,Button,chart:Chart. All types when not given. Validation still accepts every type the client draws."
+        )]
+        catalog_subset: Vec<String>,
     },
     #[command(about = "Print the show_ui, update_ui and close_ui tool definitions as JSON.")]
     Tools {
@@ -108,6 +137,20 @@ enum Command {
         catalogs: Vec<String>,
         #[arg(long, help = "Strict mode: no length or range limits in the schema.")]
         strict: bool,
+        #[arg(
+            long,
+            value_enum,
+            default_value = "compact",
+            help = "compact: one line per type in the show_ui description; full: every prop in the input schema."
+        )]
+        profile: ProfileChoice,
+        #[arg(
+            long,
+            value_name = "TYPES",
+            value_delimiter = ',',
+            help = "Offer the model only these component types, for example Text,Card,Stat,Button,chart:Chart. All types when not given. Validation still accepts every type the client draws."
+        )]
+        catalog_subset: Vec<String>,
         #[arg(
             long,
             value_enum,
@@ -189,14 +232,30 @@ fn data_tools(host: &Arc<dyn Host>) -> Vec<serde_json::Value> {
     Vec::new()
 }
 
+fn check_subset(catalogs: &CatalogSet, subset: &[String]) -> Result<(), String> {
+    let unknown = tools::unknown_types(catalogs, subset);
+    if unknown.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "--catalog-subset names types that are not in the catalogs: {}. Known: {}",
+        unknown.join(", "),
+        catalogs.type_names().join(", ")
+    ))
+}
+
 async fn print_tools(
     catalogs: &[String],
-    strict: bool,
+    subset: &[String],
+    options: ToolOptions,
     choice: HostChoice,
     data: &Path,
 ) -> ExitCode {
     let full = CatalogSet::builtin();
-    let options = ToolOptions { strict };
+    if let Err(message) = check_subset(&full, subset) {
+        eprintln!("{message}");
+        return ExitCode::FAILURE;
+    }
     let empty = ActionTable::new();
     let host = match host_for(choice, data, false).await {
         Ok(host) => host,
@@ -206,8 +265,8 @@ async fn print_tools(
         }
     };
     let mut list = match &host {
-        Some(host) => tools::for_client(&full, catalogs, host.actions(), options),
-        None => tools::for_client(&full, catalogs, &empty, options),
+        Some(host) => tools::for_client_types(&full, catalogs, subset, host.actions(), options),
+        None => tools::for_client_types(&full, catalogs, subset, &empty, options),
     };
     if let (Some(host), serde_json::Value::Array(items)) = (&host, &mut list) {
         items.extend(host.tools());
@@ -381,6 +440,8 @@ struct ServeOptions {
     data: PathBuf,
     embed_origin: Option<String>,
     embed_sandbox: PathBuf,
+    tool_profile: ToolProfile,
+    catalog_subset: Vec<String>,
 }
 
 async fn serve(options: ServeOptions) -> ExitCode {
@@ -392,6 +453,8 @@ async fn serve(options: ServeOptions) -> ExitCode {
         data,
         embed_origin,
         embed_sandbox,
+        tool_profile,
+        catalog_subset,
     } = options;
     let tariff_app = embed_origin.is_some();
     if tariff_app && !matches!(choice, HostChoice::Bills) {
@@ -418,6 +481,10 @@ async fn serve(options: ServeOptions) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if let Err(message) = check_subset(&host.catalogs(), &catalog_subset) {
+        eprintln!("{message}");
+        return ExitCode::FAILURE;
+    }
     let (provider, model) = match model_provider(model) {
         Ok(chosen) => chosen,
         Err(message) => {
@@ -425,7 +492,12 @@ async fn serve(options: ServeOptions) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let agent = Agent::new(host, provider);
+    let agent = Agent::new(host, provider)
+        .with_config(AgentConfig {
+            tool_profile,
+            ..AgentConfig::default()
+        })
+        .with_tool_types(catalog_subset);
     let app = polyui_server::router(
         agent,
         ServerConfig {
@@ -441,7 +513,10 @@ async fn serve(options: ServeOptions) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    println!("PolyUI is listening on http://{addr} (model {model})");
+    println!(
+        "PolyUI is listening on http://{addr} (model {model}, {} tools)",
+        tool_profile.name()
+    );
     println!("WebSocket: ws://{addr}/ws  SSE: http://{addr}/events  POST: http://{addr}/send");
     if let Some(dir) = &static_dir {
         println!("Static files from {}", dir.display());
@@ -489,6 +564,8 @@ async fn main() -> ExitCode {
             data,
             embed_origin,
             embed_sandbox,
+            tool_profile,
+            catalog_subset,
         } => {
             serve(ServeOptions {
                 addr,
@@ -504,15 +581,25 @@ async fn main() -> ExitCode {
                 data,
                 embed_origin,
                 embed_sandbox,
+                tool_profile: tool_profile.into(),
+                catalog_subset,
             })
             .await
         }
         Command::Tools {
             catalogs,
             strict,
+            profile,
+            catalog_subset,
             host,
             data,
-        } => print_tools(&catalogs, strict, host, &data).await,
+        } => {
+            let options = ToolOptions {
+                strict,
+                profile: profile.into(),
+            };
+            print_tools(&catalogs, &catalog_subset, options, host, &data).await
+        }
         Command::Validate { file, host, data } => validate_file(&file, host, &data).await,
     }
 }
@@ -562,6 +649,38 @@ mod tests {
             cli.map(|cli| cli.command),
             Ok(Command::Serve { provider: ProviderChoice::OpenaiCompat, ref api_key_env, .. }) if api_key_env == "MY_KEY"
         ));
+    }
+
+    #[test]
+    fn tool_profiles_and_subsets_parse() {
+        let tools = Cli::try_parse_from([
+            "polyui",
+            "tools",
+            "--profile",
+            "full",
+            "--catalog-subset",
+            "Text,chart:Chart",
+        ]);
+        assert!(matches!(
+            tools.map(|cli| cli.command),
+            Ok(Command::Tools { profile: ProfileChoice::Full, ref catalog_subset, .. }) if catalog_subset == &["Text", "chart:Chart"]
+        ));
+        let serve = Cli::try_parse_from(["polyui", "serve"]).map(|cli| cli.command);
+        assert!(matches!(
+            serve,
+            Ok(Command::Serve { tool_profile: ProfileChoice::Compact, ref catalog_subset, .. }) if catalog_subset.is_empty()
+        ));
+        assert_eq!(
+            ToolProfile::from(ProfileChoice::Compact),
+            AgentConfig::default().tool_profile
+        );
+        let builtin = CatalogSet::builtin();
+        assert!(check_subset(&builtin, &["Card".into(), "chart:Dashboard".into()]).is_ok());
+        let error = check_subset(&builtin, &["Html".into()]).unwrap_err();
+        assert!(
+            error.contains("Html") && error.contains("Known: "),
+            "{error}"
+        );
     }
 
     #[test]

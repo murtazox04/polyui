@@ -7,12 +7,13 @@ use clap::{Parser, ValueEnum};
 use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
 use meter::{Budget, Pacer};
+use polyui_core::tools::{self, ToolProfile};
 use polyui_server::anthropic::{self, AnthropicProvider, ApiKey};
 use polyui_server::bills::{BillsHost, HOUSEHOLD_USER};
 use polyui_server::openai::{self, OpenAiCompatProvider, json_schema_format};
-use polyui_server::{Agent, AgentConfig, ModelProvider, User};
+use polyui_server::{Agent, AgentConfig, Host, ModelProvider, User};
 use prompts::Prompt;
-use report::{Calls, Prices, Report};
+use report::{Calls, Prices, Report, ToolSetup};
 use run::{Bench, RunRecord, Variant};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -24,6 +25,21 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 enum ProviderChoice {
     Anthropic,
     OpenaiCompat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ProfileChoice {
+    Compact,
+    Full,
+}
+
+impl From<ProfileChoice> for ToolProfile {
+    fn from(choice: ProfileChoice) -> Self {
+        match choice {
+            ProfileChoice::Compact => Self::Compact,
+            ProfileChoice::Full => Self::Full,
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -63,6 +79,25 @@ struct Args {
         help = "Settings to run, comma separated: tools, constrained, inline"
     )]
     variant: Vec<Variant>,
+    #[arg(
+        long,
+        value_enum,
+        default_value = "compact",
+        help = "Tool profile for the prompt: compact (one line per type) or full (every prop in the schema); constrained grammars always use full"
+    )]
+    tool_profile: ProfileChoice,
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Offer the model only these component types, comma separated; all types when not given"
+    )]
+    catalog_subset: Vec<String>,
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Run only these prompt ids, comma separated, for example en-phone-form,ru-phone-form"
+    )]
+    only: Vec<String>,
     #[arg(long, help = "Run only the first N prompts")]
     limit: Option<usize>,
     #[arg(long, default_value_t = 4)]
@@ -169,11 +204,15 @@ fn compat_key(args: &Args) -> Result<Option<ApiKey>, String> {
     }
 }
 
-fn bills_tools() -> Vec<Value> {
+fn grammar_tools() -> Vec<Value> {
     let agent = Agent::new(
         Arc::new(BillsHost::new()),
         Arc::new(polyui_server::ScriptedProvider::new()),
-    );
+    )
+    .with_config(AgentConfig {
+        tool_profile: ToolProfile::Full,
+        ..AgentConfig::default()
+    });
     let (session, _) = agent.open_session(run::hello("en"), User::new(HOUSEHOLD_USER));
     session.tools().to_vec()
 }
@@ -214,7 +253,7 @@ fn providers(args: &Args) -> Result<Providers, String> {
                 compat = compat.with_temperature(temperature);
             }
             let constrained = if wants_constrained {
-                let schema = run::constrained_schema(&bills_tools())?;
+                let schema = run::constrained_schema(&grammar_tools())?;
                 eprintln!(
                     "constrained reply schema: {} bytes",
                     schema.to_string().len()
@@ -274,6 +313,12 @@ fn progress(record: &RunRecord) {
 
 async fn run(args: Args) -> Result<(), String> {
     let mut prompts = prompts::prompts();
+    if !args.only.is_empty() {
+        prompts.retain(|prompt| args.only.contains(&prompt.id));
+        if prompts.len() != args.only.len() {
+            return Err("--only names a prompt id that does not exist; see --list".into());
+        }
+    }
     if let Some(limit) = args.limit {
         prompts.truncate(limit);
     }
@@ -286,6 +331,13 @@ async fn run(args: Args) -> Result<(), String> {
         }
         return Ok(());
     }
+    let unknown = tools::unknown_types(&BillsHost::new().catalogs(), &args.catalog_subset);
+    if !unknown.is_empty() {
+        return Err(format!(
+            "--catalog-subset names types that are not in the catalogs: {}",
+            unknown.join(", ")
+        ));
+    }
     let chosen = providers(&args)?;
     let bench = Bench {
         provider: chosen.plain.clone(),
@@ -294,8 +346,10 @@ async fn run(args: Args) -> Result<(), String> {
         pacer: Pacer::new(Duration::from_millis(args.min_gap_ms)),
         config: AgentConfig {
             max_tokens: args.max_tokens,
+            tool_profile: args.tool_profile.into(),
             ..AgentConfig::default()
         },
+        tool_types: args.catalog_subset.clone(),
     };
     let mut records: Vec<RunRecord> =
         futures_util::stream::iter(jobs(&bench, &prompts, &args.variant))
@@ -329,6 +383,10 @@ async fn run(args: Args) -> Result<(), String> {
     let report = Report::build(
         date.clone(),
         chosen.model.clone(),
+        ToolSetup {
+            profile: bench.config.tool_profile.name(),
+            catalog_subset: bench.tool_types.clone(),
+        },
         prices,
         prompts.len(),
         calls,
@@ -370,6 +428,13 @@ async fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn grammars_always_use_the_full_profile() {
+        let tools = grammar_tools();
+        assert!(tools[0]["input_schema"].to_string().contains("anyOf"));
+        assert!(run::constrained_schema(&tools).is_ok());
+    }
 
     #[test]
     fn civil_dates() {

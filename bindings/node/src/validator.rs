@@ -562,6 +562,7 @@ impl Validator {
             &self.settings.actions,
             ToolOptions {
                 strict: strict.unwrap_or(false),
+                ..ToolOptions::default()
             },
         )
     }

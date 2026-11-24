@@ -1,11 +1,28 @@
 #![cfg(feature = "tools")]
 
 use polyui_core::tools::{
-    STRICT_LIMITS, StrictCost, ToolOptions, for_client, limit_strict, strict_tool_definitions,
-    tool_definitions,
+    STRICT_LIMITS, StrictCost, ToolOptions, ToolProfile, for_client, for_client_types,
+    limit_strict, strict_tool_definitions, tool_definitions, unknown_types,
 };
 use polyui_core::{ActionSpec, ActionTable, CatalogSet, StaticRefs, Validator};
 use serde_json::{Value, json};
+
+const LOOSE: ToolOptions = ToolOptions {
+    strict: false,
+    profile: ToolProfile::Full,
+};
+const STRICT: ToolOptions = ToolOptions {
+    strict: true,
+    profile: ToolProfile::Full,
+};
+const COMPACT: ToolOptions = ToolOptions {
+    strict: false,
+    profile: ToolProfile::Compact,
+};
+const COMPACT_STRICT: ToolOptions = ToolOptions {
+    strict: true,
+    profile: ToolProfile::Compact,
+};
 
 const FORBIDDEN: [&str; 13] = [
     "not",
@@ -43,10 +60,20 @@ fn actions() -> ActionTable {
 }
 
 fn visit_schema(schema: &Value, path: &str, found: &mut Vec<String>, strict: bool) {
+    visit_schema_allowing(schema, path, found, strict, &[]);
+}
+
+fn visit_schema_allowing(
+    schema: &Value,
+    path: &str,
+    found: &mut Vec<String>,
+    strict: bool,
+    open: &[&str],
+) {
     let Value::Object(map) = schema else {
         if let Value::Array(items) = schema {
             for (index, item) in items.iter().enumerate() {
-                visit_schema(item, &format!("{path}[{index}]"), found, strict);
+                visit_schema_allowing(item, &format!("{path}[{index}]"), found, strict, open);
             }
         }
         return;
@@ -59,20 +86,22 @@ fn visit_schema(schema: &Value, path: &str, found: &mut Vec<String>, strict: boo
         match key.as_str() {
             "properties" => {
                 for (name, property) in value.as_object().into_iter().flatten() {
-                    visit_schema(
+                    visit_schema_allowing(
                         property,
                         &format!("{path}.properties.{name}"),
                         found,
                         strict,
+                        open,
                     );
                 }
             }
             "enum" | "required" | "description" | "type" => {}
-            _ => visit_schema(value, &format!("{path}.{key}"), found, strict),
+            _ => visit_schema_allowing(value, &format!("{path}.{key}"), found, strict, open),
         }
     }
     if map.get("type") == Some(&json!("object"))
         && map.get("additionalProperties") != Some(&json!(false))
+        && !open.iter().any(|allowed| path.ends_with(allowed))
     {
         found.push(format!("{path} is an open object"));
     }
@@ -82,8 +111,8 @@ fn visit_schema(schema: &Value, path: &str, found: &mut Vec<String>, strict: boo
 fn schemas_use_only_supported_keywords_and_closed_objects() {
     let catalogs = CatalogSet::builtin();
     for tools in [
-        tool_definitions(&catalogs, &actions(), ToolOptions { strict: false }),
-        tool_definitions(&catalogs, &actions(), ToolOptions { strict: true }),
+        tool_definitions(&catalogs, &actions(), LOOSE),
+        tool_definitions(&catalogs, &actions(), STRICT),
         strict_tool_definitions(&catalogs, &actions()),
     ] {
         let mut found = Vec::new();
@@ -99,7 +128,7 @@ fn schemas_use_only_supported_keywords_and_closed_objects() {
         }
         assert!(found.is_empty(), "{found:#?}");
     }
-    let loose = tool_definitions(&catalogs, &actions(), ToolOptions { strict: false });
+    let loose = tool_definitions(&catalogs, &actions(), LOOSE);
     assert!(
         loose
             .as_array()
@@ -156,7 +185,7 @@ fn strict_tools_fit_the_api_limits() {
         );
     }
     assert!(optional.is_empty(), "{optional:#?}");
-    let chosen = tool_definitions(&catalogs, &actions(), ToolOptions { strict: true });
+    let chosen = tool_definitions(&catalogs, &actions(), STRICT);
     let cost = chosen
         .as_array()
         .unwrap()
@@ -273,11 +302,7 @@ fn components_are_an_any_of_with_fixed_types() {
 
 #[test]
 fn strict_mode_drops_limits_only() {
-    let loose = tool_definitions(
-        &CatalogSet::builtin(),
-        &actions(),
-        ToolOptions { strict: false },
-    );
+    let loose = tool_definitions(&CatalogSet::builtin(), &actions(), LOOSE);
     let strict = strict_tool_definitions(&CatalogSet::builtin(), &actions());
     assert!(loose.to_string().contains("maxLength"));
     assert!(!strict.to_string().contains("maxLength"));
@@ -324,5 +349,167 @@ fn only_declared_catalogs_and_reachable_actions() {
         choice["properties"]["props"]["properties"]
             .get("on_change")
             .is_none()
+    );
+}
+
+fn types_in_full(tools: &Value) -> Vec<String> {
+    tools[0]["input_schema"]["properties"]["components"]["items"]["anyOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|branch| {
+            branch["properties"]["type"]["enum"][0]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect()
+}
+
+fn types_in_compact(tool: &Value, list: &str) -> Vec<String> {
+    tool["input_schema"]["properties"][list]["items"]["properties"]["type"]["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| name.as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn compact_schemas_are_closed_except_props_and_list_the_same_types() {
+    let catalogs = CatalogSet::builtin();
+    for actions in [actions(), ActionTable::new()] {
+        let full = tool_definitions(&catalogs, &actions, LOOSE);
+        let compact = tool_definitions(&catalogs, &actions, COMPACT);
+        let mut found = Vec::new();
+        for tool in compact.as_array().unwrap() {
+            visit_schema_allowing(
+                &tool["input_schema"],
+                tool["name"].as_str().unwrap(),
+                &mut found,
+                false,
+                &["properties.props"],
+            );
+        }
+        assert!(found.is_empty(), "{found:#?}");
+        let expected = types_in_full(&full);
+        assert_eq!(types_in_compact(&compact[0], "components"), expected);
+        assert_eq!(types_in_compact(&compact[1], "upsert"), expected);
+        let description = compact[0]["description"].as_str().unwrap();
+        for name in &expected {
+            assert!(
+                description.contains(&format!("\n{name}(")),
+                "{name} has no line in {description}"
+            );
+        }
+        assert_eq!(compact[2], full[2]);
+        assert!(!description.contains('\u{2014}'));
+    }
+    let with_actions = tool_definitions(&catalogs, &actions(), COMPACT);
+    let description = with_actions[0]["description"].as_str().unwrap();
+    assert!(
+        description.contains("\npay_bill(bill<=32!)"),
+        "{description}"
+    );
+    assert!(description.contains("\npick_store()"), "{description}");
+    assert!(description.contains(
+        "Button(label<=80!, tone: primary|secondary|danger, on_press: action!, disabled: bool) - "
+    ));
+    assert!(description.contains(
+        "chart:Dashboard(title, columns: int 1..4) [children: chart:Chart|Stat|Card|Text] - "
+    ));
+    assert!(description.contains("{\"$bind\":\"/path\"}"));
+    let without = tool_definitions(&catalogs, &ActionTable::new(), COMPACT);
+    let description = without[0]["description"].as_str().unwrap();
+    assert!(!description.contains("Action:"));
+    assert!(description.contains("\nChoiceGroup(label, options: [{id<=64!, label<=80!, detail}]<=12!, multiple: bool, value: path!) - "));
+}
+
+#[test]
+fn compact_tools_are_a_fraction_of_full_and_never_strict_for_lists() {
+    let catalogs = CatalogSet::builtin();
+    let full = tool_definitions(&catalogs, &actions(), LOOSE).to_string();
+    let compact = tool_definitions(&catalogs, &actions(), COMPACT).to_string();
+    assert!(
+        compact.len() * 5 < full.len(),
+        "compact {} bytes, full {} bytes",
+        compact.len(),
+        full.len()
+    );
+    let lists = tool_definitions(&catalogs, &actions(), COMPACT);
+    for tool in &lists.as_array().unwrap()[..2] {
+        let text = tool["input_schema"].to_string();
+        for keyword in ["anyOf", "maxLength", "description"] {
+            assert!(!text.contains(keyword), "{keyword} in {text}");
+        }
+    }
+    let strict = tool_definitions(&catalogs, &actions(), COMPACT_STRICT);
+    assert_eq!(strict[0].get("strict"), None);
+    assert_eq!(strict[1].get("strict"), None);
+    assert_eq!(strict[2]["strict"], json!(true));
+    assert_eq!(
+        strict_tool_definitions(&catalogs, &actions())[0]["input_schema"]["properties"]
+            ["components"]["items"]["anyOf"]
+            .as_array()
+            .map(Vec::len),
+        Some(14)
+    );
+}
+
+#[test]
+fn compact_input_still_goes_through_the_full_validator() {
+    let catalogs = CatalogSet::builtin();
+    let actions = actions();
+    let refs = StaticRefs::new();
+    let validator = Validator::new(&catalogs, &actions, &refs);
+    let problems = validator
+        .show_ui(&json!({
+            "root": "card",
+            "components": [
+                { "id": "card", "type": "Card", "props": { "title": "Bills" }, "children": ["pay"] },
+                { "id": "pay", "type": "Button", "props": { "label": "Pay", "tone": "loud", "on_press": { "action": "pay_bill", "args": {} } } }
+            ]
+        }))
+        .unwrap_err()
+        .to_string();
+    assert!(problems.contains("tone"), "{problems}");
+    assert!(problems.contains("bill"), "{problems}");
+}
+
+#[test]
+fn a_type_subset_narrows_what_the_model_is_offered() {
+    let catalogs = CatalogSet::builtin();
+    let declared = ["core@1".to_string(), "chart@1".to_string()];
+    let subset = [
+        "Text".to_string(),
+        "Card".to_string(),
+        "chart:Chart".to_string(),
+    ];
+    for options in [COMPACT, LOOSE] {
+        let tools = for_client_types(&catalogs, &declared, &subset, &actions(), options);
+        let text = tools.to_string();
+        assert!(text.contains("chart:Chart"));
+        assert!(!text.contains("ConfirmSheet") && !text.contains("chart:Dashboard"));
+    }
+    let compact = for_client_types(&catalogs, &declared, &subset, &actions(), COMPACT);
+    assert_eq!(
+        types_in_compact(&compact[0], "components"),
+        vec!["Text", "Card", "chart:Chart"]
+    );
+    let core_only = for_client_types(&catalogs, &declared[..1], &subset, &actions(), COMPACT);
+    assert_eq!(
+        types_in_compact(&core_only[0], "components"),
+        vec!["Text", "Card"]
+    );
+    assert_eq!(
+        for_client_types(&catalogs, &declared, &[], &actions(), COMPACT),
+        for_client(&catalogs, &declared, &actions(), COMPACT)
+    );
+    assert_eq!(
+        unknown_types(
+            &catalogs,
+            &["Card".into(), "Html".into(), "chart:Dashboard".into()]
+        ),
+        vec!["Html".to_string()]
     );
 }

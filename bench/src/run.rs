@@ -4,6 +4,7 @@ use crate::report::problem_kinds;
 use clap::ValueEnum;
 use futures_util::StreamExt;
 use polyui_core::protocol::{self, Hello};
+use polyui_core::tools::ToolProfile;
 use polyui_decode::ToolGrammar;
 use polyui_server::bills::{BillsHost, HOUSEHOLD_USER};
 use polyui_server::session::UI_TOOLS;
@@ -95,9 +96,16 @@ pub struct Bench {
     pub budget: Arc<Budget>,
     pub pacer: Arc<Pacer>,
     pub config: AgentConfig,
+    pub tool_types: Vec<String>,
 }
 
 impl Bench {
+    fn agent(&self, host: Arc<BillsHost>, provider: Arc<Metered>) -> Agent {
+        Agent::new(host, provider)
+            .with_config(self.config)
+            .with_tool_types(self.tool_types.clone())
+    }
+
     fn metered(&self, provider: Arc<dyn ModelProvider>) -> Arc<Metered> {
         Arc::new(Metered::new(
             provider,
@@ -281,7 +289,7 @@ pub async fn run_tools(bench: &Bench, prompt: &Prompt) -> RunRecord {
     let metered = bench.metered(bench.provider.clone());
     let trace = metered.trace();
     let host = Arc::new(BillsHost::new());
-    let agent = Agent::new(host.clone(), metered).with_config(bench.config);
+    let agent = bench.agent(host.clone(), metered);
     let user = User::new(HOUSEHOLD_USER);
     let (session, mut outgoing) = agent.open_session(hello(prompt.locale), user);
     let started = Instant::now();
@@ -307,9 +315,16 @@ pub async fn run_tools(bench: &Bench, prompt: &Prompt) -> RunRecord {
     )
 }
 
-pub fn inline_guide(schema: &Value) -> String {
+pub fn inline_guide(show_ui: &Value, profile: ToolProfile) -> String {
+    let schema = &show_ui["input_schema"];
+    let types = match profile {
+        ToolProfile::Full => String::new(),
+        ToolProfile::Compact => {
+            format!("\n{}", show_ui["description"].as_str().unwrap_or_default())
+        }
+    };
     format!(
-        "Important: in this client show_ui, update_ui and close_ui are not tools you can call. To put UI on the screen, write the show_ui input as one JSON object inside a single fenced code block that starts with ```json and ends with ```. Text outside the block is shown to the user as plain text. The JSON object must follow this JSON Schema:\n{schema}\nIf the next message lists problems, write the whole corrected JSON again in one fenced json block. When no UI is needed, answer in plain text with no code block."
+        "Important: in this client show_ui, update_ui and close_ui are not tools you can call. To put UI on the screen, write the show_ui input as one JSON object inside a single fenced code block that starts with ```json and ends with ```. Text outside the block is shown to the user as plain text. The JSON object must follow this JSON Schema:\n{schema}{types}\nIf the next message lists problems, write the whole corrected JSON again in one fenced json block. When no UI is needed, answer in plain text with no code block."
     )
 }
 
@@ -391,16 +406,20 @@ pub async fn run_inline(bench: &Bench, prompt: &Prompt) -> RunRecord {
     let metered = bench.metered(bench.provider.clone());
     let trace = metered.trace();
     let host = Arc::new(BillsHost::new());
-    let agent = Agent::new(host.clone(), metered.clone());
+    let agent = bench.agent(host.clone(), metered.clone());
     let (session, mut outgoing) =
         agent.open_session(hello(prompt.locale), User::new(HOUSEHOLD_USER));
-    let schema = session
+    let show_ui = session
         .tools()
         .iter()
         .find(|tool| tool["name"] == "show_ui")
-        .map(|tool| tool["input_schema"].clone())
+        .cloned()
         .unwrap_or(Value::Null);
-    let system = format!("{}\n\n{}", session.system_prompt(), inline_guide(&schema));
+    let system = format!(
+        "{}\n\n{}",
+        session.system_prompt(),
+        inline_guide(&show_ui, bench.config.tool_profile)
+    );
     let tools: Vec<Value> = session
         .tools()
         .iter()
@@ -567,7 +586,7 @@ pub async fn run_constrained(bench: &Bench, prompt: &Prompt) -> RunRecord {
     let metered = bench.metered(provider);
     let trace = metered.trace();
     let host = Arc::new(BillsHost::new());
-    let agent = Agent::new(host.clone(), metered.clone());
+    let agent = bench.agent(host.clone(), metered.clone());
     let (session, mut outgoing) =
         agent.open_session(hello(prompt.locale), User::new(HOUSEHOLD_USER));
     let system = format!(
@@ -690,6 +709,7 @@ mod tests {
             budget: Budget::new(20, 0),
             pacer: Pacer::new(Duration::ZERO),
             config: AgentConfig::default(),
+            tool_types: Vec::new(),
         }
     }
 
@@ -836,6 +856,14 @@ mod tests {
                 { "type": "object", "properties": { "tool": { "const": "none" }, "text": { "type": "string" } }, "required": ["tool", "text"], "additionalProperties": false }
             ] })
         );
+    }
+
+    #[test]
+    fn the_compact_inline_guide_carries_the_type_lines() {
+        let show_ui = json!({ "description": "Types: ...\nText(text!)", "input_schema": { "type": "object" } });
+        let compact = inline_guide(&show_ui, ToolProfile::Compact);
+        assert!(compact.contains("{\"type\":\"object\"}\nTypes: ...\nText(text!)\n"));
+        assert!(!inline_guide(&show_ui, ToolProfile::Full).contains("Text(text!)"));
     }
 
     #[tokio::test]

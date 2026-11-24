@@ -12,7 +12,7 @@ use polyui_core::protocol::{
     ErrorReason, Hello, Incoming, Message, Modality, Open, Patch, Snapshot, Welcome,
 };
 use polyui_core::stream::{ShowUiStream, StreamEvent};
-use polyui_core::tools::{self, ToolOptions};
+use polyui_core::tools::{self, ToolOptions, ToolProfile};
 use polyui_core::validate::{
     self, Location, Operation, Problem, Problems, SealedAction, Surface, Update, Validator,
 };
@@ -89,6 +89,7 @@ pub struct AgentConfig {
     pub slow_consumer_after: Duration,
     pub waiting_turns: usize,
     pub turn_rate: TurnRate,
+    pub tool_profile: ToolProfile,
 }
 
 impl Default for AgentConfig {
@@ -107,6 +108,7 @@ impl Default for AgentConfig {
                 burst: 8,
                 refill: Duration::from_secs(4),
             },
+            tool_profile: ToolProfile::Compact,
         }
     }
 }
@@ -131,6 +133,7 @@ pub struct Agent {
     host: Arc<dyn Host>,
     provider: Arc<dyn ModelProvider>,
     config: AgentConfig,
+    tool_types: Arc<[String]>,
 }
 
 impl Agent {
@@ -139,12 +142,22 @@ impl Agent {
             host,
             provider,
             config: AgentConfig::default(),
+            tool_types: Arc::from([]),
         }
     }
 
     pub fn with_config(mut self, config: AgentConfig) -> Self {
         self.config = config;
         self
+    }
+
+    pub fn with_tool_types(mut self, types: Vec<String>) -> Self {
+        self.tool_types = Arc::from(types);
+        self
+    }
+
+    pub fn tool_types(&self) -> &[String] {
+        &self.tool_types
     }
 
     pub fn host(&self) -> &Arc<dyn Host> {
@@ -517,11 +530,15 @@ impl Session {
         let tag = hello.locale.clone().unwrap_or_else(|| "en".into());
         let locale = Locale::from_tag(&tag);
         let chart_options = ChartOptions::with_locale(polyui_chart::Locale::parse(&tag));
-        let mut tool_list = match tools::for_client(
+        let mut tool_list = match tools::for_client_types(
             &catalogs,
             &negotiated,
+            &agent.tool_types,
             agent.host.actions(),
-            ToolOptions { strict: true },
+            ToolOptions {
+                strict: true,
+                profile: agent.config.tool_profile,
+            },
         ) {
             Value::Array(items) => items,
             _ => Vec::new(),
