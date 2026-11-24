@@ -1,0 +1,39 @@
+{
+  "id": "chart",
+  "version": 1,
+  "types": {
+    "Chart": {
+      "description": "A bar, line, area, pie or scatter chart drawn from rows of data.",
+      "role": "figure",
+      "children": false,
+      "props": {
+        "title": { "kind": "string", "max": 120, "required": true },
+        "kind": { "kind": "enum", "values": ["bar", "line", "area", "pie", "scatter"], "required": true },
+        "x": { "kind": "string", "max": 64, "required": true, "description": "Field name used for the x axis or pie slices." },
+        "y": { "kind": "string", "max": 64, "required": true, "description": "Numeric field used for the y axis or slice size." },
+        "series": { "kind": "string", "max": 64, "description": "Optional field that splits rows into colored series." },
+        "unit": { "kind": "string", "max": 16 },
+        "rows": {
+          "kind": "array",
+          "max": 1000,
+          "required": true,
+          "of": { "kind": "object", "fields": {}, "description": "Each row is an object with the x, y and series fields." }
+        },
+        "on_select": { "kind": "action", "description": "Fires when the user taps a bar, point or slice. The selected row goes in the values." }
+      },
+      "alt": "{title}",
+      "say": "{title}"
+    },
+    "Dashboard": {
+      "description": "A grid of charts and stats.",
+      "role": "group",
+      "children": ["chart:Chart", "Stat", "Card", "Text"],
+      "props": {
+        "title": { "kind": "string", "max": 120 },
+        "columns": { "kind": "int", "min": 1, "max": 4, "default": 2 }
+      },
+      "alt": "{title}. {children}",
+      "say": "{title}. {children}"
+    }
+  }
+}

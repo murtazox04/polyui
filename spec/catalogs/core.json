@@ -1,0 +1,165 @@
+{
+  "id": "core",
+  "version": 1,
+  "types": {
+    "Text": {
+      "description": "A paragraph or heading of plain text.",
+      "role": "text",
+      "children": false,
+      "props": {
+        "text": { "kind": "string", "max": 4000, "required": true },
+        "style": { "kind": "enum", "values": ["body", "title", "subtitle", "caption", "muted"], "default": "body" }
+      },
+      "alt": "{text}",
+      "say": "{text}"
+    },
+    "Card": {
+      "description": "A box that groups related content under an optional title.",
+      "role": "group",
+      "children": true,
+      "props": {
+        "title": { "kind": "string", "max": 120 },
+        "subtitle": { "kind": "string", "max": 200 },
+        "tone": { "kind": "enum", "values": ["plain", "info", "success", "warning", "danger"], "default": "plain" }
+      },
+      "alt": "{title}. {children}",
+      "say": "{title}. {children}"
+    },
+    "Row": {
+      "description": "Places children side by side, wrapping on narrow screens.",
+      "role": "group",
+      "children": true,
+      "props": {
+        "gap": { "kind": "enum", "values": ["none", "small", "medium", "large"], "default": "medium" },
+        "align": { "kind": "enum", "values": ["start", "center", "end", "between"], "default": "start" }
+      },
+      "alt": "{children}",
+      "say": "{children}"
+    },
+    "List": {
+      "description": "A vertical list. Each child is one item.",
+      "role": "list",
+      "children": true,
+      "props": {
+        "title": { "kind": "string", "max": 120 },
+        "ordered": { "kind": "bool", "default": false }
+      },
+      "alt": "{title}: {children}",
+      "say": "{title}. {children}"
+    },
+    "Stat": {
+      "description": "One important number with a label, like a balance or a total.",
+      "role": "status",
+      "children": false,
+      "props": {
+        "label": { "kind": "string", "max": 80, "required": true },
+        "value": { "kind": "string", "max": 40, "required": true },
+        "unit": { "kind": "string", "max": 16 },
+        "tone": { "kind": "enum", "values": ["neutral", "positive", "negative", "warning"], "default": "neutral" },
+        "hint": { "kind": "string", "max": 120 }
+      },
+      "alt": "{label}: {value} {unit}",
+      "say": "{label} {value} {unit}"
+    },
+    "Badge": {
+      "description": "A short status label.",
+      "role": "status",
+      "children": false,
+      "props": {
+        "text": { "kind": "string", "max": 32, "required": true },
+        "tone": { "kind": "enum", "values": ["neutral", "info", "success", "warning", "danger"], "default": "neutral" }
+      },
+      "alt": "({text})",
+      "say": "{text}"
+    },
+    "Image": {
+      "description": "A picture from an https URL. Always give alt text.",
+      "role": "img",
+      "children": false,
+      "props": {
+        "src": { "kind": "url", "required": true },
+        "alt": { "kind": "string", "max": 200, "required": true },
+        "aspect": { "kind": "enum", "values": ["square", "wide", "tall", "auto"], "default": "auto" }
+      },
+      "alt": "[image: {alt}]",
+      "say": "{alt}"
+    },
+    "Button": {
+      "description": "A tappable button that fires an action.",
+      "role": "button",
+      "children": false,
+      "props": {
+        "label": { "kind": "string", "max": 80, "required": true },
+        "tone": { "kind": "enum", "values": ["primary", "secondary", "danger"], "default": "secondary" },
+        "on_press": { "kind": "action", "required": true },
+        "disabled": { "kind": "bool", "default": false }
+      },
+      "alt": "[{label}]",
+      "say": "{label}"
+    },
+    "ChoiceGroup": {
+      "description": "Lets the user pick one or more options. Use for short lists of offers, stores or answers.",
+      "role": "radiogroup",
+      "children": false,
+      "props": {
+        "label": { "kind": "string", "max": 120 },
+        "options": {
+          "kind": "array",
+          "max": 12,
+          "required": true,
+          "of": {
+            "kind": "object",
+            "fields": {
+              "id": { "kind": "string", "max": 64, "required": true },
+              "label": { "kind": "string", "max": 80, "required": true },
+              "detail": { "kind": "string", "max": 120 }
+            }
+          }
+        },
+        "multiple": { "kind": "bool", "default": false },
+        "value": { "kind": "path", "required": true, "description": "Where the selected option id (or ids) is stored." },
+        "on_change": { "kind": "action" }
+      },
+      "alt": "{label}: {options|list}",
+      "say": "{label}. {options|ordinals}"
+    },
+    "Input": {
+      "description": "A single text field that writes into the data model.",
+      "role": "textbox",
+      "children": false,
+      "props": {
+        "label": { "kind": "string", "max": 80, "required": true },
+        "value": { "kind": "path", "required": true },
+        "input": { "kind": "enum", "values": ["text", "number", "phone", "email", "multiline"], "default": "text" },
+        "placeholder": { "kind": "string", "max": 80 },
+        "max_length": { "kind": "int", "min": 1, "max": 4000, "default": 200 },
+        "required": { "kind": "bool", "default": false }
+      },
+      "alt": "{label}: ____",
+      "say": "{label}?"
+    },
+    "ConfirmSheet": {
+      "description": "Asks the user a yes or no question. For risky actions the host adds its own confirmation, so use this only for simple questions.",
+      "role": "dialog",
+      "children": false,
+      "props": {
+        "title": { "kind": "string", "max": 120, "required": true },
+        "body": { "kind": "string", "max": 400 },
+        "confirm_label": { "kind": "string", "max": 40, "default": "Yes" },
+        "cancel_label": { "kind": "string", "max": 40, "default": "No" },
+        "on_confirm": { "kind": "action", "required": true },
+        "on_cancel": { "kind": "action" }
+      },
+      "alt": "{title} {body} [{confirm_label}] [{cancel_label}]",
+      "say": "{title}. {body}"
+    },
+    "Divider": {
+      "description": "A thin line between sections.",
+      "role": "group",
+      "children": false,
+      "props": {},
+      "alt": "",
+      "say": ""
+    }
+  }
+}
