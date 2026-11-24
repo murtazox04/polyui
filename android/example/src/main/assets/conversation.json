@@ -1,0 +1,535 @@
+{
+ "description": "A canned turn for the Android example, the same one the iOS example plays: a bills card with a chart compiled by polyui-chart at 340 by 230, a card picker, a receipt field and a pay button that needs confirmation.",
+ "welcome": {
+  "v": 1,
+  "t": "welcome",
+  "session": "sess_ios",
+  "catalogs": [
+   "core@1",
+   "chart@1"
+  ]
+ },
+ "question": "What do we owe this month?",
+ "answer": [
+  "November's electricity bill is 184 500 so'm, ",
+  "due on the 25th. You used 205 kWh, ",
+  "about 30% more than in October. ",
+  "Tap a bar to compare months, or pay from the card."
+ ],
+ "open": {
+  "v": 1,
+  "t": "ui.open",
+  "surface": "s1",
+  "seq": 1,
+  "root": "bill",
+  "components": [
+   {
+    "id": "bill",
+    "type": "Card",
+    "props": {
+     "title": "Electricity, November",
+     "subtitle": "Hududiy elektr tarmoqlari, due 25 November"
+    },
+    "children": [
+     "figures",
+     "usage",
+     "source",
+     "receipt",
+     "pay"
+    ]
+   },
+   {
+    "id": "figures",
+    "type": "Row",
+    "props": {
+     "gap": "large"
+    },
+    "children": [
+     "due",
+     "used"
+    ]
+   },
+   {
+    "id": "due",
+    "type": "Stat",
+    "props": {
+     "label": "Due now",
+     "value": "184 500",
+     "unit": "so'm",
+     "tone": "negative",
+     "hint": "900 so'm per kWh"
+    }
+   },
+   {
+    "id": "used",
+    "type": "Stat",
+    "props": {
+     "label": "Used",
+     "value": "205",
+     "unit": "kWh",
+     "hint": "Up 30% on October"
+    }
+   },
+   {
+    "id": "usage",
+    "type": "chart:Chart",
+    "props": {
+     "title": "Electricity use, last six months",
+     "kind": "bar",
+     "x_label": "Month",
+     "y_label": "Use",
+     "unit": "kWh",
+     "rows": [
+      {
+       "x": "Jun",
+       "y": 182
+      },
+      {
+       "x": "Jul",
+       "y": 241
+      },
+      {
+       "x": "Aug",
+       "y": 236
+      },
+      {
+       "x": "Sep",
+       "y": 174
+      },
+      {
+       "x": "Oct",
+       "y": 158
+      },
+      {
+       "x": "Nov",
+       "y": 205
+      }
+     ],
+     "on_select": {
+      "action_id": "act_month",
+      "confirm": false
+     },
+     "scene": {
+      "view_box": {
+       "x": 0.0,
+       "y": 0.0,
+       "width": 340.0,
+       "height": 230.0
+      },
+      "kind": "bar",
+      "locale": "en",
+      "title": "Electricity use, last six months",
+      "description": "Electricity use, last six months. Highest is Jul at 241 kWh, lowest is Oct at 158 kWh. 6 points.",
+      "marks": [
+       {
+        "type": "text",
+        "x": 12.0,
+        "y": 27.0,
+        "text": "Electricity use, last six months",
+        "anchor": "start",
+        "role": "title",
+        "color": "text",
+        "size": 15.0
+       },
+       {
+        "type": "text",
+        "x": 12.0,
+        "y": 48.0,
+        "text": "Use, kWh",
+        "anchor": "start",
+        "role": "axis_title",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "text",
+        "x": 170.0,
+        "y": 218.0,
+        "text": "Month",
+        "anchor": "middle",
+        "role": "axis_title",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "line",
+        "x1": 37.14,
+        "y1": 184.0,
+        "x2": 328.0,
+        "y2": 184.0,
+        "stroke": "grid",
+        "stroke_width": 1.0
+       },
+       {
+        "type": "text",
+        "x": 31.14,
+        "y": 187.85,
+        "text": "0",
+        "anchor": "end",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "line",
+        "x1": 37.14,
+        "y1": 143.17,
+        "x2": 328.0,
+        "y2": 143.17,
+        "stroke": "grid",
+        "stroke_width": 1.0
+       },
+       {
+        "type": "text",
+        "x": 31.14,
+        "y": 147.02,
+        "text": "100",
+        "anchor": "end",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "line",
+        "x1": 37.14,
+        "y1": 102.33,
+        "x2": 328.0,
+        "y2": 102.33,
+        "stroke": "grid",
+        "stroke_width": 1.0
+       },
+       {
+        "type": "text",
+        "x": 31.14,
+        "y": 106.18,
+        "text": "200",
+        "anchor": "end",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "line",
+        "x1": 37.14,
+        "y1": 61.5,
+        "x2": 328.0,
+        "y2": 61.5,
+        "stroke": "grid",
+        "stroke_width": 1.0
+       },
+       {
+        "type": "text",
+        "x": 31.14,
+        "y": 65.35,
+        "text": "300",
+        "anchor": "end",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "text",
+        "x": 61.38,
+        "y": 201.0,
+        "text": "Jun",
+        "anchor": "middle",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "text",
+        "x": 109.86,
+        "y": 201.0,
+        "text": "Jul",
+        "anchor": "middle",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "text",
+        "x": 158.33,
+        "y": 201.0,
+        "text": "Aug",
+        "anchor": "middle",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "text",
+        "x": 206.81,
+        "y": 201.0,
+        "text": "Sep",
+        "anchor": "middle",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "text",
+        "x": 255.29,
+        "y": 201.0,
+        "text": "Oct",
+        "anchor": "middle",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "text",
+        "x": 303.76,
+        "y": 201.0,
+        "text": "Nov",
+        "anchor": "middle",
+        "role": "tick",
+        "color": "muted",
+        "size": 11.0
+       },
+       {
+        "type": "rect",
+        "x": 43.93,
+        "y": 109.68,
+        "width": 34.9,
+        "height": 74.32,
+        "fill": "series-1"
+       },
+       {
+        "type": "rect",
+        "x": 92.4,
+        "y": 85.59,
+        "width": 34.9,
+        "height": 98.41,
+        "fill": "series-1"
+       },
+       {
+        "type": "rect",
+        "x": 140.88,
+        "y": 87.63,
+        "width": 34.9,
+        "height": 96.37,
+        "fill": "series-1"
+       },
+       {
+        "type": "rect",
+        "x": 189.36,
+        "y": 112.95,
+        "width": 34.9,
+        "height": 71.05,
+        "fill": "series-1"
+       },
+       {
+        "type": "rect",
+        "x": 237.83,
+        "y": 119.48,
+        "width": 34.9,
+        "height": 64.52,
+        "fill": "series-1"
+       },
+       {
+        "type": "rect",
+        "x": 286.31,
+        "y": 100.29,
+        "width": 34.9,
+        "height": 83.71,
+        "fill": "series-1"
+       },
+       {
+        "type": "line",
+        "x1": 37.14,
+        "y1": 184.0,
+        "x2": 328.0,
+        "y2": 184.0,
+        "stroke": "axis",
+        "stroke_width": 1.0
+       }
+      ],
+      "legend": [],
+      "hits": [
+       {
+        "row": 0,
+        "shape": "rect",
+        "x": 37.14,
+        "y": 61.5,
+        "width": 48.48,
+        "height": 122.5,
+        "label": "Jun: 182 kWh"
+       },
+       {
+        "row": 1,
+        "shape": "rect",
+        "x": 85.62,
+        "y": 61.5,
+        "width": 48.48,
+        "height": 122.5,
+        "label": "Jul: 241 kWh"
+       },
+       {
+        "row": 2,
+        "shape": "rect",
+        "x": 134.09,
+        "y": 61.5,
+        "width": 48.48,
+        "height": 122.5,
+        "label": "Aug: 236 kWh"
+       },
+       {
+        "row": 3,
+        "shape": "rect",
+        "x": 182.57,
+        "y": 61.5,
+        "width": 48.48,
+        "height": 122.5,
+        "label": "Sep: 174 kWh"
+       },
+       {
+        "row": 4,
+        "shape": "rect",
+        "x": 231.05,
+        "y": 61.5,
+        "width": 48.48,
+        "height": 122.5,
+        "label": "Oct: 158 kWh"
+       },
+       {
+        "row": 5,
+        "shape": "rect",
+        "x": 279.52,
+        "y": 61.5,
+        "width": 48.48,
+        "height": 122.5,
+        "label": "Nov: 205 kWh"
+       }
+      ],
+      "skipped": 0
+     }
+    }
+   },
+   {
+    "id": "source",
+    "type": "ChoiceGroup",
+    "props": {
+     "label": "Pay from",
+     "value": "/payment/card",
+     "options": [
+      {
+       "id": "humo",
+       "label": "Humo card ending 4471",
+       "detail": "Family card"
+      },
+      {
+       "id": "visa",
+       "label": "Visa card ending 0918",
+       "detail": "Personal card"
+      }
+     ]
+    }
+   },
+   {
+    "id": "receipt",
+    "type": "Input",
+    "props": {
+     "label": "Send the receipt to",
+     "value": "/payment/phone",
+     "input": "phone",
+     "placeholder": "+998 90 123 45 67",
+     "max_length": 20
+    }
+   },
+   {
+    "id": "pay",
+    "type": "Button",
+    "props": {
+     "label": "Pay 184 500 so'm",
+     "tone": "primary",
+     "on_press": {
+      "action_id": "act_pay",
+      "confirm": true,
+      "with": [
+       "/payment/card",
+       "/payment/phone"
+      ]
+     }
+    }
+   }
+  ],
+  "data": {
+   "payment": {
+    "card": "humo",
+    "phone": ""
+   }
+  }
+ },
+ "months": [
+  {
+   "month": "Jun",
+   "kwh": 182
+  },
+  {
+   "month": "Jul",
+   "kwh": 241
+  },
+  {
+   "month": "Aug",
+   "kwh": 236
+  },
+  {
+   "month": "Sep",
+   "kwh": 174
+  },
+  {
+   "month": "Oct",
+   "kwh": 158
+  },
+  {
+   "month": "Nov",
+   "kwh": 205
+  }
+ ],
+ "cards": {
+  "humo": "the Humo card ending 4471",
+  "visa": "the Visa card ending 0918"
+ },
+ "paid": [
+  {
+   "v": 1,
+   "t": "ui.action.result",
+   "surface": "s1",
+   "action_id": "act_pay",
+   "status": "ok"
+  },
+  {
+   "v": 1,
+   "t": "ui.patch",
+   "surface": "s1",
+   "seq": 2,
+   "upsert": [
+    {
+     "id": "due",
+     "type": "Stat",
+     "props": {
+      "label": "Due now",
+      "value": "0",
+      "unit": "so'm",
+      "tone": "positive",
+      "hint": "Paid today"
+     }
+    },
+    {
+     "id": "pay",
+     "type": "Button",
+     "props": {
+      "label": "Paid",
+      "tone": "secondary",
+      "disabled": true,
+      "on_press": {
+       "action_id": "act_pay",
+       "confirm": true
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
