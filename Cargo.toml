@@ -6,6 +6,7 @@ members = [
     "crates/polyui-server",
     "crates/polyui-cli",
     "crates/polyui-query",
+    "crates/polyui-decode",
     "bindings/wasm",
     "bindings/python",
     "bindings/node",
@@ -17,6 +18,7 @@ default-members = [
     "crates/polyui-server",
     "crates/polyui-cli",
     "crates/polyui-query",
+    "crates/polyui-decode",
     "bindings/wasm",
     "bench",
 ]
