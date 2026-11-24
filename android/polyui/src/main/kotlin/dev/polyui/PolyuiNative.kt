@@ -78,5 +78,12 @@ internal object PolyuiNative {
     ): ByteArray?
 
     @JvmStatic
+    external fun embedPage(
+        props: ByteArray,
+        nonce: ByteArray,
+        error: Array<ByteArray?>,
+    ): ByteArray?
+
+    @JvmStatic
     external fun clientFree(client: Long)
 }

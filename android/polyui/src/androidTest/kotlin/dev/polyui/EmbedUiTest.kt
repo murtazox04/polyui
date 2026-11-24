@@ -1,0 +1,216 @@
+package dev.polyui
+
+import android.content.Context
+import android.webkit.WebView
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.util.concurrent.CopyOnWriteArrayList
+
+@RunWith(AndroidJUnit4::class)
+class EmbedUiTest {
+    @get:Rule
+    val rule = createComposeRule()
+
+    private val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+    private val sent = CopyOnWriteArrayList<JsonElement>()
+    private val opened = CopyOnWriteArrayList<String>()
+    private val session =
+        PolyuiSession(PolyuiHello(catalogs = listOf("core@1", "chart@1", "embed@1"), locale = "en")) {
+            sent += Json.parseToJsonElement(it)
+        }
+    private val opener = PolyuiLinkOpener { _, url -> opened.add(url) }
+
+    @After
+    fun closeSession() {
+        session.close()
+    }
+
+    private fun appHtml(): String {
+        val context: Context = InstrumentationRegistry.getInstrumentation().context
+        return context.assets
+            .open("embed-test-app.html")
+            .bufferedReader()
+            .use { it.readText() }
+    }
+
+    private fun open(app: JsonObject?): String =
+        buildJsonObject {
+            put("v", 1)
+            put("t", "ui.open")
+            put("surface", "s1")
+            put("seq", 1)
+            put("root", "forecast")
+            putJsonArray("components") {
+                add(
+                    buildJsonObject {
+                        put("id", "forecast")
+                        put("type", "embed:Embed")
+                        putJsonObject("props") {
+                            put("resource", RESOURCE)
+                            put("title", TITLE)
+                            put("height", "small")
+                            putJsonObject("on_message") {
+                                put("action_id", "act_ask")
+                                put("confirm", false)
+                            }
+                            if (app != null) put("app", app)
+                        }
+                    },
+                )
+            }
+        }.toString()
+
+    private fun app(): JsonObject =
+        buildJsonObject {
+            putJsonObject("resource") {
+                put("uri", RESOURCE)
+                put("mimeType", "text/html;profile=mcp-app")
+                put("text", appHtml())
+            }
+            putJsonObject("tool_input") { put("city", "Tashkent") }
+            putJsonObject("tool_result") {
+                put(
+                    "content",
+                    buildJsonArray {
+                        add(
+                            buildJsonObject {
+                                put("type", "text")
+                                put("text", "Mild days ahead.")
+                            },
+                        )
+                    },
+                )
+            }
+        }
+
+    private fun show(open: String) {
+        rule.setContent {
+            CompositionLocalProvider(
+                LocalPolyuiReducedMotion provides true,
+                LocalPolyuiLinkOpener provides opener,
+            ) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    PolyuiSurface(session, "s1")
+                }
+            }
+        }
+        rule.runOnIdle { session.receive(open) }
+        rule.waitForIdle()
+    }
+
+    private fun waitForWebText(text: String) {
+        val found = device.wait(Until.hasObject(By.text(text)), WEB_TIMEOUT)
+        val seen = device.findObjects(By.textContains("")).mapNotNull { it.text }.filter { it.isNotEmpty() }
+        assertTrue("the web content shows \"$text\", saw $seen", found)
+    }
+
+    private fun clickWebButton(text: String) {
+        val button = device.wait(Until.findObject(By.text(text)), WEB_TIMEOUT)
+        assertNotNull("the web content has a \"$text\" button", button)
+        button.click()
+    }
+
+    private fun actions(): List<JsonElement> = sent.filter { it["t"].stringValue == "ui.action" }
+
+    @Test
+    fun theToolResultRendersInsideTheWebView() {
+        show(open(app()))
+        waitForWebText("Tool input for Tashkent")
+        waitForWebText("Mild days ahead.")
+        rule.onNodeWithContentDescription(TITLE).assertIsDisplayed()
+        rule.waitUntil(WEB_TIMEOUT) {
+            val height = rule.onNodeWithContentDescription(TITLE).getBoundsInRoot().let { it.bottom - it.top }
+            height in 199.dp..201.dp
+        }
+    }
+
+    @Test
+    fun theMessageButtonSendsAUiAction() {
+        show(open(app()))
+        waitForWebText("Mild days ahead.")
+        clickWebButton("Ask the assistant")
+        rule.waitUntil(WEB_TIMEOUT) { actions().isNotEmpty() }
+        val action = actions().single()
+        assertEquals("act_ask", action["action_id"].stringValue)
+        assertEquals("Also show Samarkand.", action["detail"]["text"].stringValue)
+        waitForWebText("Message sent")
+    }
+
+    @Test
+    fun aLinkGoesThroughTheConfirmSheet() {
+        show(open(app()))
+        waitForWebText("Mild days ahead.")
+
+        clickWebButton("Open the docs")
+        rule.waitUntil(WEB_TIMEOUT) { session.surface("s1").pendingLink != null }
+        rule.onNodeWithTag(PolyuiTestTags.CONFIRM_SHEET).assertExists()
+        rule.onNodeWithText("Open this link?").assertIsDisplayed()
+        rule.onNodeWithText(LINK).assertIsDisplayed()
+        rule.onNodeWithTag(PolyuiTestTags.CANCEL_BUTTON).performClick()
+        rule.waitUntil(WEB_TIMEOUT) { session.surface("s1").pendingLink == null }
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
+        rule.onNodeWithTag(PolyuiTestTags.CONFIRM_SHEET).assertDoesNotExist()
+        waitForWebText("Link opening denied by user")
+        assertEquals(emptyList<String>(), opened.toList())
+
+        clickWebButton("Open the docs")
+        rule.waitUntil(WEB_TIMEOUT) { session.surface("s1").pendingLink != null }
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.onNodeWithTag(PolyuiTestTags.CONFIRM_BUTTON).assertIsEnabled().performClick()
+        rule.waitUntil(WEB_TIMEOUT) { session.surface("s1").pendingLink == null }
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
+        rule.onNodeWithTag(PolyuiTestTags.CONFIRM_SHEET).assertDoesNotExist()
+        waitForWebText("Link opened")
+        assertEquals(listOf(LINK), opened.toList())
+        assertEquals(emptyList<JsonElement>(), actions())
+    }
+
+    @Test
+    fun withoutAnAppTheTitleShowsAndNoWebViewIsMade() {
+        show(open(null))
+        rule.onNodeWithContentDescription(TITLE).assertIsDisplayed()
+        assertNull(device.findObject(By.clazz(WebView::class.java)))
+    }
+
+    private companion object {
+        const val RESOURCE = "ui://test/forecast"
+        const val TITLE = "Five day forecast for Tashkent"
+        const val LINK = "https://example.com/docs?from=polyui"
+        const val WEB_TIMEOUT = 20_000L
+    }
+}

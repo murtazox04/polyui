@@ -1,5 +1,8 @@
 package dev.polyui.example
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,9 +35,11 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,13 +55,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.polyui.LocalPolyuiTheme
@@ -108,6 +116,22 @@ private fun Header(
     colors: PolyuiColors,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    var askingUrl by remember { mutableStateOf(false) }
+    val connection = model.connection
+    val label =
+        when (connection) {
+            Connection.Replay -> "Replay"
+            is Connection.Connecting -> "Connecting"
+            is Connection.Live -> "Live"
+            is Connection.Offline -> "Offline"
+        }
+    val dot =
+        when (connection) {
+            Connection.Replay -> colors.accent
+            is Connection.Connecting -> colors.warning
+            is Connection.Live -> colors.positive
+            is Connection.Offline -> colors.negative
+        }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -126,11 +150,11 @@ private fun Header(
                         .background(colors.raised, CircleShape)
                         .border(1.dp, colors.border, CircleShape)
                         .clickable(role = Role.Button) { menuOpen = true }
-                        .semantics { contentDescription = "Connection: Replay" }
+                        .semantics { contentDescription = "Connection: $label. Opens the connection menu." }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                Box(Modifier.size(8.dp).background(colors.accent, CircleShape))
-                Text("Replay", color = colors.muted, fontSize = 14.sp, letterSpacing = 0.sp)
+                Box(Modifier.size(8.dp).background(dot, CircleShape))
+                Text(label, color = colors.muted, fontSize = 14.sp, letterSpacing = 0.sp)
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
@@ -140,10 +164,60 @@ private fun Header(
                         model.startReplay()
                     },
                 )
+                DropdownMenuItem(
+                    text = { Text("Connect to polyui serve") },
+                    onClick = {
+                        menuOpen = false
+                        askingUrl = true
+                    },
+                )
             }
         }
     }
+    if (askingUrl) {
+        ConnectDialog(
+            initial = (connection as? Connection.Live)?.url ?: DEFAULT_LIVE_URL,
+            onConnect = { url ->
+                askingUrl = false
+                model.startLive(url)
+            },
+            onDismiss = { askingUrl = false },
+        )
+    }
 }
+
+@Composable
+private fun ConnectDialog(
+    initial: String,
+    onConnect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val address = rememberTextFieldState(initial)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Connect to polyui serve") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("The WebSocket address of the server. From the emulator, 10.0.2.2 is your computer.")
+                OutlinedTextField(
+                    state = address,
+                    lineLimits = TextFieldLineLimits.SingleLine,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                    onKeyboardAction = { onConnect(address.text.toString().trim()) },
+                    label = { Text("Address") },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConnect(address.text.toString().trim()) }) { Text("Connect") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+const val DEFAULT_LIVE_URL = "ws://10.0.2.2:8787/ws"
 
 @Composable
 private fun Logo(colors: PolyuiColors) {
@@ -198,16 +272,59 @@ private fun Entry(
         is ChatEntry.Surface -> {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 PolyuiSurface(model.session, entry.surface)
-                TextButton(onClick = { model.speak(entry.surface) }) {
+                Row {
+                    VoiceButton(model, entry.surface, colors)
+                    TextButton(onClick = { model.speak(entry.surface) }) {
+                        Text(
+                            if (model.speaker.isSpeaking) "Stop" else "Read aloud",
+                            color = colors.muted,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+                val note = model.voiceNote
+                if (note != null && model.voiceNoteSurface == entry.surface) {
                     Text(
-                        if (model.speaker.isSpeaking) "Stop" else "Read aloud",
+                        note,
                         color = colors.muted,
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun VoiceButton(
+    model: ChatModel,
+    surface: String,
+    colors: PolyuiColors,
+) {
+    val listening = model.listeningSurface == surface
+    val state = model.listener.state
+    LaunchedEffect(state) { model.noteListening() }
+    val permission =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) model.listen(surface) else model.microphoneDenied(surface)
+        }
+    TextButton(
+        onClick = {
+            when {
+                listening -> model.stopListening()
+                model.listener.hasPermission -> model.listen(surface)
+                else -> permission.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        },
+    ) {
+        Text(
+            if (listening) "Stop listening" else "Answer by voice",
+            color = colors.muted,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

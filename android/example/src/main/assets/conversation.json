@@ -1,12 +1,13 @@
 {
- "description": "A canned turn for the Android example, the same one the iOS example plays: a bills card with a chart compiled by polyui-chart at 340 by 230, a card picker, a receipt field and a pay button that needs confirmation.",
+ "description": "A canned turn for the Android example, the same one the iOS example plays: a bills card with a chart compiled by polyui-chart at 340 by 230, a card picker, a receipt field and a pay button that needs confirmation, plus a forecast MCP App in an embed:Embed.",
  "welcome": {
   "v": 1,
   "t": "welcome",
   "session": "sess_ios",
   "catalogs": [
    "core@1",
-   "chart@1"
+   "chart@1",
+   "embed@1"
   ]
  },
  "question": "What do we owe this month?",
@@ -531,5 +532,80 @@
     }
    ]
   }
- ]
+ ],
+ "weather": {
+  "v": 1,
+  "t": "ui.open",
+  "surface": "s2",
+  "seq": 1,
+  "root": "weather",
+  "components": [
+   {
+    "id": "weather",
+    "type": "Card",
+    "props": {
+     "title": "Why the bill went up",
+     "subtitle": "Colder days are coming to Tashkent"
+    },
+    "children": [
+     "forecast"
+    ]
+   },
+   {
+    "id": "forecast",
+    "type": "embed:Embed",
+    "props": {
+     "resource": "ui://weather/forecast",
+     "title": "Five day forecast for Tashkent",
+     "height": "small",
+     "on_message": {
+      "action_id": "act_forecast",
+      "confirm": false
+     }
+    }
+   }
+  ],
+  "data": {}
+ },
+ "apps": {
+  "ui://weather/forecast": {
+   "asset": "forecast-app.html",
+   "tool_input": {
+    "city": "Tashkent"
+   },
+   "tool_result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Colder days ahead, so heating will use more power."
+     }
+    ],
+    "structuredContent": {
+     "days": [
+      {
+       "name": "Tue",
+       "high": 14
+      },
+      {
+       "name": "Wed",
+       "high": 12
+      },
+      {
+       "name": "Thu",
+       "high": 9
+      },
+      {
+       "name": "Fri",
+       "high": 7
+      },
+      {
+       "name": "Sat",
+       "high": 6
+      }
+     ]
+    }
+   }
+  }
+ },
+ "forecast_reply": "Samarkand will be a little colder: 12° on Tuesday and 4° by Saturday."
 }

@@ -115,6 +115,7 @@ dependencies {
     api(libs.compose.ui)
     api(libs.compose.foundation)
     implementation(libs.compose.material3)
+    implementation(libs.androidx.webkit)
     api(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
@@ -123,5 +124,6 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.uiautomator)
     debugImplementation(libs.compose.ui.test.manifest)
 }
