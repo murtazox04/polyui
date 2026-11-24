@@ -814,6 +814,22 @@ textarea.pui-control {
   --pui-columns: 4;
 }
 
+.pui-kpis {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: var(--pui-space-4);
+  min-width: 0;
+}
+
+.pui-kpis > .pui-stat,
+.pui-grid > .pui-chart {
+  padding: var(--pui-space-4);
+  background: var(--pui-bg-raised);
+  border: 1px solid var(--pui-border);
+  border-radius: var(--pui-radius-inner);
+}
+
 @container (max-width: 560px) {
   .pui-grid {
     grid-template-columns: minmax(0, 1fr);

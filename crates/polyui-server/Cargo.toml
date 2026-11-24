@@ -20,6 +20,11 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls", 
 futures-util = "0.3.34"
 tokio-stream = { version = "0.1.19", features = ["sync"] }
 getrandom = "0.4.3"
+polyui-query = { workspace = true, optional = true }
+
+[features]
+default = []
+query = ["dep:polyui-query"]
 
 [dev-dependencies]
 tokio-tungstenite = "0.30.0"

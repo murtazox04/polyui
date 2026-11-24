@@ -274,10 +274,22 @@ export function createChartRenderer(unavailable: () => string): ComponentRendere
   };
 }
 
+function isStat(child: Element): boolean {
+  return child.getAttribute("data-pui-type") === "Stat";
+}
+
 export const renderDashboard: ComponentRenderer = () => {
   const node = element("div", "pui-dashboard");
   const title = element("h3", "pui-dashboard-title", node);
   const grid = element("div", "pui-grid", node);
+  const strips: HTMLDivElement[] = [];
+  const strip = (index: number): HTMLDivElement => {
+    const existing = strips[index];
+    if (existing) return existing;
+    const made = element("div", "pui-kpis");
+    strips.push(made);
+    return made;
+  };
   return {
     element: node,
     update({ props }) {
@@ -288,7 +300,27 @@ export const renderDashboard: ComponentRenderer = () => {
       setAttr(grid, "data-columns", String(count));
     },
     setChildren(children) {
-      syncChildren(grid, children);
+      const cells: Element[] = [];
+      let run: Element[] = [];
+      let used = 0;
+      const close = () => {
+        if (run.length === 0) return;
+        const holder = strip(used);
+        used += 1;
+        syncChildren(holder, run);
+        cells.push(holder);
+        run = [];
+      };
+      for (const child of children) {
+        if (isStat(child)) {
+          run.push(child);
+        } else {
+          close();
+          cells.push(child);
+        }
+      }
+      close();
+      syncChildren(grid, cells);
     },
   };
 };

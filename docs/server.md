@@ -108,7 +108,9 @@ The `bills` demo host is a household in Tashkent with gas, electricity, water an
 polyui serve --env-file ~/.config/polyui/anthropic.env --static js/polyui-web/demo
 ```
 
-Options: `--addr` (default `127.0.0.1:8787`), `--model` (default `claude-haiku-5-5`), `--static DIR`. Without `--env-file` the key is read from `ANTHROPIC_API_KEY`. The key is never printed or logged.
+Options: `--addr` (default `127.0.0.1:8787`), `--model` (default `claude-haiku-5-5`), `--static DIR`, `--host bills|shop`, `--data DIR`. Without `--env-file` the key is read from `ANTHROPIC_API_KEY`. The key is never printed or logged.
+
+`--host shop` runs a small store whose dashboards are built from SQL over local CSV and Parquet files. It needs the `query` feature, which the `polyui` binary has on by default. See [dashboards.md](dashboards.md).
 
 Two more commands help when writing prompts or catalogs:
 

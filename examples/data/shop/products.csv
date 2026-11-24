@@ -1,0 +1,13 @@
+product_id,name,category,price,supplier_cost
+1,Espresso beans 1 kg,Coffee,285000,170000
+2,Filter coffee 500 g,Coffee,145000,82000
+3,Decaf beans 500 g,Coffee,160000,95000
+4,Green tea 100 g,Tea,65000,31000
+5,Black tea 250 g,Tea,72000,35000
+6,Herbal tea set,Tea,118000,60000
+7,Pour-over kettle,Equipment,540000,330000
+8,Hand grinder,Equipment,690000,410000
+9,French press,Equipment,310000,175000
+10,Paper filters x100,Accessories,38000,14000
+11,Ceramic mug,Accessories,95000,41000
+12,Travel tumbler,Accessories,175000,88000

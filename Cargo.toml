@@ -5,6 +5,7 @@ members = [
     "crates/polyui-chart",
     "crates/polyui-server",
     "crates/polyui-cli",
+    "crates/polyui-query",
     "bindings/wasm",
     "bindings/python",
     "bindings/node",
@@ -15,6 +16,7 @@ default-members = [
     "crates/polyui-chart",
     "crates/polyui-server",
     "crates/polyui-cli",
+    "crates/polyui-query",
     "bindings/wasm",
     "bench",
 ]
@@ -31,6 +33,7 @@ authors = ["Murtazo Xurramov"]
 polyui-core = { path = "crates/polyui-core", version = "0.1.0" }
 polyui-chart = { path = "crates/polyui-chart", version = "0.1.0" }
 polyui-server = { path = "crates/polyui-server", version = "0.1.0" }
+polyui-query = { path = "crates/polyui-query", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 

@@ -125,6 +125,34 @@ describe("chart:Chart", () => {
     });
     const grid = h.find('[data-pui-id="dash"] .pui-grid');
     expect(grid.getAttribute("data-columns")).toBe("4");
-    expect(grid.firstElementChild?.getAttribute("data-pui-id")).toBe("s");
+    expect(grid.firstElementChild?.className).toBe("pui-kpis");
+    expect(grid.firstElementChild?.firstElementChild?.getAttribute("data-pui-id")).toBe("s");
+  });
+
+  it("puts runs of stats in a full width strip and keeps the order", () => {
+    const h = harness();
+    h.play({
+      surface: "s1",
+      ops: [
+        { op: "create", id: "dash", type: "chart:Dashboard", props: { title: "Store", columns: 2 } },
+        { op: "create", id: "a", type: "Stat", props: { label: "Revenue", value: "305 953 000" } },
+        { op: "create", id: "b", type: "Stat", props: { label: "Orders", value: "1 133" } },
+        { op: "create", id: "t", type: "Text", props: { text: "Notes" } },
+        { op: "create", id: "c", type: "Stat", props: { label: "Refunds", value: "36" } },
+        { op: "children", id: "dash", children: ["a", "b", "t", "c"] },
+        { op: "root", id: "dash" },
+      ],
+    });
+    const grid = h.find('[data-pui-id="dash"] .pui-grid');
+    const cells = Array.from(grid.children);
+    expect(cells.map((cell) => cell.className.split(" ")[0])).toEqual(["pui-kpis", "pui-text", "pui-kpis"]);
+    expect(Array.from(cells[0]!.children).map((cell) => cell.getAttribute("data-pui-id"))).toEqual(["a", "b"]);
+    expect(cells[2]!.firstElementChild?.getAttribute("data-pui-id")).toBe("c");
+    const first = cells[0];
+    h.play({ surface: "s1", ops: [{ op: "children", id: "dash", children: ["t", "a", "b", "c"] }] });
+    const after = Array.from(grid.children);
+    expect(after.map((cell) => cell.getAttribute("data-pui-id") ?? cell.className)).toEqual(["t", "pui-kpis"]);
+    expect(after[1]).toBe(first);
+    expect(Array.from(after[1]!.children).map((cell) => cell.getAttribute("data-pui-id"))).toEqual(["a", "b", "c"]);
   });
 });

@@ -126,6 +126,11 @@ pub trait Host: Send + Sync + 'static {
     fn allow_http(&self) -> bool {
         false
     }
+
+    #[cfg(feature = "query")]
+    fn data(&self) -> Option<&polyui_query::Engine> {
+        None
+    }
 }
 
 pub fn default_fallback(locale: Locale) -> &'static str {

@@ -12,6 +12,10 @@ authors.workspace = true
 name = "polyui"
 path = "src/main.rs"
 
+[features]
+default = ["query"]
+query = ["polyui-server/query"]
+
 [dependencies]
 polyui-core = { workspace = true }
 polyui-server = { workspace = true }

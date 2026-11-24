@@ -12,7 +12,7 @@ use polyui_core::tools::{self, ToolOptions};
 use polyui_core::validate::{
     self, Location, Operation, Problem, Problems, SealedAction, Surface, Update, Validator,
 };
-use polyui_core::{CatalogSet, Limits, Locale, pointer, summary};
+use polyui_core::{CatalogSet, Limits, Locale, PropKind, RefResolver, pointer, summary};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -34,6 +34,26 @@ const GUIDE: &str = "How to answer with UI:
 - A Button fires a host action through on_press: {\"action\": \"name\", \"args\": {...}}. Actions that move money ask the user to confirm on their own, so do not build your own confirm step for them.
 - When the user uses the UI you get a message that starts with [UI event]. Answer it briefly and update the UI when the result changes what is shown.
 - Keep your text short. The UI carries the details.";
+
+struct Layered<'a> {
+    first: Option<&'a dyn RefResolver>,
+    then: &'a dyn RefResolver,
+}
+
+impl RefResolver for Layered<'_> {
+    fn source_kind(&self, source: &str) -> Option<PropKind> {
+        self.first
+            .and_then(|first| first.source_kind(source))
+            .or_else(|| self.then.source_kind(source))
+    }
+
+    fn resolve(&self, source: &str, key: &str) -> Result<Value, String> {
+        match self.first {
+            Some(first) if first.has_source(source) => first.resolve(source, key),
+            _ => self.then.resolve(source, key),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct AgentConfig {
@@ -214,6 +234,8 @@ pub struct Session {
     tools: Vec<Value>,
     ui: Mutex<UiState>,
     usage: Mutex<Usage>,
+    #[cfg(feature = "query")]
+    saved: Mutex<crate::dashboards::SavedQueries>,
     out: mpsc::UnboundedSender<Value>,
     turns: mpsc::UnboundedSender<TurnInput>,
 }
@@ -309,13 +331,22 @@ impl Session {
             _ => Vec::new(),
         };
         tool_list.extend(agent.host.tools());
+        #[cfg(feature = "query")]
+        let host_prompt = match agent.host.data() {
+            Some(_) => {
+                tool_list.extend(crate::dashboards::tools());
+                format!(
+                    "{}\n\n{}",
+                    agent.host.system_prompt(&user, locale),
+                    crate::dashboards::GUIDE
+                )
+            }
+            None => agent.host.system_prompt(&user, locale),
+        };
+        #[cfg(not(feature = "query"))]
+        let host_prompt = agent.host.system_prompt(&user, locale);
         tools::limit_strict(&mut tool_list);
-        let system = system_prompt(
-            &agent.host.system_prompt(&user, locale),
-            &hello,
-            &negotiated,
-            locale,
-        );
+        let system = system_prompt(&host_prompt, &hello, &negotiated, locale);
         let (out, outgoing) = mpsc::unbounded_channel();
         let (turns, mut incoming) = mpsc::unbounded_channel();
         let session = Arc::new(Self {
@@ -331,6 +362,8 @@ impl Session {
             tools: tool_list,
             ui: Mutex::new(UiState::default()),
             usage: Mutex::new(Usage::default()),
+            #[cfg(feature = "query")]
+            saved: Mutex::new(crate::dashboards::SavedQueries::default()),
             out,
             turns,
         });
@@ -866,6 +899,10 @@ impl Session {
     }
 
     pub async fn call_tool(&self, name: &str, input: &Value) -> ToolOutcome {
+        #[cfg(feature = "query")]
+        if let Some(outcome) = self.call_data_tool(name, input).await {
+            return outcome;
+        }
         match name {
             "show_ui" => self.show_ui(input),
             "update_ui" => self.update_ui(input),
@@ -886,7 +923,7 @@ impl Session {
         }
     }
 
-    fn validator<'a>(&'a self, refs: &'a dyn polyui_core::RefResolver) -> Validator<'a> {
+    fn validator<'a>(&'a self, refs: &'a dyn RefResolver) -> Validator<'a> {
         Validator::new(&self.catalogs, self.agent.host.actions(), refs)
             .with_limits(self.agent.config.limits)
             .allow_http(self.agent.host.allow_http())
@@ -905,8 +942,16 @@ impl Session {
     }
 
     pub fn show_ui(&self, input: &Value) -> ToolOutcome {
-        let refs = self.agent.host.refs(&self.user);
-        let validator = self.validator(refs.as_ref());
+        self.show_ui_with(input, None)
+    }
+
+    fn show_ui_with(&self, input: &Value, extra: Option<&dyn RefResolver>) -> ToolOutcome {
+        let host_refs = self.agent.host.refs(&self.user);
+        let refs = Layered {
+            first: extra,
+            then: host_refs.as_ref(),
+        };
+        let validator = self.validator(&refs);
         let mut surface = match validator.show_ui(input) {
             Ok(surface) => surface,
             Err(problems) => return ToolOutcome::error(problems.to_string()),
@@ -1022,8 +1067,16 @@ impl Session {
     }
 
     pub fn update_ui(&self, input: &Value) -> ToolOutcome {
-        let refs = self.agent.host.refs(&self.user);
-        let validator = self.validator(refs.as_ref());
+        self.update_ui_with(input, None)
+    }
+
+    fn update_ui_with(&self, input: &Value, extra: Option<&dyn RefResolver>) -> ToolOutcome {
+        let host_refs = self.agent.host.refs(&self.user);
+        let refs = Layered {
+            first: extra,
+            then: host_refs.as_ref(),
+        };
+        let validator = self.validator(&refs);
         let id = input
             .get("surface")
             .and_then(Value::as_str)
@@ -1156,6 +1209,109 @@ impl Session {
             self.send(message);
         }
         ToolOutcome::ok(summary)
+    }
+
+    #[cfg(feature = "query")]
+    fn saved(&self) -> MutexGuard<'_, crate::dashboards::SavedQueries> {
+        self.saved
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    #[cfg(feature = "query")]
+    fn check_only(
+        &self,
+        name: &str,
+        input: &Value,
+        extra: &dyn RefResolver,
+    ) -> Result<(), ToolOutcome> {
+        let host_refs = self.agent.host.refs(&self.user);
+        let refs = Layered {
+            first: Some(extra),
+            then: host_refs.as_ref(),
+        };
+        let validator = self.validator(&refs);
+        let checked = if name == "show_ui" {
+            validator.show_ui(input).map(|_| ())
+        } else {
+            let id = input
+                .get("surface")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let model = self
+                .lock()
+                .surfaces
+                .get(id)
+                .map(|state| state.model.clone());
+            match model {
+                Some(model) => validator.update_ui(input, &model).map(|_| ()),
+                None => Ok(()),
+            }
+        };
+        checked.map_err(|problems| ToolOutcome::error(problems.to_string()))
+    }
+
+    #[cfg(feature = "query")]
+    async fn call_data_tool(&self, name: &str, input: &Value) -> Option<ToolOutcome> {
+        use crate::dashboards::{self, QueryRefs};
+        let engine = self.agent.host.data()?;
+        match name {
+            dashboards::DESCRIBE_TOOL => Some(ToolOutcome::ok(engine.describe())),
+            dashboards::QUERY_TOOL => {
+                let Some(sql) = input.get("sql").and_then(Value::as_str) else {
+                    return Some(ToolOutcome::error(
+                        "run_query needs a string \"sql\" with one SELECT statement.",
+                    ));
+                };
+                let result = match engine.run(sql).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        return Some(ToolOutcome::error(format!("query failed: {error}")));
+                    }
+                };
+                let Some(id) = self.saved().save(sql) else {
+                    return Some(ToolOutcome::error(format!(
+                        "at most {} queries can be saved in one conversation.",
+                        dashboards::MAX_SAVED
+                    )));
+                };
+                Some(ToolOutcome::ok(
+                    QueryRefs::new(&self.catalogs).summary(&id, &result),
+                ))
+            }
+            "show_ui" | "update_ui" => {
+                let (list, operation) = if name == "show_ui" {
+                    ("components", Operation::Show)
+                } else {
+                    ("upsert", Operation::Update)
+                };
+                let uses = dashboards::query_refs(input, list);
+                let declared = QueryRefs::new(&self.catalogs);
+                if !uses.is_empty()
+                    && let Err(outcome) = self.check_only(name, input, &declared)
+                {
+                    return Some(outcome);
+                }
+                let saved = self.saved().entries().clone();
+                let refs = match declared
+                    .fill(engine, &saved, &uses, self.chart_options.locale)
+                    .await
+                {
+                    Ok(refs) => refs,
+                    Err(items) => {
+                        return Some(ToolOutcome::error(
+                            Problems { operation, items }.to_string(),
+                        ));
+                    }
+                };
+                Some(if name == "show_ui" {
+                    self.show_ui_with(input, Some(&refs))
+                } else {
+                    self.update_ui_with(input, Some(&refs))
+                })
+            }
+            _ => None,
+        }
     }
 
     pub fn close_ui(&self, input: &Value) -> ToolOutcome {
