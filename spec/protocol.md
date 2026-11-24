@@ -265,6 +265,10 @@ The model calls tools. The server turns valid calls into the messages above.
 
 The server generates the JSON Schema for these tools from the catalogs the client declared, so the model only sees types the client can draw. The schemas avoid JSON Schema features that constrained decoders do not support (`not`, `if/then/else`, `uniqueItems`, `contains`, `propertyNames`).
 
+In tool input, `data` is not a free-form object. It is a list of `{ "path": "/bills/0/amount", "value": ... }` entries where `value` is a string, number or bool. The server builds the data model from them. This keeps every object in the schema closed (`additionalProperties: false`), which strict tool use and grammar-based decoders need, and it is easier for small models than writing nested JSON.
+
+There is a strict mode for providers that enforce the schema while decoding (for example `strict: true` on Anthropic tools). In strict mode the schema leaves out length and range limits, because those providers do not support them. The server still checks every limit after the call.
+
 ### Tool results
 
 On success the tool result is a short summary of what is now on screen, for example:

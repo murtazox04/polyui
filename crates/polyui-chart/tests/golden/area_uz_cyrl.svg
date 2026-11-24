@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" font-family="system-ui, -apple-system, &#39;Segoe UI&#39;, Roboto, sans-serif">
+<title>Коммунал тўловлар</title>
+<desc>Коммунал тўловлар. Энг юқори қиймат: Июн (Газ), 2,8 миллион. Энг паст қиймат: Янв (Электр), 800 минг. Жами 12 та нуқта, 2 та серия.</desc>
+<rect x="0" y="0" width="640" height="360" fill="#ffffff"/>
+<text x="12" y="27" font-size="15" fill="#111827" text-anchor="start" font-weight="600">Коммунал тўловлар</text>
+<rect x="12" y="39" width="10" height="10" fill="#4e79a7"/>
+<text x="26" y="48" font-size="11" fill="#111827" text-anchor="start">Газ</text>
+<rect x="60.9" y="39" width="10" height="10" fill="#f28e2b"/>
+<text x="74.9" y="48" font-size="11" fill="#111827" text-anchor="start">Электр</text>
+<line x1="61.34" y1="331" x2="628" y2="331" stroke="#e5e7eb" stroke-width="1"/>
+<text x="55.34" y="334.85" font-size="11" fill="#6b7280" text-anchor="end">0</text>
+<line x1="61.34" y1="286.58" x2="628" y2="286.58" stroke="#e5e7eb" stroke-width="1"/>
+<text x="55.34" y="290.43" font-size="11" fill="#6b7280" text-anchor="end">0,5 млн</text>
+<line x1="61.34" y1="242.17" x2="628" y2="242.17" stroke="#e5e7eb" stroke-width="1"/>
+<text x="55.34" y="246.02" font-size="11" fill="#6b7280" text-anchor="end">1 млн</text>
+<line x1="61.34" y1="197.75" x2="628" y2="197.75" stroke="#e5e7eb" stroke-width="1"/>
+<text x="55.34" y="201.6" font-size="11" fill="#6b7280" text-anchor="end">1,5 млн</text>
+<line x1="61.34" y1="153.33" x2="628" y2="153.33" stroke="#e5e7eb" stroke-width="1"/>
+<text x="55.34" y="157.18" font-size="11" fill="#6b7280" text-anchor="end">2 млн</text>
+<line x1="61.34" y1="108.92" x2="628" y2="108.92" stroke="#e5e7eb" stroke-width="1"/>
+<text x="55.34" y="112.77" font-size="11" fill="#6b7280" text-anchor="end">2,5 млн</text>
+<line x1="61.34" y1="64.5" x2="628" y2="64.5" stroke="#e5e7eb" stroke-width="1"/>
+<text x="55.34" y="68.35" font-size="11" fill="#6b7280" text-anchor="end">3 млн</text>
+<text x="108.56" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Янв</text>
+<text x="203.01" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Фев</text>
+<text x="297.45" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Мар</text>
+<text x="391.89" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Апр</text>
+<text x="486.34" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Май</text>
+<text x="580.78" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Июн</text>
+<path d="M108.56 331 L108.56 224.4 L203.01 196.86 L297.45 169.32 L391.89 141.79 L486.34 114.25 L580.78 86.71 L580.78 331 Z" fill="#4e79a7" fill-opacity="0.18"/>
+<path d="M108.56 224.4 L203.01 196.86 L297.45 169.32 L391.89 141.79 L486.34 114.25 L580.78 86.71" fill="none" stroke="#4e79a7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="108.56" cy="224.4" r="3" fill="#4e79a7"/>
+<circle cx="203.01" cy="196.86" r="3" fill="#4e79a7"/>
+<circle cx="297.45" cy="169.32" r="3" fill="#4e79a7"/>
+<circle cx="391.89" cy="141.79" r="3" fill="#4e79a7"/>
+<circle cx="486.34" cy="114.25" r="3" fill="#4e79a7"/>
+<circle cx="580.78" cy="86.71" r="3" fill="#4e79a7"/>
+<path d="M108.56 331 L108.56 259.93 L203.01 249.27 L297.45 238.61 L391.89 227.95 L486.34 217.29 L580.78 206.63 L580.78 331 Z" fill="#f28e2b" fill-opacity="0.18"/>
+<path d="M108.56 259.93 L203.01 249.27 L297.45 238.61 L391.89 227.95 L486.34 217.29 L580.78 206.63" fill="none" stroke="#f28e2b" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="108.56" cy="259.93" r="3" fill="#f28e2b"/>
+<circle cx="203.01" cy="249.27" r="3" fill="#f28e2b"/>
+<circle cx="297.45" cy="238.61" r="3" fill="#f28e2b"/>
+<circle cx="391.89" cy="227.95" r="3" fill="#f28e2b"/>
+<circle cx="486.34" cy="217.29" r="3" fill="#f28e2b"/>
+<circle cx="580.78" cy="206.63" r="3" fill="#f28e2b"/>
+<line x1="61.34" y1="331" x2="628" y2="331" stroke="#6b7280" stroke-width="1"/>
+</svg>

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" font-family="system-ui, -apple-system, &#39;Segoe UI&#39;, Roboto, sans-serif">
+<title>Gaz uchun to&#39;lovlar</title>
+<desc>Gaz uchun to&#39;lovlar. Highest is Fev at 205.5 thousand so&#39;m, lowest is Iyun at 29.3 thousand so&#39;m. 6 points.</desc>
+<rect x="0" y="0" width="640" height="360" fill="#111827"/>
+<text x="12" y="27" font-size="15" fill="#f9fafb" text-anchor="start" font-weight="600">Gaz uchun to&#39;lovlar</text>
+<text x="12" y="48" font-size="11" fill="#9ca3af" text-anchor="start">Summa, so&#39;m</text>
+<text x="320" y="348" font-size="11" fill="#9ca3af" text-anchor="middle">Oy</text>
+<line x1="43.74" y1="314" x2="628" y2="314" stroke="#374151" stroke-width="1"/>
+<text x="37.74" y="317.85" font-size="11" fill="#9ca3af" text-anchor="end">0</text>
+<line x1="43.74" y1="263.5" x2="628" y2="263.5" stroke="#374151" stroke-width="1"/>
+<text x="37.74" y="267.35" font-size="11" fill="#9ca3af" text-anchor="end">50k</text>
+<line x1="43.74" y1="213" x2="628" y2="213" stroke="#374151" stroke-width="1"/>
+<text x="37.74" y="216.85" font-size="11" fill="#9ca3af" text-anchor="end">100k</text>
+<line x1="43.74" y1="162.5" x2="628" y2="162.5" stroke="#374151" stroke-width="1"/>
+<text x="37.74" y="166.35" font-size="11" fill="#9ca3af" text-anchor="end">150k</text>
+<line x1="43.74" y1="112" x2="628" y2="112" stroke="#374151" stroke-width="1"/>
+<text x="37.74" y="115.85" font-size="11" fill="#9ca3af" text-anchor="end">200k</text>
+<line x1="43.74" y1="61.5" x2="628" y2="61.5" stroke="#374151" stroke-width="1"/>
+<text x="37.74" y="65.35" font-size="11" fill="#9ca3af" text-anchor="end">250k</text>
+<text x="92.43" y="331" font-size="11" fill="#9ca3af" text-anchor="middle">Yan</text>
+<text x="189.81" y="331" font-size="11" fill="#9ca3af" text-anchor="middle">Fev</text>
+<text x="287.18" y="331" font-size="11" fill="#9ca3af" text-anchor="middle">Mar</text>
+<text x="384.56" y="331" font-size="11" fill="#9ca3af" text-anchor="middle">Apr</text>
+<text x="481.94" y="331" font-size="11" fill="#9ca3af" text-anchor="middle">May</text>
+<text x="579.31" y="331" font-size="11" fill="#9ca3af" text-anchor="middle">Iyun</text>
+<rect x="57.37" y="130.18" width="70.11" height="183.82" fill="#7aa6d6"/>
+<rect x="154.75" y="106.45" width="70.11" height="207.55" fill="#7aa6d6"/>
+<rect x="252.13" y="141.09" width="70.11" height="172.91" fill="#7aa6d6"/>
+<rect x="349.5" y="192.8" width="70.11" height="121.2" fill="#7aa6d6"/>
+<rect x="446.88" y="249.06" width="70.11" height="64.94" fill="#7aa6d6"/>
+<rect x="544.26" y="284.38" width="70.11" height="29.62" fill="#7aa6d6"/>
+<line x1="43.74" y1="314" x2="628" y2="314" stroke="#9ca3af" stroke-width="1"/>
+</svg>

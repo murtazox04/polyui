@@ -9,15 +9,21 @@
       "props": {
         "title": { "kind": "string", "max": 120, "required": true },
         "kind": { "kind": "enum", "values": ["bar", "line", "area", "pie", "scatter"], "required": true },
-        "x": { "kind": "string", "max": 64, "required": true, "description": "Field name used for the x axis or pie slices." },
-        "y": { "kind": "string", "max": 64, "required": true, "description": "Numeric field used for the y axis or slice size." },
-        "series": { "kind": "string", "max": 64, "description": "Optional field that splits rows into colored series." },
+        "x_label": { "kind": "string", "max": 64, "description": "Name of the x axis, or of the slices in a pie." },
+        "y_label": { "kind": "string", "max": 64, "description": "Name of the measured value." },
         "unit": { "kind": "string", "max": 16 },
         "rows": {
           "kind": "array",
           "max": 1000,
           "required": true,
-          "of": { "kind": "object", "fields": {}, "description": "Each row is an object with the x, y and series fields." }
+          "of": {
+            "kind": "object",
+            "fields": {
+              "x": { "kind": "scalar", "required": true, "description": "Category or x value." },
+              "y": { "kind": "number", "required": true },
+              "series": { "kind": "string", "max": 64, "description": "Splits rows into colored series." }
+            }
+          }
         },
         "on_select": { "kind": "action", "description": "Fires when the user taps a bar, point or slice. The selected row goes in the values." }
       },

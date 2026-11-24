@@ -1,0 +1,34 @@
+{
+  "name": "polyui-web",
+  "version": "0.1.0",
+  "description": "Framework free web renderer for PolyUI surfaces",
+  "type": "module",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "main": "./dist/polyui.js",
+  "module": "./dist/polyui.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/polyui.js"
+    },
+    "./polyui.css": "./dist/polyui.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node scripts/build.mjs && vitest run",
+    "size": "node scripts/size.mjs",
+    "demo": "node scripts/build.mjs --serve"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "happy-dom": "^21.0.4",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}

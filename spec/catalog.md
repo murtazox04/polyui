@@ -47,6 +47,7 @@ PolyUI ships two catalogs: [`core`](catalogs/core.json) and [`chart`](catalogs/c
 | `int` | `min`, `max` | A whole number. |
 | `number` | `min`, `max` | Any finite number. |
 | `bool` | | `true` or `false`. |
+| `scalar` | | A string, a finite number, or a bool. |
 | `enum` | `values` | One of `values`. |
 | `url` | `schemes` (default `["https"]`) | An absolute URL with an allowed scheme. |
 | `action` | | An action object (protocol section 7). |

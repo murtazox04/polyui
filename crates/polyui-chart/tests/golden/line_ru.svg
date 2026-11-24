@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" font-family="system-ui, -apple-system, &#39;Segoe UI&#39;, Roboto, sans-serif">
+<title>Средняя температура</title>
+<desc>Средняя температура. Наибольшее значение: Июл, 21,4 °C. Наименьшее значение: Дек, -3,4 °C. Всего точек: 11. Пропущено значений: 1.</desc>
+<rect x="0" y="0" width="640" height="360" fill="#ffffff"/>
+<text x="12" y="27" font-size="15" fill="#111827" text-anchor="start" font-weight="600">Средняя температура</text>
+<text x="12" y="48" font-size="11" fill="#6b7280" text-anchor="start">Температура, °C</text>
+<line x1="30.76" y1="331" x2="628" y2="331" stroke="#e5e7eb" stroke-width="1"/>
+<text x="24.76" y="334.85" font-size="11" fill="#6b7280" text-anchor="end">-5</text>
+<line x1="30.76" y1="286.08" x2="628" y2="286.08" stroke="#e5e7eb" stroke-width="1"/>
+<text x="24.76" y="289.93" font-size="11" fill="#6b7280" text-anchor="end">0</text>
+<line x1="30.76" y1="241.17" x2="628" y2="241.17" stroke="#e5e7eb" stroke-width="1"/>
+<text x="24.76" y="245.02" font-size="11" fill="#6b7280" text-anchor="end">5</text>
+<line x1="30.76" y1="196.25" x2="628" y2="196.25" stroke="#e5e7eb" stroke-width="1"/>
+<text x="24.76" y="200.1" font-size="11" fill="#6b7280" text-anchor="end">10</text>
+<line x1="30.76" y1="151.33" x2="628" y2="151.33" stroke="#e5e7eb" stroke-width="1"/>
+<text x="24.76" y="155.18" font-size="11" fill="#6b7280" text-anchor="end">15</text>
+<line x1="30.76" y1="106.42" x2="628" y2="106.42" stroke="#e5e7eb" stroke-width="1"/>
+<text x="24.76" y="110.27" font-size="11" fill="#6b7280" text-anchor="end">20</text>
+<line x1="30.76" y1="61.5" x2="628" y2="61.5" stroke="#e5e7eb" stroke-width="1"/>
+<text x="24.76" y="65.35" font-size="11" fill="#6b7280" text-anchor="end">25</text>
+<text x="55.65" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Янв</text>
+<text x="105.42" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Фев</text>
+<text x="155.19" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Мар</text>
+<text x="204.96" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Апр</text>
+<text x="254.73" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Май</text>
+<text x="304.5" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Июн</text>
+<text x="354.27" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Июл</text>
+<text x="404.04" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Авг</text>
+<text x="453.81" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Сен</text>
+<text x="503.58" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Окт</text>
+<text x="553.35" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Ноя</text>
+<text x="603.12" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Дек</text>
+<path d="M55.65 249.25 L105.42 251.95 L155.19 230.39" fill="none" stroke="#4e79a7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="55.65" cy="249.25" r="3" fill="#4e79a7"/>
+<circle cx="105.42" cy="251.95" r="3" fill="#4e79a7"/>
+<circle cx="155.19" cy="230.39" r="3" fill="#4e79a7"/>
+<path d="M254.73 173.79 L304.5 123.48 L354.27 93.84 L404.04 104.62 L453.81 151.33 L503.58 199.84 L553.35 265.42 L603.12 316.63" fill="none" stroke="#4e79a7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="254.73" cy="173.79" r="3" fill="#4e79a7"/>
+<circle cx="304.5" cy="123.48" r="3" fill="#4e79a7"/>
+<circle cx="354.27" cy="93.84" r="3" fill="#4e79a7"/>
+<circle cx="404.04" cy="104.62" r="3" fill="#4e79a7"/>
+<circle cx="453.81" cy="151.33" r="3" fill="#4e79a7"/>
+<circle cx="503.58" cy="199.84" r="3" fill="#4e79a7"/>
+<circle cx="553.35" cy="265.42" r="3" fill="#4e79a7"/>
+<circle cx="603.12" cy="316.63" r="3" fill="#4e79a7"/>
+<line x1="30.76" y1="286.08" x2="628" y2="286.08" stroke="#6b7280" stroke-width="1"/>
+</svg>
