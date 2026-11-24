@@ -178,6 +178,10 @@ jobs:
         run: bash bindings/ffi/tests/c/run.sh
       - name: Same with the lite core used by the apps
         run: POLYUI_FFI_FEATURES=lite bash bindings/ffi/tests/c/run.sh
+      - name: Install Chromium for the embed page check
+        run: npx -y playwright@1.65.1 install --with-deps chromium
+      - name: Embed page for native renderers, checked in Chromium
+        run: PLAYWRIGHT_CHANNEL=chromium npx -y -p playwright@1.65.1 node bindings/ffi/tests/embed/check.mjs
 
   web:
     name: Wasm size gate, web renderer and chat example
