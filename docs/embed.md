@@ -46,7 +46,7 @@ There is also a server-only prop, `app`, in the same spirit as the chart `scene`
 
 `resource` is one entry of the MCP `resources/read` result, unchanged. `tool_input` and `tool_result` are optional; when present they are the tool call arguments and the `CallToolResult` the app was made for.
 
-The client core passes `app` to the renderer only when `mimeType` is exactly `text/html;profile=mcp-app`, `text` is a string, `uri` equals the `resource` prop, and `tool_input` and `tool_result` are objects when present. Anything else is dropped and the renderer shows the title instead. HTML gets a larger string limit than other props (200 KiB, see `MAX_APP_STRING_CHARS`), but only inside `app` of an `embed:Embed`, and the whole message still has to fit in 256 KiB.
+The client core passes `app` to the renderer only when `mimeType` is exactly `text/html;profile=mcp-app`, `text` is a string, `uri` equals the `resource` prop, and `tool_input` and `tool_result` are objects when present. Anything else is dropped and the renderer shows the title instead. HTML gets a larger string limit than other props (204 800 characters, see `MAX_APP_STRING_CHARS`), but only inside `app` of an `embed:Embed`, and the whole message still has to fit in 256 KiB.
 
 ## How a frame comes up
 
@@ -87,7 +87,7 @@ These are the rules the web renderer follows. Hosts with their own renderer shou
    `default-src 'none'; script-src 'self' 'unsafe-inline' R; style-src 'self' 'unsafe-inline' R; img-src 'self' data: R; media-src 'self' data: R; font-src 'self' R; connect-src C or 'none'; frame-src F or 'none'; base-uri B or 'self'; object-src 'none'`.
    The browser check confirms that a `fetch` from an app with no `connectDomains` is blocked by `connect-src`. Permissions (camera, microphone, geolocation, clipboard) are never granted.
 5. **Links need https and a person.** `ui/open-link` accepts only `https` URLs without credentials. The renderer shows the full URL in its own confirm sheet, the same one it uses for payments, which the surface and the app cannot style or cover. Only after the user accepts does it open the link with `noopener,noreferrer`. One link question at a time; others are refused while one is open.
-6. **Messages go through the action system.** `ui/message` becomes a normal `ui.action` through the core `fire`, using the component's `on_message` handle, with `{"text": ...}` as `detail`. No `on_message`, no message. The detail must fit the core's 4 KiB detail limit, and the renderer accepts at most one message per second so an app cannot flood the agent.
+6. **Messages go through the action system.** `ui/message` becomes a normal `ui.action` through the core `fire`, using the component's `on_message` handle, with `{"text": ...}` as `detail`. No `on_message`, no message. The detail must fit the 4096 byte detail limit (`MAX_DETAIL_BYTES`, counted on the serialized object, and checked by the core and again by the server), and the renderer accepts at most one message per second so an app cannot flood the agent.
 7. **The frame stays in its box.** `size-changed` can set the height between 80 px and the maximum of the height hint. Width is ignored; the frame always fills the column.
 
 What CSP cannot stop: an app can navigate its own frame to any URL and carry the data it was given in the query string. An MCP App only ever receives what its own tool call returned, so this is the same trust you already give that tool, but do not put anything else into `tool_input` or `tool_result`.

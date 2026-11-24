@@ -7,6 +7,7 @@ pub mod dashboards;
 pub mod host;
 pub mod ids;
 pub mod openai;
+pub mod origin;
 pub mod provider;
 pub mod scripted;
 pub mod server;

@@ -2,7 +2,7 @@ use polyui_core::protocol::{self, Hello};
 use polyui_core::{Client, validate};
 use polyui_server::anthropic::{AnthropicProvider, ApiKey};
 use polyui_server::bills::{BillsHost, CARD_MASK, HOUSEHOLD_USER, SERVICES, mask};
-use polyui_server::session::{FORM_REFUSED, TOO_FAST};
+use polyui_server::session::{FORM_REFUSED, MAX_SAY_CHARS, SAY_EMPTY, SAY_TOO_LONG, TOO_FAST};
 use polyui_server::{
     Agent, AgentConfig, CloseReason, ScriptedProvider, ScriptedReply, Session, TurnRate, User,
 };
@@ -850,7 +850,61 @@ async fn overlong_user_text_never_reaches_the_model() {
         .receive(&json!({ "v": 1, "t": "user.say", "text": "a".repeat(4001) }).to_string())
         .await;
     let reply = harness.next().await;
-    assert_eq!(reply["t"], "ui.error");
-    assert_eq!(reply["reason"], "bad_message");
+    assert_eq!(reply["t"], "agent.error", "{reply}");
+    assert_eq!(reply["message"], SAY_TOO_LONG);
+    assert!(SAY_TOO_LONG.contains(&MAX_SAY_CHARS.to_string()));
     assert!(harness.provider.requests().is_empty());
+    harness.reply(ScriptedReply::new().text("Ok."));
+    let cyrillic = "ж".repeat(4000);
+    assert_eq!(cyrillic.len(), 8000);
+    let answer = harness.say(&cyrillic).await;
+    assert_eq!(
+        answer.last().unwrap()["t"],
+        "agent.done",
+        "4000 Cyrillic letters are 4000 characters and must be accepted"
+    );
+    assert_eq!(harness.provider.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn blank_or_textless_user_say_gets_an_agent_error() {
+    let mut harness = start();
+    for message in [
+        json!({ "v": 1, "t": "user.say", "text": "   " }),
+        json!({ "v": 1, "t": "user.say", "text": "" }),
+        json!({ "v": 1, "t": "user.say" }),
+        json!({ "v": 1, "t": "user.say", "text": 42 }),
+    ] {
+        harness.session.receive(&message.to_string()).await;
+        let reply = harness.next().await;
+        assert_eq!(reply["t"], "agent.error", "{message} got {reply}");
+        assert_eq!(reply["message"], SAY_EMPTY, "{message}");
+    }
+    assert!(harness.provider.requests().is_empty());
+}
+
+#[tokio::test]
+async fn oversized_action_detail_and_values_are_refused_before_the_action() {
+    let mut harness = start();
+    let open = open_bills(&mut harness).await;
+    let gas = handle_of(&open, "gas", "on_press");
+    let detail = json!({ "note": "x".repeat(protocol::MAX_DETAIL_BYTES) });
+    let raw = json!({ "v": 1, "t": "ui.action", "surface": "s1", "action_id": gas, "source": "tap", "detail": detail });
+    harness.session.receive(&raw.to_string()).await;
+    let reply = harness.next().await;
+    assert_eq!(reply["t"], "ui.error", "{reply}");
+    assert_eq!(reply["reason"], "bad_message");
+    assert!(reply["detail"].as_str().unwrap().contains("detail is"));
+    let values: serde_json::Map<String, Value> = (0..40)
+        .map(|index| (format!("/v{index}"), json!("y".repeat(4000))))
+        .collect();
+    let flood = json!({ "v": 1, "t": "ui.action", "surface": "s1", "action_id": gas, "source": "tap", "values": values });
+    harness.session.receive(&flood.to_string()).await;
+    let reply = harness.next().await;
+    assert_eq!(reply["t"], "ui.error", "{reply}");
+    assert!(reply["detail"].as_str().unwrap().contains("values are"));
+    let fits = json!({ "v": 1, "t": "ui.action", "surface": "s1", "action_id": gas, "source": "tap", "detail": { "row": 1 } });
+    harness.session.receive(&fits.to_string()).await;
+    assert_eq!(harness.next().await["t"], "ui.confirm");
+    assert!(!harness.host.is_paid(GAS_BILL));
 }

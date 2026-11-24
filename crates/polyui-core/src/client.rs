@@ -15,7 +15,7 @@ use crate::voice::{self, Ordinal, Utterance, VoiceMatch};
 use crate::{Map, Value};
 use serde::Serialize;
 
-pub const MAX_DETAIL_BYTES: usize = 4096;
+pub use crate::protocol::MAX_DETAIL_BYTES;
 pub const MAX_SCENE_ITEMS: usize = 20_000;
 pub const MAX_SCENE_STRING_CHARS: usize = 16_384;
 pub(crate) const CHART_TYPE: &str = "chart:Chart";
@@ -1136,7 +1136,9 @@ impl Client {
                 }
                 limits::prescan(text, &self.limits).ok()?;
                 match codec::read(text).ok()? {
-                    Value::Object(map) => Some(map),
+                    Value::Object(map) if protocol::detail_size(&map) <= MAX_DETAIL_BYTES => {
+                        Some(map)
+                    }
                     _ => return None,
                 }
             }

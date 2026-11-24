@@ -97,17 +97,25 @@ Every prop, limit and default is in [The catalogs](docs/catalogs.md). Charts are
 
 | What | Result | Where it comes from |
 |---|---|---|
-| Wasm client core | 60 337 bytes brotli (171 756 raw), budget 61 440 | `bindings/wasm/build.mjs`, checked in CI |
+| Wasm client core | 60 467 bytes brotli (172 028 raw), budget 61 440 | `bindings/wasm/build.mjs`, checked in CI |
 | Web renderer `polyui.js` | 10 986 bytes brotli, budget 12 288; CSS 3 613 bytes | `js/polyui-web/scripts/size.mjs` |
-| `show_ui` valid on the first try | 28 of 28 turns with tool calls, 24 of 24 with inline JSON, in English, Uzbek (Latin and Cyrillic) and Russian | [Benchmark](docs/benchmark.md), `claude-haiku-5-5`, 32 prompts, one run |
-| Mean time to first `ui.open` | 5.1 s with tool calls, 6.4 s with inline JSON | same run |
-| Cost of the 32 prompt run | $0.10 with tool calls, $0.06 inline | same run |
-| First UI while the model is still writing | first `ui.open` at 4.9 s, `show_ui` input complete at 7.7 s; a call without streaming opened at 6.8 s | [Server guide](docs/server.md#streaming-ui-while-the-model-writes), one live run |
+| First UI while the model is still writing | first `ui.open` at 4.9 s, `show_ui` input complete at 7.7 s; a call without streaming opened at 6.8 s | Measured once on a dev machine against the live API; see the [server guide](docs/server.md#streaming-ui-while-the-model-writes) |
 | Same, replayed with scripted timing | 0.32 s with streaming, 2.47 s without, for a 15 component card | `cargo test -p polyui-server --test streaming` |
-| Grammar compile for all three UI tools | 4.82 ms, first token mask 1.04 ms | [Local models](docs/decode.md#how-fast-it-is), Apple M5 Pro |
-| `polyui` release binary | 7.3 MB, 92.0 MB with the SQL `query` feature | [Dashboards](docs/dashboards.md#costs-and-limits) |
+| Grammar compile for all three UI tools | 4.82 ms, first token mask 1.04 ms | Measured once on a dev machine (Apple M5 Pro); see [Local models](docs/decode.md#how-fast-it-is) |
+| `polyui` release binary | 7 641 888 bytes (7.3 MiB), 92 356 400 bytes (88.1 MiB) with the SQL `query` feature | Measured once on a dev machine (macOS, arm64); see [Dashboards](docs/dashboards.md#costs-and-limits) |
 
-One benchmark run with one model is a small sample. The benchmark page lists what it can and cannot tell you.
+### How well the model draws UI
+
+One run of the 32 prompt benchmark with `claude-haiku-5-5`, in English, Uzbek (Latin and Cyrillic) and Russian, with tool calls. The server sends the compact tool profile unless you configure it otherwise, so the first row is what you get by default. The full profile puts every prop in the tool schema; it was the default before.
+
+| Tool profile | `show_ui` valid on the first try | UI shown when the prompt expected one | Mean time to first `ui.open` | Cost of the 32 prompts |
+|---|---|---|---|---|
+| compact (default) | 26 of 26 turns with a UI call | 22 of 24 | 4.5 s | $0.0325 |
+| full | 28 of 28 | 24 of 24 | 5.1 s | $0.1037 |
+
+Compact costs about a third as much and opens the first UI sooner. It drew no UI for two prompts that expected one, and it drew a form for the phone number request less often. One run with one model is a small sample; [the benchmark page](docs/benchmark.md#compact-tool-profile-2026-11-24) has the full tables, the inline JSON setting, and what the numbers can and cannot tell you.
+
+We also tried `ember:chat`, a self-hosted Gemma model of about 12B, on 8 prompts. It struggled: tool calls ran out of time on that server, inline JSON gave 1 valid UI in 5 tries (mostly missing closing braces), and the constrained run gave none. The validator caught every bad answer, so nothing broken reached a client. The sample is too small to settle anything about small models yet; the details and what a fair test needs are in [docs/benchmark.md](docs/benchmark.md).
 
 ## Documentation
 

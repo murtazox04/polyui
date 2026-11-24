@@ -125,7 +125,7 @@ fn group_digits(digits: &str, separator: &str) -> String {
     let count = digits.chars().count();
     let mut grouped = String::with_capacity(digits.len() + count / 3 * separator.len());
     for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (count - index) % 3 == 0 {
+        if index > 0 && (count - index).is_multiple_of(3) {
             grouped.push_str(separator);
         }
         grouped.push(digit);
@@ -193,10 +193,10 @@ fn next_magnitude(current: Magnitude) -> Option<(f64, Magnitude)> {
 fn compact_parts(value: f64) -> Option<(f64, Magnitude)> {
     let (divisor, magnitude) = pick_magnitude(value)?;
     let mantissa = round_to(value / divisor, 1);
-    if mantissa.abs() >= 1000.0 {
-        if let Some((next_divisor, next)) = next_magnitude(magnitude) {
-            return Some((round_to(value / next_divisor, 1), next));
-        }
+    if mantissa.abs() >= 1000.0
+        && let Some((next_divisor, next)) = next_magnitude(magnitude)
+    {
+        return Some((round_to(value / next_divisor, 1), next));
     }
     Some((mantissa, magnitude))
 }

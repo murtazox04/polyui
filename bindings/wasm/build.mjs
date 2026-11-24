@@ -11,9 +11,9 @@ const out = join(workspace, "js", "polyui-web", "wasm");
 const built = join(workspace, "target", "wasm32-unknown-unknown", "wasm", "polyui_wasm.wasm");
 const wasm = join(out, "polyui_core_bg.wasm");
 const adr = join(workspace, "docs", "adr", "0001-stack.md");
-const budget = readFileSync(adr, "utf8").match(/budget is (\d+) kB brotli/);
-if (!budget) throw new Error(`no "budget is N kB brotli" sentence in ${adr}`);
-const budgetBytes = Number(budget[1]) * 1024;
+const budget = readFileSync(adr, "utf8").match(/budget is (\d[\d ]*) bytes brotli/);
+if (!budget) throw new Error(`no "budget is N bytes brotli" sentence in ${adr}`);
+const budgetBytes = Number(budget[1].replaceAll(" ", ""));
 
 const path = [process.env.PATH, join(homedir(), ".cargo", "bin")].filter(Boolean).join(delimiter);
 

@@ -19,7 +19,7 @@ Every binding exposes the same five calls. Arguments and results are JSON string
 | `Client::new(hello)` | the `hello` object the client will send | a client |
 | `client.receive(message)` | one server message | a `RenderBatch` |
 | `client.set_value(surface, path, value)` | a local edit from an input or choice | a `RenderBatch` with every component bound to `path` |
-| `client.fire(surface, component, prop, detail?)` | the user pressed something; `detail` is an optional JSON object, for example `{"row": 3}` when a chart bar is tapped | the `ui.action` message to send (with `detail` copied in), or `null` |
+| `client.fire(surface, component, prop, detail?)` | the user pressed something; `detail` is an optional JSON object, for example `{"row": 3}` when a chart bar is tapped, of at most 4096 bytes once serialized | the `ui.action` message to send (with `detail` copied in), or `null`, also when `detail` is not an object or is too large |
 | `client.confirm(surface, action_id, nonce)` | the user accepted a `confirm` sheet | the `ui.action` message with the nonce |
 
 Two helpers are also exposed: `client.say(surface)` returns the utterances for voice (section below) and `client.match_voice(surface, text)` returns a voice match or `null`.
@@ -39,9 +39,19 @@ Two helpers are also exposed: `client.say(surface)` returns the utterances for v
     { "op": "highlight", "id": "opt_2" },
     { "op": "close" }
   ],
-  "fallback": "Total: 29 322 so'm. [Pay]"
+  "fallback": "Total: 29 322 so'm. [Pay]",
+  "send": [{ "v": 1, "t": "ui.resync", "surface": "s1" }]
 }
 ```
+
+`send` lists protocol messages the core needs sent back to the server, in order. It is left out when there are none. The core never talks to the network itself, so whatever owns the connection sends each entry as it is, as one JSON message. It does not have to wait until the ops are drawn. The core puts these in `send`:
+
+- `ui.resync` when a `seq` is missing, or when a message could not be applied and the core needs a snapshot (section 8 of the protocol).
+- `ui.error` with `bad_message` when a server message breaks the protocol or the limits. When the message was about a surface the core already has, a `ui.resync` for that surface follows.
+- `ui.error` with `unknown_component`, once per type, when a surface uses a type the client did not declare.
+- `ui.error` with `unsupported_version` when a message has a `v` the core does not know. The batch then carries the message's `fallback` text, if it had one.
+
+A renderer that drops `send` leaves the server unaware of gaps and errors, and the surface stays out of date until the next full `ui.open`.
 
 Rules the core guarantees, so renderers do not have to check:
 

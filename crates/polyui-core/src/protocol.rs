@@ -1,11 +1,13 @@
-use crate::limits::LimitError;
 #[cfg(not(feature = "client-lite"))]
-use crate::limits::{self, Limits};
+use crate::limits::Limits;
+use crate::limits::{self, LimitError};
 use crate::{Map, Value};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub const VERSION: u64 = 1;
+
+pub const MAX_DETAIL_BYTES: usize = 4096;
 
 pub const MESSAGE_TYPES: [&str; 13] = [
     "hello",
@@ -626,7 +628,7 @@ pub fn parse(input: &str) -> Result<Incoming, ProtocolError> {
 
 #[cfg(not(feature = "client-lite"))]
 pub fn parse_with(input: &str, limits: &Limits) -> Result<Incoming, ProtocolError> {
-    classify(read(input, limits)?, decode_any)
+    checked(classify(read(input, limits)?, decode_any)?, limits)
 }
 
 #[cfg(not(feature = "client-lite"))]
@@ -637,7 +639,43 @@ pub fn parse_from_server(input: &str, limits: &Limits) -> Result<Incoming, Proto
 #[cfg(not(feature = "client-lite"))]
 pub fn parse_value(value: Value, limits: &Limits) -> Result<Incoming, ProtocolError> {
     limits::check_value(&value, limits)?;
-    classify(value, decode_any)
+    checked(classify(value, decode_any)?, limits)
+}
+
+pub fn detail_size(detail: &Map<String, Value>) -> usize {
+    limits::json_size(&Value::Object(detail.clone()))
+}
+
+#[cfg(not(feature = "client-lite"))]
+pub fn check_action(action: &Action, limits: &Limits) -> Result<(), ProtocolError> {
+    let invalid = |detail: String| ProtocolError::Invalid {
+        message_type: "ui.action".into(),
+        detail,
+    };
+    if let Some(detail) = &action.detail {
+        let size = detail_size(detail);
+        if size > MAX_DETAIL_BYTES {
+            return Err(invalid(format!(
+                "detail is {size} bytes, max is {MAX_DETAIL_BYTES}"
+            )));
+        }
+    }
+    let size = limits::json_size(&Value::Object(action.values.clone()));
+    if size > limits.max_data_bytes {
+        return Err(invalid(format!(
+            "values are {size} bytes, max is {}",
+            limits.max_data_bytes
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "client-lite"))]
+fn checked(incoming: Incoming, limits: &Limits) -> Result<Incoming, ProtocolError> {
+    if let Incoming::Message(Message::Action(action)) = &incoming {
+        check_action(action, limits)?;
+    }
+    Ok(incoming)
 }
 
 #[cfg(not(feature = "client-lite"))]
@@ -829,6 +867,50 @@ mod tests {
         ));
         let deep = format!("{}{}", "[".repeat(33), "]".repeat(33));
         assert!(matches!(parse(&deep), Err(ProtocolError::Limit(_))));
+    }
+
+    #[test]
+    fn action_detail_and_values_are_capped() {
+        let limits = Limits::default();
+        let action = |detail: Value, values: Value| {
+            json!({ "v": 1, "t": "ui.action", "surface": "s1", "action_id": "act_1", "detail": detail, "values": values })
+                .to_string()
+        };
+        let small = action(json!({ "row": 3 }), json!({}));
+        assert!(parse_with(&small, &limits).is_ok());
+        let words: Vec<String> = (0..600).map(|index| format!("word {index}")).collect();
+        let big = action(json!({ "words": words }), json!({}));
+        let error = parse_with(&big, &limits).unwrap_err().to_string();
+        assert!(
+            error.starts_with("invalid ui.action: detail is "),
+            "{error}"
+        );
+        let wide = (0..60)
+            .map(|index| (format!("/f{index}"), json!("x".repeat(4000))))
+            .collect::<Map<String, Value>>();
+        let flood = action(json!({}), Value::Object(wide.clone()));
+        let error = parse_with(&flood, &limits).unwrap_err().to_string();
+        assert!(error.contains("values are "), "{error}");
+        let mut message: Value = serde_json::from_str(&flood).unwrap();
+        message["values"] = Value::Object(wide.into_iter().take(20).collect());
+        assert!(parse_value(message, &limits).is_ok());
+        let edge = format!("{{\"pad\":\"{}\"}}", "ж".repeat(2043));
+        assert_eq!(edge.len(), MAX_DETAIL_BYTES);
+        assert!(
+            parse_with(
+                &action(serde_json::from_str(&edge).unwrap(), json!({})),
+                &limits
+            )
+            .is_ok()
+        );
+        let over = format!("{{\"pad\":\"{}\"}}", "ж".repeat(2044));
+        assert!(
+            parse_with(
+                &action(serde_json::from_str(&over).unwrap(), json!({})),
+                &limits
+            )
+            .is_err()
+        );
     }
 
     #[test]

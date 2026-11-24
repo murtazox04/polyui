@@ -75,7 +75,7 @@ pub fn lowercase(c: char) -> char {
         | '\u{14a}'..='\u{177}'
         | '\u{460}'..='\u{4bf}'
         | '\u{4d0}'..='\u{4ff}'
-            if code % 2 == 0 =>
+            if code.is_multiple_of(2) =>
         {
             shifted(c, 1)
         }

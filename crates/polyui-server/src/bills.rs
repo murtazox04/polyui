@@ -123,7 +123,7 @@ pub fn format_som(tiyin: u64) -> String {
     let whole = (tiyin / 100).to_string();
     let mut grouped = String::new();
     for (position, digit) in whole.chars().enumerate() {
-        if position > 0 && (whole.len() - position) % 3 == 0 {
+        if position > 0 && (whole.len() - position).is_multiple_of(3) {
             grouped.push(' ');
         }
         grouped.push(digit);

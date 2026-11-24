@@ -91,6 +91,7 @@ pub(crate) struct Scanner {
     in_string: bool,
     escaped: bool,
     hex_left: u8,
+    hex_value: u32,
     string_chars: usize,
 }
 
@@ -103,6 +104,7 @@ impl Scanner {
             in_string: false,
             escaped: false,
             hex_left: 0,
+            hex_value: 0,
             string_chars: 0,
         }
     }
@@ -210,12 +212,19 @@ impl Scanner {
     fn push_in_string(&mut self, byte: u8) -> Result<Token, LimitError> {
         if self.hex_left > 0 {
             self.hex_left -= 1;
+            self.hex_value = self.hex_value * 16 + char::from(byte).to_digit(16).unwrap_or(0);
+            let low_surrogate = (0xDC00..=0xDFFF).contains(&self.hex_value);
+            if self.hex_left == 0 && !low_surrogate {
+                return self.count_char();
+            }
             return Ok(Token::Nothing);
         }
         if self.escaped {
             self.escaped = false;
             if byte == b'u' {
                 self.hex_left = 4;
+                self.hex_value = 0;
+                return Ok(Token::Nothing);
             }
             return self.count_char();
         }
@@ -425,6 +434,29 @@ mod tests {
         assert!(prescan(&format!("{{\"a\":[\"{escaped}\"]}}"), &limits).is_ok());
         let cyrillic = "ж".repeat(4000);
         assert!(prescan(&format!("{{\"a\":[\"{cyrillic}\"]}}"), &limits).is_ok());
+    }
+
+    #[test]
+    fn strings_are_counted_in_characters_not_bytes_or_escapes() {
+        let limits = Limits::default();
+        let wrap = |text: &str| format!("{{\"a\":{{\"b\":\"{text}\"}}}}");
+        let check = |text: &str| {
+            let parsed: Value = serde_json::from_str(&wrap(text)).unwrap();
+            (prescan(&wrap(text), &limits), check_value(&parsed, &limits))
+        };
+        let fits = Ok(());
+        let long = Err(LimitError::StringTooLong { limit: 4096 });
+        for (letter, bytes) in [("ж", 2), ("o\u{2bb}", 3), ("\u{1F600}", 4)] {
+            let at_limit = letter.repeat(4096 / letter.chars().count());
+            assert_eq!(at_limit.len(), 4096 * bytes / letter.chars().count());
+            assert_eq!(check(&at_limit), (fits.clone(), fits.clone()), "{letter}");
+            let over = format!("{at_limit}x");
+            assert_eq!(check(&over), (long.clone(), long.clone()), "{letter}");
+        }
+        let escaped_emoji = "\\ud83d\\ude00".repeat(4096);
+        assert_eq!(check(&escaped_emoji), (fits.clone(), fits.clone()));
+        let one_more = format!("{escaped_emoji}\\u0041");
+        assert_eq!(check(&one_more), (long.clone(), long));
     }
 
     #[test]

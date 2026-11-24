@@ -15,9 +15,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::protocol::frame::Frame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::{Data, OpCode};
+use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -459,6 +461,7 @@ async fn http_send_refuses_invalid_utf8_bodies() {
     let invalid = vec![b'{', 0xff, 0xfe, b'}'];
     let start = http
         .post(format!("http://{addr}/send"))
+        .header("content-type", "application/json")
         .body(invalid.clone())
         .send()
         .await
@@ -466,6 +469,7 @@ async fn http_send_refuses_invalid_utf8_bodies() {
     assert_eq!(start.status(), 400);
     let welcome: Value = http
         .post(format!("http://{addr}/send"))
+        .header("content-type", "application/json")
         .body(hello())
         .send()
         .await
@@ -476,6 +480,7 @@ async fn http_send_refuses_invalid_utf8_bodies() {
     let session = welcome["session"].as_str().unwrap();
     let inside = http
         .post(format!("http://{addr}/send?session={session}"))
+        .header("content-type", "application/json")
         .body(invalid)
         .send()
         .await
@@ -491,6 +496,7 @@ async fn http_send_reports_invalid_and_deep_json_without_reaching_the_model() {
     for bad_hello in ["{", "null", deep(10_000).as_str()] {
         let response = http
             .post(format!("http://{addr}/send"))
+            .header("content-type", "application/json")
             .body(bad_hello.to_string())
             .send()
             .await
@@ -501,6 +507,7 @@ async fn http_send_reports_invalid_and_deep_json_without_reaching_the_model() {
     }
     let welcome: Value = http
         .post(format!("http://{addr}/send"))
+        .header("content-type", "application/json")
         .body(hello())
         .send()
         .await
@@ -518,6 +525,7 @@ async fn http_send_reports_invalid_and_deep_json_without_reaching_the_model() {
     for body in &bodies {
         let accepted = http
             .post(format!("http://{addr}/send?session={session}"))
+            .header("content-type", "application/json")
             .body(body.clone())
             .send()
             .await
@@ -526,6 +534,7 @@ async fn http_send_reports_invalid_and_deep_json_without_reaching_the_model() {
     }
     let too_big = http
         .post(format!("http://{addr}/send?session={session}"))
+        .header("content-type", "application/json")
         .body("x".repeat(300 * 1024))
         .send()
         .await
@@ -562,6 +571,7 @@ async fn sessions_are_bound_to_the_user_who_opened_them() {
     let http = reqwest::Client::new();
     let anonymous = http
         .post(format!("http://{addr}/send"))
+        .header("content-type", "application/json")
         .body(hello())
         .send()
         .await
@@ -569,6 +579,7 @@ async fn sessions_are_bound_to_the_user_who_opened_them() {
     assert_eq!(anonymous.status(), 401);
     let welcome: Value = http
         .post(format!("http://{addr}/send"))
+        .header("content-type", "application/json")
         .header("x-user", "alice")
         .body(hello())
         .send()
@@ -587,6 +598,7 @@ async fn sessions_are_bound_to_the_user_who_opened_them() {
     assert_eq!(stolen_events.status(), 404);
     let stolen_send = http
         .post(format!("http://{addr}/send?session={session}"))
+        .header("content-type", "application/json")
         .header("x-user", "mallory")
         .body(json!({ "v": 1, "t": "user.say", "text": "pay everything" }).to_string())
         .send()
@@ -656,6 +668,7 @@ async fn sse_and_websocket_sessions_share_max_sessions() {
     let http = reqwest::Client::new();
     let refused = http
         .post(format!("http://{addr}/send"))
+        .header("content-type", "application/json")
         .body(hello())
         .send()
         .await
@@ -666,6 +679,7 @@ async fn sse_and_websocket_sessions_share_max_sessions() {
     loop {
         let status = http
             .post(format!("http://{addr}/send"))
+            .header("content-type", "application/json")
             .body(hello())
             .send()
             .await
@@ -685,4 +699,163 @@ async fn sse_and_websocket_sessions_share_max_sessions() {
             .await
             .is_err()
     );
+}
+
+async fn ws_status_with_origin(addr: SocketAddr, origin: &str) -> u16 {
+    let mut request = format!("ws://{addr}/ws").into_client_request().unwrap();
+    request
+        .headers_mut()
+        .insert("origin", HeaderValue::from_str(origin).unwrap());
+    match tokio_tungstenite::connect_async(request).await {
+        Ok((socket, response)) => {
+            drop(socket);
+            response.status().as_u16()
+        }
+        Err(WsError::Http(response)) => response.status().as_u16(),
+        Err(other) => panic!("unexpected WebSocket error: {other}"),
+    }
+}
+
+#[tokio::test]
+async fn pages_on_other_origins_cannot_open_or_use_sessions() {
+    let agent = Agent::new(
+        Arc::new(BillsHost::new()),
+        Arc::new(ScriptedProvider::new()),
+    );
+    let addr = spawn_with(
+        agent,
+        ServerConfig {
+            allowed_origins: vec!["http://localhost:5173/".into()],
+            ..ServerConfig::default()
+        },
+    )
+    .await;
+    let port = addr.port();
+    assert_eq!(
+        ws_status_with_origin(addr, "https://evil.example").await,
+        403
+    );
+    assert_eq!(ws_status_with_origin(addr, "null").await, 403);
+    assert_eq!(
+        ws_status_with_origin(addr, &format!("http://evil.example:{port}")).await,
+        403
+    );
+    assert_eq!(
+        ws_status_with_origin(addr, &format!("http://{addr}")).await,
+        101
+    );
+    assert_eq!(
+        ws_status_with_origin(addr, &format!("http://localhost:{port}")).await,
+        101
+    );
+    assert_eq!(
+        ws_status_with_origin(addr, "http://localhost:5173").await,
+        101
+    );
+
+    let http = reqwest::Client::new();
+    let forged_start = http
+        .post(format!("http://{addr}/send"))
+        .header("origin", "https://evil.example")
+        .header("content-type", "application/json")
+        .body(hello())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(forged_start.status(), 403);
+    let welcome: Value = http
+        .post(format!("http://{addr}/send"))
+        .header("origin", format!("http://{addr}"))
+        .header("content-type", "application/json")
+        .body(hello())
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let session = welcome["session"].as_str().unwrap().to_string();
+    let forged_events = http
+        .get(format!("http://{addr}/events?session={session}"))
+        .header("origin", "https://evil.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(forged_events.status(), 403);
+    let forged_say = http
+        .post(format!("http://{addr}/send?session={session}"))
+        .header("origin", "https://evil.example")
+        .header("content-type", "application/json")
+        .body(json!({ "v": 1, "t": "user.say", "text": "pay everything" }).to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(forged_say.status(), 403);
+    let plain_text = http
+        .post(format!("http://{addr}/send?session={session}"))
+        .header("content-type", "text/plain")
+        .body(json!({ "v": 1, "t": "user.say", "text": "pay everything" }).to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(plain_text.status(), 415);
+    let no_type = http
+        .post(format!("http://{addr}/send"))
+        .body(hello())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(no_type.status(), 415);
+    let own = http
+        .get(format!("http://{addr}/events?session={session}"))
+        .header("origin", format!("http://localhost:{port}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(own.status(), 200);
+}
+
+#[tokio::test]
+async fn a_client_that_never_says_hello_gives_its_place_back() {
+    let agent = Agent::new(
+        Arc::new(BillsHost::new()),
+        Arc::new(ScriptedProvider::new()),
+    );
+    let addr = spawn_with(
+        agent,
+        ServerConfig {
+            max_sessions: 1,
+            attach_timeout: Duration::from_millis(300),
+            ..ServerConfig::default()
+        },
+    )
+    .await;
+    let mut silent = connect(addr).await;
+    assert!(
+        tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+            .await
+            .is_err(),
+        "the silent client should hold the only place at first"
+    );
+    let closed = tokio::time::timeout(WAIT, silent.next()).await.unwrap();
+    assert!(
+        matches!(closed, Some(Ok(Message::Close(_))) | None),
+        "the silent client was not closed: {closed:?}"
+    );
+    let deadline = Instant::now() + WAIT;
+    loop {
+        if let Ok((mut socket, _)) =
+            tokio_tungstenite::connect_async(format!("ws://{addr}/ws")).await
+        {
+            socket.send(Message::text(hello())).await.unwrap();
+            let welcome = read(&mut socket).await.expect("welcome arrives");
+            assert_eq!(welcome["t"], "welcome");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "a client that never sent hello kept its session place"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }

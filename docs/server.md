@@ -126,7 +126,7 @@ The session keeps its history in the Anthropic format either way, and the provid
 
 On the way back, `finish_reason` `tool_calls` becomes `tool_use`, `length` becomes `max_tokens` and `content_filter` becomes `refusal`. Arguments that are not a JSON object reach the session as a parse error, as with the Anthropic provider. `prompt_tokens` and `completion_tokens` become input and output tokens. `with_response_format(json_schema_format(name, schema))` adds a `response_format` of type `json_schema` to every request, which the benchmark uses for its constrained setting.
 
-Errors: 429, or any body that mentions `concurrency_limited` or `rate_limit`, is retried up to four times after 1, 2 and 4 seconds. 502, 503 and 504 are retried once (`with_overloaded_attempts(1)` turns that off). Everything else fails the turn at once. The key goes only into the `Authorization: Bearer` header, and error texts never include the URL.
+Errors: 429, or any body that mentions `concurrency_limited` or `rate_limit`, is tried at most four times in all, which means three retries, after waits of 1, 2 and 4 seconds. 502, 503, 504 and 529 are retried once, after 1 second (`with_overloaded_attempts(1)` turns that off). Everything else fails the turn at once. The key goes only into the `Authorization: Bearer` header, and error texts never include the URL.
 
 ## Tool profiles
 
@@ -161,7 +161,21 @@ For small models there is one more lever: `Agent::with_tool_types(vec![...])` of
 | `GET /config.json` | `{"embed_origin": ...}`, the sandbox URL from `ServerConfig::embed_origin` or `null`. The chat example reads it to decide whether to declare `embed@1`. |
 | `/` | Static files from `--static DIR`, if given. |
 
-Every incoming message is size checked before it is parsed: the WebSocket frame and message limit and the HTTP body limit are both 256 KiB, and the text then goes through `polyui-core`'s guarded parser. Bad input gets `ui.error`; it never reaches the model.
+Every incoming message is size checked before it is parsed: the WebSocket frame and message limit and the HTTP body limit are both 256 KiB, and the text then goes through `polyui-core`'s guarded parser. Bad input gets `ui.error`; it never reaches the model. A `user.say` that is refused (no text, blank text, more than 4000 characters, or over the turn limits below) gets `agent.error` instead, with a message the chat can show.
+
+`POST /send` only takes `Content-Type: application/json` and answers anything else with 415. A browser cannot send that type to another site without asking first through CORS, and the server never says yes to such a request.
+
+A session lives as long as its connection. When the WebSocket closes, or the SSE stream ends, the session ends with it: its surfaces and handles are dropped and a running turn stops. A client that reconnects sends `hello` again and starts over; the server does not resume the old session or send `ui.snapshot` for it.
+
+### Which pages may connect
+
+A browser lets any page open a WebSocket to any address, including `127.0.0.1`, and sends the page's `Origin` header with it. Without a check, a page on another site could open a session on your server, spend your API key and read every `ui.open`. So `/ws`, `/events` and `/send` look at `Origin` before anything else and answer 403 when it is not allowed. Allowed are:
+
+- the server's own origin: the same host and port as the request's `Host` header;
+- when that host is `localhost`, `127.0.0.1` or `[::1]`, the other two names with the same port;
+- every origin in `ServerConfig::allowed_origins`, or `--allow-origin URL` on the command line (repeat it for more), compared after lowercasing and dropping a trailing `/`.
+
+A request with no `Origin` header is not a browser request and passes; native apps, `curl` and the tests send none. An origin is a scheme, a host and an optional port, such as `http://localhost:5173`. `null`, a path or a user name makes it invalid; the command refuses such a `--allow-origin`, and `router` drops it from `allowed_origins` with a message on stderr.
 
 ### Limits per session and per server
 
@@ -169,7 +183,8 @@ Memory, CPU and model spend have to stay bounded whatever a client sends. These 
 
 | Limit | Default | What happens when it is reached |
 |---|---|---|
-| `max_sessions` | 1000 | Counts WebSocket and SSE sessions together. A WebSocket upgrade or a new `POST /send` session gets HTTP 503 "too many sessions". A WebSocket counts from the upgrade until it closes, an SSE session until its event stream closes or the 60 second attach timeout. |
+| `max_sessions` | 1000 | Counts WebSocket and SSE sessions together. A WebSocket upgrade or a new `POST /send` session gets HTTP 503 "too many sessions". A WebSocket counts from the upgrade until it closes, an SSE session until its event stream closes or the attach timeout passes. |
+| `attach_timeout` | 60 s | How long a new session may wait for its client. A WebSocket that sends no `hello` in this time is closed with code 1008 "no hello in time" and gives its place back. A session started with `POST /send` whose `GET /events` does not arrive in this time is closed. |
 | `outgoing_queue` | 256 messages | Server messages for one session wait in a queue of this size. Before the server handles a client message or a model event, it waits until at least 16 places are free, so a client that sends faster than it reads is slowed down instead of filling memory. |
 | `slow_consumer_after` | 10 s | If those places do not free up in time, the session is closed as a slow consumer. A WebSocket gets close code 1008 with the reason "the client did not read server messages in time" when the frame still fits in the socket; an SSE stream ends with an event named `close` whose data is the same text. A client that reads nothing at all may only see the connection drop. |
 | `waiting_turns` | 2 | One turn runs at a time per session, and at most this many `user.say` messages or action reports wait behind it. A `user.say` beyond that gets `agent.error` "The assistant is still working on your earlier messages. Please wait for it to finish." An action that would start a turn is refused with `ui.action.result` `rejected` and the same text, before it runs. |
@@ -186,7 +201,7 @@ The `bills` demo host is a household in Tashkent with gas, electricity, water an
 polyui serve --env-file ~/.config/polyui/anthropic.env --static js/polyui-web/demo
 ```
 
-Options: `--addr` (default `127.0.0.1:8787`), `--model` (default `claude-haiku-5-5`), `--static DIR`, `--host bills|shop`, `--data DIR`, `--embed-origin URL`, `--embed-sandbox DIR`, `--tool-profile compact|full` (default `compact`) and `--catalog-subset TYPES` (comma separated type names; the command stops if one is not in the host's catalogs). Without `--env-file` the key is read from `ANTHROPIC_API_KEY`. The key is never printed or logged.
+Options: `--addr` (default `127.0.0.1:8787`), `--model` (default `claude-haiku-5-5`), `--static DIR`, `--host bills|shop`, `--data DIR`, `--embed-origin URL`, `--embed-sandbox DIR`, `--tool-profile compact|full` (default `compact`), `--catalog-subset TYPES` (comma separated type names; the command stops if one is not in the host's catalogs) and `--allow-origin URL` (one more page origin that may connect, see [Which pages may connect](#which-pages-may-connect)). Without `--env-file` the key is read from `ANTHROPIC_API_KEY`. The key is never printed or logged.
 
 To use a self-hosted model instead, pass `--provider openai-compat` with the base URL and the model, and name the variable that holds the key:
 
@@ -205,7 +220,7 @@ polyui serve --env-file ~/.config/polyui/anthropic.env --static examples/chat/di
 
 Open `http://127.0.0.1:8787/` and ask which internet tariff suits the family. The calculator's button sends a `ui/message`, which reaches the model as a `tariff_message` action with the text as its detail. For an `https` URL the command serves nothing and expects you to host the sandbox page there.
 
-`--host shop` runs a small store whose dashboards are built from SQL over local CSV and Parquet files. It needs the `query` feature, which is off by default because DataFusion grows the binary from about 7 MB to about 92 MB. Build with `cargo run -p polyui --features query -- serve --host shop ...` or `cargo install --path crates/polyui-cli --features query`. A binary built without it stops with a message that says so. See [dashboards.md](dashboards.md).
+`--host shop` runs a small store whose dashboards are built from SQL over local CSV and Parquet files. It needs the `query` feature, which is off by default because DataFusion grows the binary from about 7 MiB to about 88 MiB. Build with `cargo run -p polyui --features query -- serve --host shop ...` or `cargo install --path crates/polyui-cli --features query`. A binary built without it stops with a message that says so. See [dashboards.md](dashboards.md).
 
 Two more commands help when writing prompts or catalogs:
 

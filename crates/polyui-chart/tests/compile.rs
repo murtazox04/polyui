@@ -513,7 +513,7 @@ fn arbitrary_rows_never_panic() {
                 _ => json!({
                     "x": random.pick(&scalars),
                     "y": random.pick(&scalars),
-                    "series": if random.next() % 3 == 0 { random.pick(&scalars).clone() } else { json!("s") }
+                    "series": if random.next().is_multiple_of(3) { random.pick(&scalars).clone() } else { json!("s") }
                 }),
             })
             .collect();

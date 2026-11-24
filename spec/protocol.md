@@ -113,14 +113,16 @@ The model rarely needs to write `alt`, `say` or `voice`. The catalog fills them 
 | Limit | Value |
 |---|---|
 | One message, serialized | 256 KiB |
-| One string prop | 4 KiB, or the catalog's own `max` |
+| One string prop | 4096 characters, or the catalog's own `max` |
 | Data model, serialized | 128 KiB |
 | Array length in props or data | 1000 |
 | JSON nesting depth | 32 |
 
 A server rejects anything above these limits before parsing the rest.
 
-The data model limit is half the message limit because the whole data model travels in one `ui.open` or `ui.snapshot` together with the components. After every `show_ui`, every `update_ui` and every action that stores form values, the server checks the data model as it would sit in that envelope: nesting is counted from the envelope (so the data model itself can be at most 31 levels deep), every array holds at most 1000 items, every string and key holds at most 4 KiB, and the serialized data model is at most 128 KiB. The server also checks the whole `ui.open`, `ui.patch`, `ui.data` and `ui.snapshot` it is about to send against the client limits and rejects the tool call when one would not fit, so a client never has to refuse a message and ask for a resync that would fail again.
+Sizes of messages and data models are bytes of UTF-8. String lengths, here and in every `max` of a catalog, are characters: Unicode code points, not bytes and not UTF-16 units. A prop of 4096 Cyrillic letters fits, although it takes 8192 bytes, and so does `oʻ` written 2048 times: the Uzbek `ʻ` is a character of its own, so that is 4096 characters in 6144 bytes. In JSON text, an escape such as `\u0041` is one character, and a surrogate pair written as two escapes (`\ud83d\ude00`) is one character too. The message limit still bounds memory, because a string can never be larger than the message that carries it.
+
+The data model limit is half the message limit because the whole data model travels in one `ui.open` or `ui.snapshot` together with the components. After every `show_ui`, every `update_ui` and every action that stores form values, the server checks the data model as it would sit in that envelope: nesting is counted from the envelope (so the data model itself can be at most 31 levels deep), every array holds at most 1000 items, every string and key holds at most 4096 characters, and the serialized data model is at most 128 KiB. The server also checks the whole `ui.open`, `ui.patch`, `ui.data` and `ui.snapshot` it is about to send against the client limits and rejects the tool call when one would not fit, so a client never has to refuse a message and ask for a resync that would fail again.
 
 ## 6. Bindings and references
 
@@ -152,8 +154,10 @@ Interactive props have the `action` kind, for example `on_press` on `Button`.
 The model's `args` never travel to the client. When the server accepts a surface, it replaces each action object with a handle:
 
 ```json
-{ "action_id": "act_4kq9", "confirm": true }
+{ "action_id": "act_4kq9", "confirm": true, "with": ["/form/phone"] }
 ```
+
+`confirm` tells the renderer that the server will ask before it runs the action. `with` is copied from the action object so the client knows which values to send; it is left out when the action has none. Changing it on the client changes nothing on the server, which keeps its own copy.
 
 The server keeps `act_4kq9 -> pay_bill(bill = b_17)` in the session. The client can only send the handle back. It cannot change the arguments, and neither can the model after the fact.
 
@@ -164,6 +168,12 @@ The server keeps `act_4kq9 -> pay_bill(bill = b_17)` in the session. The client 
 ```
 
 `source` is `tap`, `voice` or `keyboard`. It is recorded, not trusted for security.
+
+`values` holds the current value of every path in the handle's `with`. The client core also sends the value of the component's own bound path (the `value` path of an `Input` or a `ChoiceGroup`); the server drops every path that is not in its copy of `with`. The serialized `values` object may be at most 128 KiB, the data model limit.
+
+`detail` is an optional JSON object that says which part of a component the user used, for example `{ "row": 3 }` when a chart bar is tapped, or `{ "text": "..." }` when an embedded app sends a message. The renderer gets it from the platform, so it is user input like `values`: the server passes it to the model and the host as data and never acts on it. Serialized, it may be at most 4096 bytes.
+
+A `ui.action` whose `detail` or `values` is over its limit is answered with `ui.error` reason `bad_message`, and nothing runs.
 
 `values` are user input and get the same checks as data the model writes. The server keeps only the paths listed in `with`, puts them into the surface data model, and checks every prop bound to that data model again with the new values, by the rules of section 6 and the limits of section 5.2. If a value does not fit (for example a `javascript:` URL typed into a field bound to an `Image.src`), the action does not run and nothing is stored; the server answers `ui.action.result` with `rejected` and a `message` the client can show. For an action with `requires_confirm` this check happens before `ui.confirm` is sent and again before the action runs.
 
@@ -243,7 +253,9 @@ While the voice layer speaks, the client highlights the component being spoken. 
 
 ### `ui.snapshot`
 
-The full state of a surface: `root`, `components`, `data`, `seq`. Sent after `ui.resync` and when a client reconnects.
+The full state of a surface: `root`, `components`, `data`, `seq`. Sent after `ui.resync`.
+
+A session lives as long as its connection: the WebSocket, or the SSE event stream. When that closes, the session ends. Its surfaces, handles and pending confirmations are gone, and a running model turn stops. A client that connects again sends `hello` and starts a new session; nothing is resumed and no `ui.snapshot` is sent for the old surfaces. The client should mark the surfaces it still shows as stale, because their handles no longer work.
 
 ### 8.1 Streaming surfaces
 
@@ -260,7 +272,7 @@ Every one of these messages has the next `seq`, so the usual gap and `ui.resync`
 | `t` | Fields | When |
 |---|---|---|
 | `hello` | section 4 | First message. |
-| `ui.action` | section 7 | User tapped, typed or spoke. |
+| `ui.action` | `surface`, `action_id`, `values`, `confirm`, `source`, `detail` (section 7.1) | User tapped, typed or spoke. |
 | `ui.resync` | `surface` | Client saw a `seq` gap or lost state. |
 | `ui.error` | `surface`, `reason`, `detail` | Client could not draw something. Reasons: `unsupported_version`, `unknown_component`, `render_failed`, `bad_message`. |
 
@@ -355,6 +367,6 @@ These are not part of the UI protocol. The reference server and the example chat
 | server to client | `{ "v": 1, "t": "agent.done" }` | The agent finished its turn. |
 | server to client | `{ "v": 1, "t": "agent.error", "message": "..." }` | The turn failed, or a `user.say` was not accepted. The message is safe to show to the user. |
 
-A server may limit how many `user.say` messages it accepts. The reference server runs one turn at a time per session, lets at most two more wait, and applies a rate limit; a `user.say` over either limit is answered with `agent.error` and never reaches the model.
+A server may limit how many `user.say` messages it accepts. The reference server runs one turn at a time per session, lets at most two more wait, and applies a rate limit. It also refuses a `user.say` whose `text` is missing, not a string, empty or only whitespace, or longer than 4000 characters. Every refused `user.say` is answered with `agent.error` and never reaches the model.
 
 The WebSocket endpoint is `/ws`. The client sends `hello` first and waits for `welcome`.

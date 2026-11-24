@@ -19,9 +19,14 @@ export function report(dist) {
     console.log(`${name.padEnd(19)} raw ${size.raw} B, gzip ${size.gzip} B, brotli ${size.brotli} B`);
   }
   const js = measure(join(dist, "polyui.js"));
-  console.log(`renderer budget: ${js.brotli} / ${budgetBytes} B brotli ${js.brotli < budgetBytes ? "ok" : "OVER"}`);
+  const fits = js.brotli <= budgetBytes;
+  console.log(`renderer budget: ${js.brotli} / ${budgetBytes} B brotli ${fits ? "ok" : "OVER"}`);
+  return fits;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  report(join(dirname(fileURLToPath(import.meta.url)), "..", "dist"));
+  if (!report(join(dirname(fileURLToPath(import.meta.url)), "..", "dist"))) {
+    console.error(`polyui.js is over its ${budgetBytes} B brotli budget`);
+    process.exitCode = 1;
+  }
 }

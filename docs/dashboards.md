@@ -144,7 +144,7 @@ The test caps the turn at 6 model calls and overwrites the fixture.
 
 ## Costs and limits
 
-- **DataFusion 56.0.0**, the current release. It needs Rust 1.95, so `polyui-query` declares `rust-version = "1.95"`. The rest of the workspace still builds on 1.85 when the `query` feature is off. Default features are off; the crate turns on `sql`, `parquet`, and the date, string and unicode functions. `datafusion-table-providers` (Postgres, MySQL, SQLite and others) is not used.
+- **DataFusion 56.0.0**, the current release. It needs Rust 1.95, so `polyui-query` declares `rust-version = "1.95"`. The rest of the workspace builds on 1.88 (checked with `cargo +1.88 check`) when the `query` feature is off. Default features are off; the crate turns on `sql`, `parquet`, and the date, string and unicode functions. `datafusion-table-providers` (Postgres, MySQL, SQLite and others) is not used.
 - **Build cost.** See the table below for a clean release build of the `polyui` binary.
 - **Memory limit gaps.** DataFusion's memory pool tracks joins, sorts and aggregations, not every allocation a scalar function makes. `repeat`, `lpad` and `rpad`, which can turn a short input into gigabytes, are removed for this reason. Other expensive expressions are bounded only by the timeout.
 - **Queries run again on every draw.** That keeps the screen current, and it means a slow query is slow twice. Saved queries live in the session; a conversation can save at most 64.
@@ -153,7 +153,7 @@ The test caps the turn at 6 model calls and overwrites the fixture.
 | `polyui` release build, clean | without `query` | with `query` |
 |---|---|---|
 | Wall time | 45 s | 9 min 35 s |
-| Binary size | 7.3 MB | 92.0 MB |
-| Binary size after `strip` | 6.2 MB | 75.6 MB |
+| Binary size | 7 641 888 bytes (7.3 MiB) | 92 356 400 bytes (88.1 MiB) |
+| Binary size after `strip` | 6 500 928 bytes (6.2 MiB) | 75 868 704 bytes (72.4 MiB) |
 
-Measured on an Apple Silicon Mac with the workspace release profile (fat LTO, one codegen unit, `opt-level = 3`), each build in its own empty target directory: `cargo build --release -p polyui` and `cargo build --release -p polyui --features query`. These numbers were measured when `query` was still on by default and were not measured again after the default changed. Almost all of the difference is DataFusion and Arrow. If size matters more than query speed, a host can build `polyui-server` without the feature and run the queries in a separate service.
+Measured on an Apple Silicon Mac with the workspace release profile (fat LTO, one codegen unit, `opt-level = 3`), each build in its own empty target directory: `cargo build --release -p polyui` and `cargo build --release -p polyui --features query`. The wall times were measured when `query` was still on by default. The sizes were measured again on 2026-11-24, on the same kind of machine, after the default changed; the earlier figures had mixed MiB and decimal MB. Almost all of the difference is DataFusion and Arrow. If size matters more than query speed, a host can build `polyui-server` without the feature and run the queries in a separate service.

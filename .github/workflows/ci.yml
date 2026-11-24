@@ -139,11 +139,40 @@ jobs:
         run: |
           cargo clippy -p polyui-server -p polyui --features polyui-server/query,polyui/query --all-targets -- -D warnings
           cargo clippy -p polyui-core --no-default-features --features client-lite --lib --test conformance -- -D warnings
+      - name: Clippy for the C ABI and Node bindings
+        run: |
+          cargo clippy -p polyui-ffi --all-targets -- -D warnings
+          cargo clippy -p polyui-ffi --features lite --all-targets -- -D warnings
+          cargo clippy -p polyui-node --all-targets -- -D warnings
+      - uses: actions/setup-python@v7
+        id: python
+        with:
+          python-version: "3.12"
+      - name: Clippy for the Python binding
+        env:
+          PYO3_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: cargo clippy -p polyui-python --all-targets -- -D warnings
       - run: cargo test
       - name: Tests with the query feature
         run: cargo test -p polyui-server -p polyui --features polyui-server/query,polyui/query
       - name: Tests for the client-lite core used by the wasm build
         run: cargo test -p polyui-core --no-default-features --features client-lite --lib --test conformance
+      - name: Tests for the C ABI, full and lite
+        run: |
+          cargo test -p polyui-ffi
+          cargo test -p polyui-ffi --features lite
+
+  ffi-c:
+    name: C ABI test from C and C++ (macOS, where the script's link line and leaks check were written and run)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - name: C test with address and undefined behavior sanitizers, full core
+        run: bash bindings/ffi/tests/c/run.sh
+      - name: Same with the lite core used by the apps
+        run: POLYUI_FFI_FEATURES=lite bash bindings/ffi/tests/c/run.sh
 
   web:
     name: Wasm size gate, web renderer and chat example
@@ -187,20 +216,22 @@ jobs:
         run: node bindings/wasm/build.mjs
       - name: Check the wasm size against the budget in docs/adr/0001-stack.md
         run: |
-          budget_kb=$(grep -oE 'budget is [0-9]+ kB brotli' docs/adr/0001-stack.md | grep -oE '[0-9]+')
-          test -n "$budget_kb"
-          budget=$((budget_kb * 1024))
+          budget=$(sed -nE 's/.*budget is ([0-9][0-9 ]*) bytes brotli.*/\1/p' docs/adr/0001-stack.md | tr -d ' ')
+          test -n "$budget"
           size=$(node -e '
             const zlib = require("node:zlib");
             const raw = require("node:fs").readFileSync(process.argv[1]);
             const params = { [zlib.constants.BROTLI_PARAM_QUALITY]: zlib.constants.BROTLI_MAX_QUALITY, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length };
             console.log(zlib.brotliCompressSync(raw, { params }).length);
           ' js/polyui-web/wasm/polyui_core_bg.wasm)
-          echo "wasm core: $size B brotli, budget $budget B ($budget_kb kB)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "wasm core: $size B brotli, budget $budget B" | tee -a "$GITHUB_STEP_SUMMARY"
           test "$size" -le "$budget"
       - name: Web renderer tests
         working-directory: js/polyui-web
         run: npm ci && npm test
+      - name: Web renderer size against its 12 288 B brotli budget
+        working-directory: js/polyui-web
+        run: npm run size
       - name: Chat example build
         working-directory: examples/chat
         run: npm ci && npm run build

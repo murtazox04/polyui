@@ -245,3 +245,33 @@ fn every_fixture_is_described_and_has_expectations() {
         );
     }
 }
+
+#[test]
+fn string_limits_count_characters_in_both_builds() {
+    let hello =
+        r#"{"v":1,"t":"hello","catalogs":["core@1"],"modalities":["screen"],"locale":"uz-Latn"}"#;
+    let open = r#"{"v":1,"t":"ui.open","surface":"s1","seq":1,"root":"name","components":[{"id":"name","type":"Input","props":{"label":"Ism","value":"/name"}}],"data":{"name":""}}"#;
+    let mut client = Client::new(hello).expect("hello is valid");
+    client.receive_json(open);
+    let mut accepts = |text: &str| -> bool {
+        let batch: Value =
+            serde_json::from_str(&client.set_value_json("s1", "/name", text)).expect("batch");
+        batch["ops"].as_array().is_some_and(|ops| !ops.is_empty())
+    };
+    for letter in ["ж", "o\u{2bb}", "\u{1F600}"] {
+        let at_limit = letter.repeat(4096 / letter.chars().count());
+        assert!(at_limit.len() > 4096);
+        assert!(
+            accepts(&Value::from(at_limit.clone()).to_string()),
+            "{letter}"
+        );
+        assert!(
+            !accepts(&Value::from(format!("{at_limit}x")).to_string()),
+            "{letter}"
+        );
+    }
+    let escaped = format!("\"{}\"", "\\ud83d\\ude01".repeat(4096));
+    assert!(accepts(&escaped));
+    let escaped_over = format!("\"{}x\"", "\\ud83d\\ude01".repeat(4096));
+    assert!(!accepts(&escaped_over));
+}

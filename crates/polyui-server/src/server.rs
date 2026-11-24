@@ -1,17 +1,18 @@
 use crate::host::User;
+use crate::origin;
 use crate::session::{Agent, CloseReason, Outgoing, Session};
 use axum::Router;
 use axum::extract::ws::{
     CloseFrame, Message as WsMessage, WebSocket, WebSocketUpgrade, close_code,
 };
 use axum::extract::{DefaultBodyLimit, Query, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use futures_util::stream::{self, SplitSink};
 use futures_util::{SinkExt, StreamExt};
-use polyui_core::protocol::{self, ErrorReason};
+use polyui_core::protocol::{self, ErrorReason, Hello};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -31,6 +32,7 @@ pub struct ServerConfig {
     pub max_sessions: usize,
     pub attach_timeout: Duration,
     pub embed_origin: Option<String>,
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for ServerConfig {
@@ -40,6 +42,7 @@ impl Default for ServerConfig {
             max_sessions: 1000,
             attach_timeout: Duration::from_secs(60),
             embed_origin: None,
+            allowed_origins: Vec::new(),
         }
     }
 }
@@ -74,10 +77,30 @@ impl AppState {
     fn admit(&self) -> Option<OwnedSemaphorePermit> {
         self.capacity.clone().try_acquire_owned().ok()
     }
+
+    fn refuse_origin(&self, headers: &HeaderMap, uri: &Uri) -> Option<Response> {
+        let sent = headers.get(header::ORIGIN)?;
+        let host = headers
+            .get(header::HOST)
+            .and_then(|value| value.to_str().ok())
+            .or_else(|| uri.authority().map(|authority| authority.as_str()));
+        let fits = sent
+            .to_str()
+            .is_ok_and(|sent| origin::allowed(sent, host, &self.config.allowed_origins));
+        (!fits).then(|| (StatusCode::FORBIDDEN, "this origin is not allowed").into_response())
+    }
 }
 
 fn too_many_sessions() -> Response {
     (StatusCode::SERVICE_UNAVAILABLE, "too many sessions").into_response()
+}
+
+fn is_json(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|media| media.trim().eq_ignore_ascii_case("application/json"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,7 +108,21 @@ struct SessionQuery {
     session: Option<String>,
 }
 
-pub fn router(agent: Agent, config: ServerConfig) -> Router {
+fn checked_origins(listed: &[String]) -> Vec<String> {
+    listed
+        .iter()
+        .filter_map(|entry| match origin::normalize(entry) {
+            Ok(normal) => Some(normal),
+            Err(message) => {
+                eprintln!("polyui: ignoring an allowed origin: {message}");
+                None
+            }
+        })
+        .collect()
+}
+
+pub fn router(agent: Agent, mut config: ServerConfig) -> Router {
+    config.allowed_origins = checked_origins(&config.allowed_origins);
     let limit = agent.config().limits.max_message_bytes;
     let static_dir = config.static_dir.clone();
     let capacity = Arc::new(Semaphore::new(
@@ -141,8 +178,12 @@ fn bad_message(detail: String) -> Value {
 async fn websocket(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
+    uri: Uri,
     upgrade: WebSocketUpgrade,
 ) -> Response {
+    if let Some(refused) = state.refuse_origin(&headers, &uri) {
+        return refused;
+    }
     let user = match state.authenticate(&headers) {
         Ok(user) => user,
         Err(message) => return (StatusCode::UNAUTHORIZED, message).into_response(),
@@ -163,22 +204,18 @@ async fn run_socket(
     user: User,
     permit: OwnedSemaphorePermit,
 ) {
-    let limits = state.agent.config().limits;
-    let hello = loop {
-        match socket.recv().await {
-            Some(Ok(WsMessage::Text(text))) => {
-                match protocol::parse_hello(text.as_str(), &limits) {
-                    Ok(hello) => break hello,
-                    Err(error) => {
-                        let reply = bad_message(error.to_string()).to_string();
-                        let _ = socket.send(WsMessage::Text(reply.into())).await;
-                        let _ = socket.send(WsMessage::Close(None)).await;
-                        return;
-                    }
-                }
-            }
-            Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_))) => continue,
-            _ => return,
+    let wait = state.config.attach_timeout;
+    let hello = match tokio::time::timeout(wait, read_hello(&state, &mut socket)).await {
+        Ok(Some(hello)) => hello,
+        Ok(None) => return,
+        Err(_) => {
+            let frame = CloseFrame {
+                code: close_code::POLICY,
+                reason: "no hello in time".into(),
+            };
+            let _ =
+                tokio::time::timeout(CLOSE_WAIT, socket.send(WsMessage::Close(Some(frame)))).await;
+            return;
         }
     };
     let (session, outgoing) = state.agent.open_session(hello, user);
@@ -210,6 +247,27 @@ async fn run_socket(
     session.close(CloseReason::ClientGone);
     let _ = writer.await;
     drop(permit);
+}
+
+async fn read_hello(state: &AppState, socket: &mut WebSocket) -> Option<Hello> {
+    let limits = state.agent.config().limits;
+    loop {
+        match socket.recv().await {
+            Some(Ok(WsMessage::Text(text))) => {
+                return match protocol::parse_hello(text.as_str(), &limits) {
+                    Ok(hello) => Some(hello),
+                    Err(error) => {
+                        let reply = bad_message(error.to_string()).to_string();
+                        let _ = socket.send(WsMessage::Text(reply.into())).await;
+                        let _ = socket.send(WsMessage::Close(None)).await;
+                        None
+                    }
+                };
+            }
+            Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_))) => continue,
+            _ => return None,
+        }
+    }
 }
 
 async fn write_socket(
@@ -256,8 +314,19 @@ async fn send(
     State(state): State<Arc<AppState>>,
     Query(query): Query<SessionQuery>,
     headers: HeaderMap,
+    uri: Uri,
     body: String,
 ) -> Response {
+    if let Some(refused) = state.refuse_origin(&headers, &uri) {
+        return refused;
+    }
+    if !is_json(&headers) {
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "send the message with content-type: application/json",
+        )
+            .into_response();
+    }
     let user = match state.authenticate(&headers) {
         Ok(user) => user,
         Err(message) => return (StatusCode::UNAUTHORIZED, message).into_response(),
@@ -355,7 +424,11 @@ async fn events(
     State(state): State<Arc<AppState>>,
     Query(query): Query<SessionQuery>,
     headers: HeaderMap,
+    uri: Uri,
 ) -> Response {
+    if let Some(refused) = state.refuse_origin(&headers, &uri) {
+        return refused;
+    }
     let user = match state.authenticate(&headers) {
         Ok(user) => user,
         Err(message) => return (StatusCode::UNAUTHORIZED, message).into_response(),

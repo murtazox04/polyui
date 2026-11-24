@@ -1,16 +1,17 @@
 # Security model and the tests behind it
 
-Section 13 of `spec/protocol.md` lists seven security rules. This page explains who we defend against, where the trust boundaries are, and which test checks each rule. It also lists the defects the tests found and how each one was fixed.
+Section 13 of `spec/protocol.md` lists eight security rules. This page explains who we defend against, where the trust boundaries are, and which test checks each rule. It also lists the defects the tests found and how each one was fixed.
 
 ## Who we defend against
 
-PolyUI puts a language model between a user and real actions such as paying a bill. Four parties can send it data, and only one of them, the host, is trusted.
+PolyUI puts a language model between a user and real actions such as paying a bill. Five parties can send it data, and only one of them, the host, is trusted.
 
 | Party | What it can send | What we assume |
 |---|---|---|
 | The model | Tool calls and text | It can be talked into anything. A user, a web page or a document in its context may tell it to draw raw HTML, skip the confirm step, or read out an account number. Every tool call is treated as hostile input. |
 | The client | Protocol messages over WebSocket or SSE and POST | It is code on someone else's device. Any field can be forged, any frame can be garbage, and it can send as fast as the network allows. |
 | Another user or session | Requests with a stolen session id, nonce or handle | It must never act inside a session it did not open. |
+| A page on another site | WebSocket and HTTP requests that the user's own browser sends for it, to `127.0.0.1` or to the real server | It must never open or use a session. See [The transport](#the-transport). |
 | The host | The system prompt, actions, `$ref` resolvers, confirm text | Trusted. It is the application that embeds PolyUI. |
 
 What we protect:
@@ -48,7 +49,7 @@ The arrows that leave the server toward the model carry only what the model wrot
 
 ## Rules and the tests that check them
 
-The tests live in three files. Run them with `cargo test`. None of them is ignored.
+Most of the tests live in three files. Run them with `cargo test`. None of them is ignored. Rule 8 has its own files, named in its section.
 
 - `crates/polyui-core/tests/security_pack.rs`: the validator and the client core, with no I/O.
 - `crates/polyui-server/tests/security_pack.rs`: the agent loop with `ScriptedProvider`, which replays the exact hostile replies a prompt-injected model would send.
@@ -162,7 +163,10 @@ sequenceDiagram
 | 5000 unknown props produce a short problem list, not a 5000 line one | core `rule7_problem_lists_stay_short_for_huge_inputs` |
 | Empty input, a BOM, trailing data, `NaN`, `1e999`, lone surrogates, bad escapes, raw control characters, single quotes, trailing commas | core `malformed_json_is_reported_and_never_panics` |
 | Duplicate keys that try to sneak a second `src` past the check | core `duplicate_keys_cannot_smuggle_a_url_past_the_checks` |
-| A user message over 4000 characters | server `overlong_user_text_never_reaches_the_model` |
+| A user message over 4000 characters gets `agent.error`; 4000 Cyrillic letters (8000 bytes) still pass | server `overlong_user_text_never_reaches_the_model` |
+| A blank `user.say`, or one with no string `text`, gets `agent.error` | server `blank_or_textless_user_say_gets_an_agent_error` |
+| A raw `ui.action` with a `detail` over 4096 bytes or `values` over 128 KiB is refused before the action, with `ui.error` | server `oversized_action_detail_and_values_are_refused_before_the_action`, core `action_detail_and_values_are_capped` |
+| Strings are counted in characters, the same way by the guarded parser and by the value checks: multi-byte letters, emoji and escaped surrogate pairs | core `strings_are_counted_in_characters_not_bytes_or_escapes`, conformance `string_limits_count_characters_in_both_builds` |
 | Invalid JSON on the WebSocket, then normal use | transport `ws_invalid_json_gets_bad_message_and_the_socket_stays_usable` |
 | Invalid UTF-8 in a WebSocket text frame | transport `ws_invalid_utf8_text_frames_drop_only_that_connection` |
 | Binary WebSocket frames | transport `ws_binary_frames_are_refused` |
@@ -178,7 +182,40 @@ sequenceDiagram
 | Opening more WebSocket sessions than `max_sessions` | transport `ws_sessions_count_against_max_sessions` |
 | WebSocket and SSE sessions together over `max_sessions` | transport `sse_and_websocket_sessions_share_max_sessions` |
 | A client that leaves while the model is still answering | transport `a_disconnect_cancels_the_running_turn` |
+| A WebSocket that never sends `hello` is closed after the attach timeout and gives its session place back | transport `a_client_that_never_says_hello_gives_its_place_back` |
 | One model reply that opens 300 surfaces | server `the_number_of_open_surfaces_per_session_is_capped` |
+
+### Rule 8: HTML only through `embed:Embed`, from the host, in a sandbox
+
+The model names a `ui://` resource and nothing more. The host supplies the HTML, the server puts it in the server-only `app` prop, and the renderer runs it only in a sandbox on a separate origin. [Embedding MCP Apps](embed.md) has the full rules.
+
+| Attack | Test |
+|---|---|
+| The model uses `embed:Embed` when the host did not turn it on, or the client did not declare `embed@1` | core `the_model_only_sees_embed_when_the_host_turns_it_on`, server `clients_without_embed_are_never_offered_it` |
+| A `resource` that is not a literal `ui://` URI: an `https`, `javascript:` or `data:` URL, a `$bind`, a number | core `the_resource_must_be_a_ui_uri_written_literally` |
+| The model writes the server-only `app` prop, or HTML in another prop | core `the_model_cannot_write_the_server_only_app_prop_or_markup` |
+| A resource the host does not offer, or an app too large for one message | server `unknown_resources_and_oversized_apps_are_problems_for_the_model` |
+| One call that names many different apps | server `too_many_different_apps_are_refused_before_any_read` |
+| The app's HTML or URI reaching the model's copy or its summary | server `the_tariff_app_reaches_the_client_and_stays_out_of_the_model` |
+| An `app` with the wrong mime type, another URI, a `blob` instead of `text`, or a non-object `tool_input` reaching the renderer | core `the_client_core_drops_apps_that_do_not_fit` |
+| App HTML over `MAX_APP_STRING_CHARS`, or the larger HTML limit used outside `embed:Embed` | core `app_html_has_its_own_ceiling` |
+| A client without `embed@1` gets the title, not the frame | core `a_client_that_did_not_declare_embed_draws_the_title` |
+| No sandbox origin, a sandbox on the host's own origin, or a bad sandbox URL | web `embed.test.ts` "shows the title and no frame when the host set no sandbox origin", "refuses a sandbox on the host's own origin or with a bad URL" |
+| The frame gets more than `allow-scripts`, or the HTML lands in the host page | web `embed.test.ts` "loads the sandbox page with allow-scripts only and never puts the HTML in the host page" |
+| Messages from another frame or window | web `embed.test.ts` "answers the sandbox only for its own frame with an opaque origin" |
+| `ui/message` without an `on_message` action, and links that skip the confirm sheet or are not `https` | web `embed.test.ts` "denies ui/message when the component has no on_message action", "opens only https links, and only after the user confirms in the renderer's sheet" |
+
+The core tests are in `crates/polyui-core/tests/embed.rs`, the server tests in `crates/polyui-server/tests/embed.rs`, and the renderer tests in `js/polyui-web/test/embed.test.ts` (run with `npm test` in `js/polyui-web`).
+
+## The transport
+
+These are not among the eight rules, because the protocol does not fix a transport, but the reference server needs them.
+
+| Attack | Test |
+|---|---|
+| A page on another site opens `ws://127.0.0.1:8787/ws`, or calls `/send` and `/events`, with the user's browser (cross-site WebSocket hijacking) | transport `pages_on_other_origins_cannot_open_or_use_sessions` |
+| A cross-site `POST /send` as `text/plain`, which a browser sends without a CORS preflight | transport `pages_on_other_origins_cannot_open_or_use_sessions` |
+| Forged or malformed `Origin` values and the loopback forms of the server's own origin | server `origin::tests` |
 
 ## Defects the pack found
 

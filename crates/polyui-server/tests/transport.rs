@@ -135,6 +135,7 @@ async fn sse_and_post_end_to_end() {
     let http = reqwest::Client::new();
     let welcome: Value = http
         .post(format!("http://{addr}/send"))
+        .header("content-type", "application/json")
         .body(hello())
         .send()
         .await
@@ -158,6 +159,7 @@ async fn sse_and_post_end_to_end() {
 
     let accepted = http
         .post(format!("http://{addr}/send?session={session}"))
+        .header("content-type", "application/json")
         .body(json!({ "v": 1, "t": "user.say", "text": "show gas" }).to_string())
         .send()
         .await
@@ -182,6 +184,7 @@ async fn sse_and_post_end_to_end() {
 
     let too_big = http
         .post(format!("http://{addr}/send?session={session}"))
+        .header("content-type", "application/json")
         .body("x".repeat(300 * 1024))
         .send()
         .await
@@ -189,6 +192,7 @@ async fn sse_and_post_end_to_end() {
     assert_eq!(too_big.status(), 413);
     let unknown = http
         .post(format!("http://{addr}/send?session=sess_nope"))
+        .header("content-type", "application/json")
         .body("{}")
         .send()
         .await

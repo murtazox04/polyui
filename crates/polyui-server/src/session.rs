@@ -35,6 +35,9 @@ pub const BUSY: &str =
     "The assistant is still working on your earlier messages. Please wait for it to finish.";
 pub const TOO_FAST: &str =
     "You are sending messages too quickly. Please wait a moment and try again.";
+pub const SAY_TOO_LONG: &str =
+    "Your message is too long. Please keep it under 4000 characters and send it again.";
+pub const SAY_EMPTY: &str = "Your message is empty. Please type or say something.";
 pub const FORM_REFUSED: &str =
     "Some of the values in this form are not allowed here. Please check them and try again.";
 
@@ -760,18 +763,11 @@ impl Session {
                         .map(str::to_string)
                 });
                 match said {
-                    Some(said) if said.trim().is_empty() => {}
-                    Some(said) if said.chars().count() <= MAX_SAY_CHARS => self.queue_say(said),
-                    Some(_) => self.send_error(
-                        None,
-                        ErrorReason::BadMessage,
-                        format!("user.say text is longer than {MAX_SAY_CHARS} characters"),
-                    ),
-                    None => self.send_error(
-                        None,
-                        ErrorReason::BadMessage,
-                        "user.say needs a string \"text\"".into(),
-                    ),
+                    Some(said) if said.chars().count() > MAX_SAY_CHARS => {
+                        self.send(chat_text(ERROR, "message", SAY_TOO_LONG));
+                    }
+                    Some(said) if !said.trim().is_empty() => self.queue_say(said),
+                    _ => self.send(chat_text(ERROR, "message", SAY_EMPTY)),
                 }
             }
             Ok(Incoming::UnknownType {

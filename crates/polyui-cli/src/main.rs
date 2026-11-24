@@ -125,6 +125,13 @@ enum Command {
             help = "Offer the model only these component types, for example Text,Card,Stat,Button,chart:Chart. All types when not given. Validation still accepts every type the client draws."
         )]
         catalog_subset: Vec<String>,
+        #[arg(
+            long = "allow-origin",
+            value_name = "URL",
+            value_parser = parse_origin,
+            help = "Another page origin that may open sessions, for example http://localhost:5173. Repeat it for more. The server's own origin, and its localhost, 127.0.0.1 and [::1] forms, are always allowed; requests with any other Origin header get 403."
+        )]
+        allow_origin: Vec<String>,
     },
     #[command(about = "Print the show_ui, update_ui and close_ui tool definitions as JSON.")]
     Tools {
@@ -185,6 +192,10 @@ enum Command {
         )]
         data: PathBuf,
     },
+}
+
+fn parse_origin(text: &str) -> Result<String, String> {
+    polyui_server::origin::normalize(text)
 }
 
 const DEFAULT_SANDBOX_DIR: &str = "js/polyui-web/embed-sandbox";
@@ -442,6 +453,7 @@ struct ServeOptions {
     embed_sandbox: PathBuf,
     tool_profile: ToolProfile,
     catalog_subset: Vec<String>,
+    allow_origin: Vec<String>,
 }
 
 async fn serve(options: ServeOptions) -> ExitCode {
@@ -455,6 +467,7 @@ async fn serve(options: ServeOptions) -> ExitCode {
         embed_sandbox,
         tool_profile,
         catalog_subset,
+        allow_origin,
     } = options;
     let tariff_app = embed_origin.is_some();
     if tariff_app && !matches!(choice, HostChoice::Bills) {
@@ -503,6 +516,7 @@ async fn serve(options: ServeOptions) -> ExitCode {
         ServerConfig {
             static_dir: static_dir.clone(),
             embed_origin: embed_origin.clone(),
+            allowed_origins: allow_origin,
             ..ServerConfig::default()
         },
     );
@@ -566,6 +580,7 @@ async fn main() -> ExitCode {
             embed_sandbox,
             tool_profile,
             catalog_subset,
+            allow_origin,
         } => {
             serve(ServeOptions {
                 addr,
@@ -583,6 +598,7 @@ async fn main() -> ExitCode {
                 embed_sandbox,
                 tool_profile: tool_profile.into(),
                 catalog_subset,
+                allow_origin,
             })
             .await
         }
@@ -680,6 +696,34 @@ mod tests {
         assert!(
             error.contains("Html") && error.contains("Known: "),
             "{error}"
+        );
+    }
+
+    #[test]
+    fn allowed_origins_repeat_and_are_checked() {
+        let serve = Cli::try_parse_from([
+            "polyui",
+            "serve",
+            "--allow-origin",
+            "http://localhost:5173/",
+            "--allow-origin",
+            "HTTPS://App.Example.com",
+        ])
+        .map(|cli| cli.command);
+        assert!(matches!(
+            serve,
+            Ok(Command::Serve { ref allow_origin, .. }) if allow_origin == &["http://localhost:5173", "https://app.example.com"]
+        ));
+        let bad = Cli::try_parse_from([
+            "polyui",
+            "serve",
+            "--allow-origin",
+            "https://app.example.com/chat",
+        ]);
+        assert!(bad.is_err());
+        let none = Cli::try_parse_from(["polyui", "serve"]).map(|cli| cli.command);
+        assert!(
+            matches!(none, Ok(Command::Serve { ref allow_origin, .. }) if allow_origin.is_empty())
         );
     }
 

@@ -43,7 +43,7 @@ PolyUI ships three catalogs: [`core`](catalogs/core.json), [`chart`](catalogs/ch
 
 | `kind` | Extra fields | Accepts |
 |---|---|---|
-| `string` | `max`, `min` | A string. |
+| `string` | `max`, `min` | A string. `max` and `min` count characters (Unicode code points), not bytes. |
 | `int` | `min`, `max` | A whole number. |
 | `number` | `min`, `max` | Any finite number. |
 | `bool` | | `true` or `false`. |
