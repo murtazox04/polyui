@@ -6,6 +6,15 @@ members = [
     "crates/polyui-server",
     "crates/polyui-cli",
     "bindings/wasm",
+    "bindings/python",
+    "bindings/node",
+]
+default-members = [
+    "crates/polyui-core",
+    "crates/polyui-chart",
+    "crates/polyui-server",
+    "crates/polyui-cli",
+    "bindings/wasm",
 ]
 
 [workspace.package]

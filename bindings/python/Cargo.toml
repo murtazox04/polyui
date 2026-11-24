@@ -1,0 +1,25 @@
+[package]
+name = "polyui-python"
+description = "Python bindings for the PolyUI core: validation, tool schemas, charts and the client core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "polyui"
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+polyui-core = { workspace = true }
+polyui-chart = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+pyo3 = "0.30.1"
+pythonize = "0.30.0"
+getrandom = "0.4.3"

@@ -1,0 +1,41 @@
+{
+  "name": "@polyui/node",
+  "version": "0.1.0",
+  "description": "Node bindings for the PolyUI core: check generative UI from LLM agents, build tool schemas, compile charts.",
+  "license": "Apache-2.0",
+  "author": "Murtazo Xurramov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/murtazox04/polyui.git",
+    "directory": "bindings/node"
+  },
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "engines": {
+    "node": ">= 18"
+  },
+  "napi": {
+    "binaryName": "polyui",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release --strip --no-js --dts native.d.ts",
+    "build:debug": "napi build --platform --no-js --dts native.d.ts",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.11.1"
+  }
+}
