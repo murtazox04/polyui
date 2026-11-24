@@ -54,15 +54,47 @@ const wasmUrl = new URL("./polyui_core_bg.wasm", import.meta.url);
 const endpoint = new URL("/ws", location.href);
 endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
 
-const hello = {
-  v: 1,
-  t: "hello",
-  client: { name: "polyui-chat", version: "0.1.0" },
-  catalogs: ["core@1", "chart@1"],
-  modalities: ["screen", "voice"],
-  features: ["sync", "stream"],
-  locale,
-};
+const loopbackHosts = ["localhost", "127.0.0.1", "[::1]"];
+
+interface Setup {
+  readonly embedOrigin: string | null;
+}
+
+let setup: Setup | null = null;
+
+async function readSetup(): Promise<Setup> {
+  try {
+    const response = await fetch(new URL("/config.json", location.href));
+    if (!response.ok) return { embedOrigin: null };
+    const config = parse(await response.text());
+    const origin = config ? config["embed_origin"] : null;
+    return { embedOrigin: typeof origin === "string" && origin !== "" ? origin : null };
+  } catch {
+    return { embedOrigin: null };
+  }
+}
+
+function sandboxOverHttp(origin: string | null): boolean {
+  if (origin === null) return false;
+  try {
+    const url = new URL(origin);
+    return url.protocol === "http:" && loopbackHosts.includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function helloFor(current: Setup) {
+  return {
+    v: 1,
+    t: "hello",
+    client: { name: "polyui-chat", version: "0.1.0" },
+    catalogs: current.embedOrigin === null ? ["core@1", "chart@1"] : ["core@1", "chart@1", "embed@1"],
+    modalities: ["screen", "voice"],
+    features: ["sync", "stream"],
+    locale,
+  };
+}
 
 let socket: WebSocket | null = null;
 let core: WasmCore | null = null;
@@ -242,6 +274,9 @@ function scheduleReconnect(): void {
 
 async function connect(): Promise<void> {
   setStatus("connecting", "Connecting");
+  setup ??= await readSetup();
+  const current = setup;
+  const hello = helloFor(current);
   let next: WasmCore;
   try {
     next = await loadCore(hello, wasmUrl);
@@ -258,6 +293,8 @@ async function connect(): Promise<void> {
     send: (message) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(message);
     },
+    ...(current.embedOrigin === null ? {} : { embedOrigin: current.embedOrigin }),
+    allowHttp: sandboxOverHttp(current.embedOrigin),
   });
   ws.addEventListener("open", () => ws.send(JSON.stringify(hello)));
   ws.addEventListener("message", (event: MessageEvent<unknown>) => {

@@ -13,7 +13,7 @@ use futures_util::stream::{self, SplitSink};
 use futures_util::{SinkExt, StreamExt};
 use polyui_core::protocol::{self, ErrorReason};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::PathBuf;
@@ -30,6 +30,7 @@ pub struct ServerConfig {
     pub static_dir: Option<PathBuf>,
     pub max_sessions: usize,
     pub attach_timeout: Duration,
+    pub embed_origin: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -38,6 +39,7 @@ impl Default for ServerConfig {
             static_dir: None,
             max_sessions: 1000,
             attach_timeout: Duration::from_secs(60),
+            embed_origin: None,
         }
     }
 }
@@ -99,6 +101,7 @@ pub fn router(agent: Agent, config: ServerConfig) -> Router {
         .route("/ws", get(websocket))
         .route("/events", get(events))
         .route("/send", post(send))
+        .route("/config.json", get(client_config))
         .layer(DefaultBodyLimit::max(limit))
         .with_state(state);
     match static_dir {
@@ -107,8 +110,19 @@ pub fn router(agent: Agent, config: ServerConfig) -> Router {
     }
 }
 
+pub fn static_router(dir: PathBuf) -> Router {
+    Router::new().fallback_service(ServeDir::new(dir))
+}
+
 pub async fn serve(listener: TcpListener, app: Router) -> std::io::Result<()> {
     axum::serve(listener, app).await
+}
+
+async fn client_config(State(state): State<Arc<AppState>>) -> Response {
+    json_response(
+        StatusCode::OK,
+        &json!({ "embed_origin": state.config.embed_origin }),
+    )
 }
 
 fn json_response(status: StatusCode, value: &Value) -> Response {

@@ -2,6 +2,7 @@ export type Json = Record<string, unknown>
 export type Payload = Json | string
 export type Operation = 'show' | 'update' | 'close'
 export type Resolver = (user: unknown, source: string, key: string) => unknown
+export type UiResourceReader = (user: unknown, uri: string) => Json | null | undefined
 export type IdFactory = () => string
 
 export interface Problem {
@@ -74,6 +75,7 @@ export interface ValidatorOptions {
   refSources?: Record<string, string | PropSpec>
   resolver?: Resolver
   allowHttp?: boolean
+  uiResource?: UiResourceReader
 }
 
 export interface PrepareOptions {
@@ -129,6 +131,7 @@ export declare class Catalogs {
   private constructor()
   static builtin(): Catalogs
   static empty(): Catalogs
+  withEmbed(): Catalogs
   withCatalog(catalog: Json | string): Catalogs
   restrict(declared: string[]): Catalogs
   negotiate(declared: string[]): string[]
@@ -182,6 +185,7 @@ export declare class Validator {
   resolveRefs(surface: Surface, user?: unknown): Surface
   sealActions(surface: Surface, nextId?: IdFactory): { surface: Surface; actions: SealedAction[] }
   compileCharts(surface: Surface, options?: Omit<ChartOptions, 'dark'>): Surface
+  attachApps(surface: Surface, user?: unknown): Surface
   downgrade(surface: Surface, declared: string[], locale?: string): Surface
   summary(surface: Surface, surfaceId?: string, locale?: string): string
   fallback(surface: Surface, locale?: string): string

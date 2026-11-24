@@ -26,6 +26,12 @@ impl PyCatalogs {
         }
     }
 
+    fn with_embed(&self) -> Self {
+        Self {
+            inner: self.inner.clone().with_embed(),
+        }
+    }
+
     fn with_catalog(&self, py: Python<'_>, catalog: &Bound<'_, PyAny>) -> PyResult<Self> {
         let parsed = match catalog.cast::<PyString>() {
             Ok(text) => Catalog::from_json(text.to_str()?),

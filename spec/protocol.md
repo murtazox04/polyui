@@ -63,7 +63,7 @@ The client speaks first.
 
 - `catalogs`: what the renderer can draw, as `id@major`. The server must only send components from these catalogs. Anything else is sent as its `alt` text inside a `Text` component.
 - `modalities`: any non-empty subset of `screen` and `voice`.
-- `features`: optional abilities. `sync` means the client handles `ui.sync`. `stream` means it accepts surfaces that grow while the model is still writing.
+- `features`: optional abilities. `sync` means the client handles `ui.sync`. `stream` means it accepts surfaces that grow while the model is still writing (section 8.1).
 - `locale`: BCP 47 tag. Used for `alt` and `say` templates and for voice matching.
 
 The server answers with `welcome`:
@@ -165,6 +165,8 @@ The server keeps `act_4kq9 -> pay_bill(bill = b_17)` in the session. The client 
 
 `source` is `tap`, `voice` or `keyboard`. It is recorded, not trusted for security.
 
+`values` are user input and get the same checks as data the model writes. The server keeps only the paths listed in `with`, puts them into the surface data model, and checks every prop bound to that data model again with the new values, by the rules of section 6 and the limits of section 5.2. If a value does not fit (for example a `javascript:` URL typed into a field bound to an `Image.src`), the action does not run and nothing is stored; the server answers `ui.action.result` with `rejected` and a `message` the client can show. For an action with `requires_confirm` this check happens before `ui.confirm` is sent and again before the action runs.
+
 ### 7.2 Confirmation
 
 If the action has `requires_confirm`, the first `ui.action` does not run it. The server answers with a challenge whose text the host builds from the real arguments, not from anything the model wrote:
@@ -242,6 +244,16 @@ While the voice layer speaks, the client highlights the component being spoken. 
 ### `ui.snapshot`
 
 The full state of a surface: `root`, `components`, `data`, `seq`. Sent after `ui.resync` and when a client reconnects.
+
+### 8.1 Streaming surfaces
+
+A client that declared `stream` may get a surface before the model has finished writing it:
+
+1. `ui.open` arrives as soon as the root component is complete. It holds the root and the complete components the root reaches so far, and usually no data.
+2. Each component completed later arrives in a `ui.patch`. Such a patch may hold components that no parent reaches yet (section 5.1).
+3. When the model has finished, the server checks the whole surface. If it passes, the server sends what is still different: a `ui.data` with the data model and a `ui.patch` for changed, added or removed components. If it fails, the server sends `ui.close` for the surface.
+
+Every one of these messages has the next `seq`, so the usual gap and `ui.resync` rules apply. While a surface is streaming the server refuses `ui.action` on it with `rejected`, because its action handles become valid only after the full check. A client without `stream` gets one `ui.open` after the full check, as before.
 
 ## 9. Client to server messages
 
@@ -334,6 +346,8 @@ These are not part of the UI protocol. The reference server and the example chat
 | client to server | `{ "v": 1, "t": "user.say", "text": "..." }` | The user typed or said something to the agent. |
 | server to client | `{ "v": 1, "t": "agent.delta", "text": "..." }` | A piece of the agent's text answer, streamed. |
 | server to client | `{ "v": 1, "t": "agent.done" }` | The agent finished its turn. |
-| server to client | `{ "v": 1, "t": "agent.error", "message": "..." }` | The turn failed. The message is safe to show to the user. |
+| server to client | `{ "v": 1, "t": "agent.error", "message": "..." }` | The turn failed, or a `user.say` was not accepted. The message is safe to show to the user. |
+
+A server may limit how many `user.say` messages it accepts. The reference server runs one turn at a time per session, lets at most two more wait, and applies a rate limit; a `user.say` over either limit is answered with `agent.error` and never reaches the model.
 
 The WebSocket endpoint is `/ws`. The client sends `hello` first and waits for `welcome`.

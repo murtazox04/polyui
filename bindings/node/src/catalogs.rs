@@ -27,6 +27,13 @@ impl Catalogs {
     }
 
     #[napi]
+    pub fn with_embed(&self) -> Catalogs {
+        Self {
+            inner: self.inner.clone().with_embed(),
+        }
+    }
+
+    #[napi]
     pub fn with_catalog(&self, env: Env, catalog: Value) -> Result<Catalogs> {
         let parsed = match &catalog {
             Value::String(text) => Catalog::from_json(text),

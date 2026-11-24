@@ -2,9 +2,11 @@ use crate::catalogs::PyCatalogs;
 use crate::convert::{input, to_json, to_py};
 use crate::errors::{RefRefusedError, catalog_error, validation_error};
 use crate::host::{
-    self, Current, Input, Settings, SourceRefs, View, action_id, attach_scenes, chart_options,
+    self, Current, Input, Settings, SourceRefs, View, action_id, attach_apps, attach_scenes,
+    chart_options,
 };
 use crate::surface::{PyPrepared, PySurface, PyUpdate, sealed_list};
+use polyui_core::embed::UiResource;
 use polyui_core::tools::{self, ToolOptions};
 use polyui_core::validate::{Operation, Problems, is_valid_id};
 use polyui_core::{Locale, RefResolver};
@@ -69,6 +71,62 @@ impl<'a, 'py> Lookup<'a, 'py> {
     }
 }
 
+struct Apps<'a, 'py> {
+    callback: Option<&'a Bound<'py, PyAny>>,
+    user: &'a Bound<'py, PyAny>,
+    failure: Option<PyErr>,
+}
+
+impl<'a, 'py> Apps<'a, 'py> {
+    fn new(callback: Option<&'a Bound<'py, PyAny>>, user: &'a Bound<'py, PyAny>) -> Self {
+        Self {
+            callback,
+            user,
+            failure: None,
+        }
+    }
+
+    fn keep(&mut self, error: PyErr) {
+        self.failure.get_or_insert(error);
+    }
+
+    fn read(&mut self, uri: &str) -> Option<UiResource> {
+        let callback = self.callback?;
+        match callback.call1((self.user, uri)) {
+            Ok(found) if found.is_none() => None,
+            Ok(found) if found.hasattr("__await__").unwrap_or(false) => {
+                drop(found.call_method0("close"));
+                self.keep(PyTypeError::new_err(
+                    "ui_resource returned an awaitable; it must return the resource itself",
+                ));
+                None
+            }
+            Ok(found) => {
+                let resource = to_json(&found).and_then(|value| {
+                    UiResource::from_value(value).map_err(|message| {
+                        PyValueError::new_err(format!("ui_resource returned {message}"))
+                    })
+                });
+                match resource {
+                    Ok(resource) => Some(resource),
+                    Err(error) => {
+                        self.keep(error);
+                        None
+                    }
+                }
+            }
+            Err(error) => {
+                self.keep(error);
+                None
+            }
+        }
+    }
+
+    fn finish(self) -> PyResult<()> {
+        self.failure.map_or(Ok(()), Err)
+    }
+}
+
 struct Ids<'a, 'py> {
     factory: Option<&'a Bound<'py, PyAny>>,
     failure: Option<PyErr>,
@@ -113,6 +171,7 @@ impl<'a, 'py> Ids<'a, 'py> {
 pub struct PyValidator {
     settings: Settings,
     resolver: Option<Py<PyAny>>,
+    ui_resource: Option<Py<PyAny>>,
 }
 
 impl PyValidator {
@@ -144,7 +203,7 @@ impl PyValidator {
 #[pymethods]
 impl PyValidator {
     #[new]
-    #[pyo3(signature = (catalogs, actions=None, ref_sources=None, resolver=None, allow_http=false))]
+    #[pyo3(signature = (catalogs, actions=None, ref_sources=None, resolver=None, allow_http=false, ui_resource=None))]
     fn new(
         py: Python<'_>,
         catalogs: &PyCatalogs,
@@ -152,6 +211,7 @@ impl PyValidator {
         ref_sources: Option<&Bound<'_, PyAny>>,
         resolver: Option<Py<PyAny>>,
         allow_http: bool,
+        ui_resource: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         let data = |value: Option<&Bound<'_, PyAny>>| {
             value
@@ -168,6 +228,11 @@ impl PyValidator {
         {
             return Err(PyTypeError::new_err("resolver must be callable"));
         }
+        if let Some(ui_resource) = &ui_resource
+            && !ui_resource.bind(py).is_callable()
+        {
+            return Err(PyTypeError::new_err("ui_resource must be callable"));
+        }
         Ok(Self {
             settings: Settings {
                 catalogs: catalogs.inner.clone(),
@@ -176,6 +241,7 @@ impl PyValidator {
                 allow_http,
             },
             resolver,
+            ui_resource,
         })
     }
 
@@ -290,6 +356,34 @@ impl PyValidator {
         }
     }
 
+    #[pyo3(signature = (surface, user=None))]
+    fn attach_apps(
+        &self,
+        py: Python<'_>,
+        surface: &PySurface,
+        user: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<PySurface> {
+        let none = py.None().into_bound(py);
+        let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
+        let mut apps = Apps::new(callback, user.unwrap_or(&none));
+        let mut attached = surface.inner.clone();
+        let problems = attach_apps(&mut attached.components, "components", &mut |uri| {
+            apps.read(uri)
+        });
+        apps.finish()?;
+        if problems.is_empty() {
+            Ok(attached.into())
+        } else {
+            Err(validation_error(
+                py,
+                &Problems {
+                    operation: Operation::Show,
+                    items: problems,
+                },
+            ))
+        }
+    }
+
     #[pyo3(signature = (surface, declared, locale="en"))]
     fn downgrade(&self, surface: &PySurface, declared: Vec<String>, locale: &str) -> PySurface {
         self.settings
@@ -329,7 +423,10 @@ impl PyValidator {
         let view = View::new(declared.as_deref(), locale);
         let none = py.None().into_bound(py);
         let mut ids = Ids::new(next_id);
-        let prepared = self.with_refs(py, user.unwrap_or(&none), |refs| {
+        let user = user.unwrap_or(&none);
+        let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
+        let mut apps = Apps::new(callback, user);
+        let prepared = self.with_refs(py, user, |refs| {
             host::prepare_show(
                 &self.settings,
                 &payload,
@@ -337,8 +434,11 @@ impl PyValidator {
                 surface_id,
                 &view,
                 &mut || ids.next(),
+                &mut |uri| apps.read(uri),
             )
-        })?;
+        });
+        apps.finish()?;
+        let prepared = prepared?;
         ids.finish()?;
         Ok(PyPrepared { inner: prepared })
     }
@@ -366,11 +466,22 @@ impl PyValidator {
             client: &client.inner,
             seq,
         };
-        let prepared = self.with_refs(py, user.unwrap_or(&none), |refs| {
-            host::prepare_update(&self.settings, &payload, current, refs, &view, &mut || {
-                ids.next()
-            })
-        })?;
+        let user = user.unwrap_or(&none);
+        let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
+        let mut apps = Apps::new(callback, user);
+        let prepared = self.with_refs(py, user, |refs| {
+            host::prepare_update(
+                &self.settings,
+                &payload,
+                current,
+                refs,
+                &view,
+                &mut || ids.next(),
+                &mut |uri| apps.read(uri),
+            )
+        });
+        apps.finish()?;
+        let prepared = prepared?;
         ids.finish()?;
         Ok(PyPrepared { inner: prepared })
     }

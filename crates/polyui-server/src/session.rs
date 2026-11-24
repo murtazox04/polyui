@@ -1,9 +1,12 @@
+use crate::apps::{self, Apps};
 use crate::charts;
 use crate::host::{ActionCall, ActionOutcome, Host, User};
 use crate::ids;
 use crate::provider::{ModelEvent, ModelProvider, ModelRequest, StopReason, Usage};
 use futures_util::StreamExt;
 use polyui_chart::ChartOptions;
+use polyui_core::catalog::EMBED_ID;
+use polyui_core::embed::{self, MAX_APPS};
 use polyui_core::protocol::{
     self, Action, ActionResult, ActionStatus, Close, Component, Confirm, DataOp, DataUpdate,
     ErrorReason, Hello, Incoming, Message, Modality, Open, Patch, Snapshot, Welcome,
@@ -13,7 +16,7 @@ use polyui_core::tools::{self, ToolOptions};
 use polyui_core::validate::{
     self, Location, Operation, Problem, Problems, SealedAction, Surface, Update, Validator,
 };
-use polyui_core::{CatalogSet, Limits, Locale, PropKind, RefResolver, pointer, summary};
+use polyui_core::{Catalog, CatalogSet, Limits, Locale, PropKind, RefResolver, pointer, summary};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -312,9 +315,10 @@ impl Bucket {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Draft {
-    text: String,
+    stream: ShowUiStream,
+    apps: Apps,
     dead: bool,
     surface: Option<String>,
     named: Option<String>,
@@ -323,6 +327,23 @@ struct Draft {
     prepared: Vec<Component>,
     sealed: Vec<SealedAction>,
     sent: HashSet<String>,
+}
+
+impl Draft {
+    fn new(limits: Limits) -> Self {
+        Self {
+            stream: ShowUiStream::new(limits),
+            apps: Apps::new(),
+            dead: false,
+            surface: None,
+            named: None,
+            root: None,
+            model: Vec::new(),
+            prepared: Vec::new(),
+            sealed: Vec::new(),
+            sent: HashSet::new(),
+        }
+    }
 }
 
 pub struct Session {
@@ -334,6 +355,7 @@ pub struct Session {
     negotiated: Vec<String>,
     locale: Locale,
     streams: bool,
+    embeds: bool,
     chart_options: ChartOptions,
     system: String,
     tools: Vec<Value>,
@@ -445,6 +467,16 @@ fn data_changes(before: &Map<String, Value>, after: &Map<String, Value>) -> Vec<
     removed.chain(changed).collect()
 }
 
+fn without_embed(catalogs: CatalogSet) -> CatalogSet {
+    let kept: Vec<String> = catalogs
+        .catalogs()
+        .iter()
+        .filter(|catalog| catalog.id != EMBED_ID)
+        .map(Catalog::tag)
+        .collect();
+    catalogs.restrict(&kept)
+}
+
 fn system_prompt(
     host_prompt: &str,
     hello: &Hello,
@@ -471,8 +503,16 @@ fn system_prompt(
 
 impl Session {
     fn start(agent: Agent, hello: Hello, user: User) -> (Arc<Self>, Outgoing) {
-        let catalogs = agent.host.catalogs();
-        let negotiated = catalogs.negotiate(&hello.catalogs);
+        let offered = agent.host.catalogs();
+        let negotiated = offered.negotiate(&hello.catalogs);
+        let embeds = negotiated
+            .iter()
+            .any(|tag| tag.split_once('@').is_some_and(|(id, _)| id == EMBED_ID));
+        let catalogs = if embeds {
+            offered
+        } else {
+            without_embed(offered)
+        };
         let client_catalogs = catalogs.restrict(&negotiated);
         let tag = hello.locale.clone().unwrap_or_else(|| "en".into());
         let locale = Locale::from_tag(&tag);
@@ -520,6 +560,7 @@ impl Session {
             negotiated,
             locale,
             streams,
+            embeds,
             chart_options,
             system,
             tools: tool_list,
@@ -1163,11 +1204,11 @@ impl Session {
                     ModelEvent::ToolCallStarted { id, name }
                         if self.streams && name == "show_ui" =>
                     {
-                        drafts.insert(id, Draft::default());
+                        drafts.insert(id, Draft::new(config.limits));
                     }
                     ModelEvent::ToolInputDelta { id, partial_json } => {
                         if let Some(draft) = drafts.get_mut(&id) {
-                            self.grow(draft, &partial_json);
+                            self.grow(draft, &partial_json).await;
                         }
                     }
                     ModelEvent::ToolCallFinished { id, name, input } => {
@@ -1278,52 +1319,67 @@ impl Session {
         self.send(chat(DONE));
     }
 
-    fn grow(&self, draft: &mut Draft, chunk: &str) {
+    async fn grow(&self, draft: &mut Draft, chunk: &str) {
         if draft.dead {
             return;
         }
-        draft.text.push_str(chunk);
-        if !chunk.contains(['}', ']']) {
+        let Some(fresh) = self.feed(draft, chunk) else {
+            draft.dead = true;
             return;
-        }
-        let host_refs = self.agent.host.refs(&self.user);
-        let validator = self.validator(host_refs.as_ref());
-        let mut stream = ShowUiStream::new(&validator);
-        let mut found = Vec::new();
-        for event in stream.feed(&draft.text) {
-            match event {
-                StreamEvent::Surface(id) => draft.named = Some(id),
-                StreamEvent::Root(id) => draft.root = Some(id),
-                StreamEvent::Component { component, .. } => found.push(component),
-                StreamEvent::Rejected { .. } | StreamEvent::Invalid(_) => {
-                    draft.dead = true;
-                    return;
-                }
-                StreamEvent::Data(_) => {}
-            }
-        }
-        let fresh: Vec<Component> = found.into_iter().skip(draft.model.len()).collect();
+        };
         if !fresh.is_empty() {
-            let mut prepared = fresh.clone();
-            match self.prepare(
-                &validator,
-                &mut prepared,
-                &Value::Object(Map::new()),
-                Operation::Show,
-            ) {
-                Ok(sealed) => {
-                    draft.model.extend(fresh);
-                    draft.prepared.extend(prepared);
-                    draft.sealed.extend(sealed);
-                }
-                Err(_) => {
-                    draft.dead = true;
-                    return;
-                }
+            if self.embeds {
+                let uris: Vec<String> = fresh
+                    .iter()
+                    .filter_map(embed::literal_resource)
+                    .map(str::to_string)
+                    .collect();
+                apps::read_apps(self.agent.host.as_ref(), &self.user, uris, &mut draft.apps).await;
+            }
+            if !self.accept(draft, fresh) {
+                draft.dead = true;
+                return;
             }
         }
         if !self.publish(draft) {
             draft.dead = true;
+        }
+    }
+
+    fn feed(&self, draft: &mut Draft, chunk: &str) -> Option<Vec<Component>> {
+        let host_refs = self.agent.host.refs(&self.user);
+        let validator = self.validator(host_refs.as_ref());
+        let mut fresh = Vec::new();
+        for event in draft.stream.feed(&validator, chunk) {
+            match event {
+                StreamEvent::Surface(id) => draft.named = Some(id),
+                StreamEvent::Root(id) => draft.root = Some(id),
+                StreamEvent::Component { component, .. } => fresh.push(component),
+                StreamEvent::Rejected { .. } | StreamEvent::Invalid(_) => return None,
+                StreamEvent::Data(_) => {}
+            }
+        }
+        Some(fresh)
+    }
+
+    fn accept(&self, draft: &mut Draft, fresh: Vec<Component>) -> bool {
+        let host_refs = self.agent.host.refs(&self.user);
+        let validator = self.validator(host_refs.as_ref());
+        let mut prepared = fresh.clone();
+        match self.prepare(
+            &validator,
+            &mut prepared,
+            &Value::Object(Map::new()),
+            Operation::Show,
+            &draft.apps,
+        ) {
+            Ok(sealed) => {
+                draft.model.extend(fresh);
+                draft.prepared.extend(prepared);
+                draft.sealed.extend(sealed);
+                true
+            }
+            Err(_) => false,
         }
     }
 
@@ -1476,14 +1532,55 @@ impl Session {
         self.dispatch(name, input, None).await
     }
 
+    async fn apps_for(
+        &self,
+        operation: Operation,
+        input: &Value,
+        draft: Option<&Draft>,
+    ) -> Result<Apps, ToolOutcome> {
+        let mut apps = draft.map(|draft| draft.apps.clone()).unwrap_or_default();
+        if !self.embeds {
+            return Ok(apps);
+        }
+        let list = if operation == Operation::Update {
+            "upsert"
+        } else {
+            "components"
+        };
+        let uris = embed::resources_in(input, list);
+        if uris.len() > MAX_APPS {
+            return Err(ToolOutcome::error(
+                Problems {
+                    operation,
+                    items: vec![Problem::new(Location::Input, embed::too_many_apps())],
+                }
+                .to_string(),
+            ));
+        }
+        apps::read_apps(self.agent.host.as_ref(), &self.user, uris, &mut apps).await;
+        Ok(apps)
+    }
+
     async fn dispatch(&self, name: &str, input: &Value, draft: Option<&Draft>) -> ToolOutcome {
+        let operation = match name {
+            "show_ui" => Some(Operation::Show),
+            "update_ui" => Some(Operation::Update),
+            _ => None,
+        };
+        let apps = match operation {
+            Some(operation) => match self.apps_for(operation, input, draft).await {
+                Ok(apps) => apps,
+                Err(outcome) => return outcome,
+            },
+            None => Apps::new(),
+        };
         #[cfg(feature = "query")]
-        if let Some(outcome) = self.call_data_tool(name, input, draft).await {
+        if let Some(outcome) = self.call_data_tool(name, input, draft, &apps).await {
             return outcome;
         }
         match name {
-            "show_ui" => self.show_ui_with(input, None, draft),
-            "update_ui" => self.update_ui(input),
+            "show_ui" => self.show_ui_with(input, None, draft, &apps),
+            "update_ui" => self.update_ui_with(input, None, &apps),
             "close_ui" => self.close_ui(input),
             _ => {
                 let known = self
@@ -1513,6 +1610,7 @@ impl Session {
         components: &mut Vec<Component>,
         data: &Value,
         operation: Operation,
+        apps: &Apps,
     ) -> Result<Vec<SealedAction>, Problems> {
         let list = if operation == Operation::Update {
             "upsert"
@@ -1520,7 +1618,15 @@ impl Session {
             "components"
         };
         *components = validator.resolve_refs(components, operation)?;
-        let problems = charts::attach_scenes(components, data, list, &self.chart_options);
+        let mut problems = charts::attach_scenes(components, data, list, &self.chart_options);
+        if self.embeds {
+            problems.extend(apps::attach_apps(
+                components,
+                apps,
+                list,
+                &self.agent.config.limits,
+            ));
+        }
         if !problems.is_empty() {
             return Err(Problems {
                 operation,
@@ -1547,8 +1653,11 @@ impl Session {
         }
     }
 
-    pub fn show_ui(&self, input: &Value) -> ToolOutcome {
-        self.show_ui_with(input, None, None)
+    pub async fn show_ui(&self, input: &Value) -> ToolOutcome {
+        match self.apps_for(Operation::Show, input, None).await {
+            Ok(apps) => self.show_ui_with(input, None, None, &apps),
+            Err(outcome) => outcome,
+        }
     }
 
     fn too_many_surfaces(&self, ui: &UiState) -> ToolOutcome {
@@ -1573,6 +1682,7 @@ impl Session {
         input: &Value,
         extra: Option<&dyn RefResolver>,
         draft: Option<&Draft>,
+        apps: &Apps,
     ) -> ToolOutcome {
         let host_refs = self.agent.host.refs(&self.user);
         let refs = Layered {
@@ -1616,7 +1726,7 @@ impl Session {
             }
         }
         if !fresh.is_empty() {
-            match self.prepare(&validator, &mut fresh, &data, Operation::Show) {
+            match self.prepare(&validator, &mut fresh, &data, Operation::Show, apps) {
                 Ok(more) => sealed.extend(more),
                 Err(mut problems) => {
                     reindex(&mut problems, &positions);
@@ -1789,11 +1899,19 @@ impl Session {
         )
     }
 
-    pub fn update_ui(&self, input: &Value) -> ToolOutcome {
-        self.update_ui_with(input, None)
+    pub async fn update_ui(&self, input: &Value) -> ToolOutcome {
+        match self.apps_for(Operation::Update, input, None).await {
+            Ok(apps) => self.update_ui_with(input, None, &apps),
+            Err(outcome) => outcome,
+        }
     }
 
-    fn update_ui_with(&self, input: &Value, extra: Option<&dyn RefResolver>) -> ToolOutcome {
+    fn update_ui_with(
+        &self,
+        input: &Value,
+        extra: Option<&dyn RefResolver>,
+        apps: &Apps,
+    ) -> ToolOutcome {
         let host_refs = self.agent.host.refs(&self.user);
         let refs = Layered {
             first: extra,
@@ -1829,12 +1947,20 @@ impl Session {
                 "1 problem, nothing was changed:\n1. data: {error}."
             ));
         }
-        let problems = charts::attach_scenes(
+        let mut problems = charts::attach_scenes(
             &mut upsert,
             &data_after.data_value(),
             "upsert",
             &self.chart_options,
         );
+        if self.embeds {
+            problems.extend(apps::attach_apps(
+                &mut upsert,
+                apps,
+                "upsert",
+                &self.agent.config.limits,
+            ));
+        }
         if !problems.is_empty() {
             return ToolOutcome::error(
                 Problems {
@@ -1983,6 +2109,7 @@ impl Session {
         name: &str,
         input: &Value,
         draft: Option<&Draft>,
+        apps: &Apps,
     ) -> Option<ToolOutcome> {
         use crate::dashboards::{self, QueryRefs};
         let engine = self.agent.host.data()?;
@@ -2036,9 +2163,9 @@ impl Session {
                     }
                 };
                 Some(if name == "show_ui" {
-                    self.show_ui_with(input, Some(&refs), draft)
+                    self.show_ui_with(input, Some(&refs), draft, apps)
                 } else {
-                    self.update_ui_with(input, Some(&refs))
+                    self.update_ui_with(input, Some(&refs), apps)
                 })
             }
             _ => None,

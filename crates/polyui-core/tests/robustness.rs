@@ -145,7 +145,7 @@ fn exercise_validator(validator: &Validator<'_>, input: &str) {
     let _ = validator.close_ui_str(input);
     #[cfg(feature = "stream")]
     {
-        let mut stream = polyui_core::stream::ShowUiStream::new(validator);
+        let mut stream = polyui_core::stream::ShowUiStream::new(*validator.limits());
         let mut rest = input;
         let mut step = 1;
         while !rest.is_empty() {
@@ -154,11 +154,11 @@ fn exercise_validator(validator: &Validator<'_>, input: &str) {
                 cut += 1;
             }
             let (chunk, tail) = rest.split_at(cut);
-            stream.feed(chunk);
+            stream.feed(validator, chunk);
             rest = tail;
             step = step % 7 + 1;
         }
-        let _ = stream.finish();
+        let _ = stream.finish(validator);
     }
 }
 

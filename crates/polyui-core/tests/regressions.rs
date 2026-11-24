@@ -257,8 +257,8 @@ mod stream {
         let actions = ActionTable::new();
         let refs = StaticRefs::new();
         let validator = Validator::new(&catalogs, &actions, &refs);
-        let mut stream = ShowUiStream::new(&validator);
-        stream.feed(text)
+        let mut stream = ShowUiStream::new(*validator.limits());
+        stream.feed(&validator, text)
     }
 
     #[test]

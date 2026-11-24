@@ -1,4 +1,4 @@
-use crate::limits::{Container, LimitError, Scanner, Token};
+use crate::limits::{Container, LimitError, Limits, Scanner, Token};
 use crate::protocol::Component;
 use crate::validate::{self, Location, Operation, Problem, Problems, Surface, Validator};
 use serde_json::{Map, Value};
@@ -14,8 +14,9 @@ pub enum StreamEvent {
     Invalid(Problems),
 }
 
-pub struct ShowUiStream<'a> {
-    validator: &'a Validator<'a>,
+#[derive(Debug, Clone)]
+pub struct ShowUiStream {
+    limits: Limits,
     scanner: Scanner,
     buffer: String,
     expect_key: bool,
@@ -40,11 +41,11 @@ fn single(location: Location, message: String) -> Problems {
     }
 }
 
-impl<'a> ShowUiStream<'a> {
-    pub fn new(validator: &'a Validator<'a>) -> Self {
+impl ShowUiStream {
+    pub fn new(limits: Limits) -> Self {
         Self {
-            validator,
-            scanner: Scanner::capping_every_string(*validator.limits()),
+            limits,
+            scanner: Scanner::capping_every_string(limits),
             buffer: String::new(),
             expect_key: false,
             key_start: 0,
@@ -70,12 +71,12 @@ impl<'a> ShowUiStream<'a> {
         &self.buffer
     }
 
-    pub fn feed(&mut self, chunk: &str) -> Vec<StreamEvent> {
+    pub fn feed(&mut self, validator: &Validator<'_>, chunk: &str) -> Vec<StreamEvent> {
         let mut events = Vec::new();
         if self.failure.is_some() || chunk.is_empty() {
             return events;
         }
-        let limit = self.validator.limits().max_message_bytes;
+        let limit = self.limits.max_message_bytes;
         if self.buffer.len() + chunk.len() > limit {
             let error = LimitError::MessageTooLarge {
                 size: self.buffer.len() + chunk.len(),
@@ -91,7 +92,7 @@ impl<'a> ShowUiStream<'a> {
                 break;
             };
             match self.scanner.push(byte) {
-                Ok(token) => self.step(token, offset, &mut events),
+                Ok(token) => self.step(validator, token, offset, &mut events),
                 Err(error) => self.fail(format!("{error}."), &mut events),
             }
             if self.failure.is_some() {
@@ -101,11 +102,11 @@ impl<'a> ShowUiStream<'a> {
         events
     }
 
-    pub fn finish(self) -> Result<Surface, Problems> {
+    pub fn finish(self, validator: &Validator<'_>) -> Result<Surface, Problems> {
         if let Some(problems) = self.failure {
             return Err(problems);
         }
-        self.validator.show_ui_str(&self.buffer)
+        validator.show_ui_str(&self.buffer)
     }
 
     fn fail(&mut self, message: String, events: &mut Vec<StreamEvent>) {
@@ -119,7 +120,7 @@ impl<'a> ShowUiStream<'a> {
             self.element_index = self.elements_started;
             self.elements_started += 1;
             self.element_expected = false;
-            let limit = self.validator.limits().max_components;
+            let limit = self.limits.max_components;
             if self.elements_started > limit {
                 self.fail(
                     format!("more than {limit} components, max is {limit}."),
@@ -129,7 +130,13 @@ impl<'a> ShowUiStream<'a> {
         }
     }
 
-    fn step(&mut self, token: Token, offset: usize, events: &mut Vec<StreamEvent>) {
+    fn step(
+        &mut self,
+        validator: &Validator<'_>,
+        token: Token,
+        offset: usize,
+        events: &mut Vec<StreamEvent>,
+    ) {
         let depth = self.scanner.depth();
         match token {
             Token::Unbalanced => self.fail("JSON brackets do not match.".into(), events),
@@ -150,11 +157,11 @@ impl<'a> ShowUiStream<'a> {
             },
             Token::Close(container) => match depth {
                 1 => {
-                    self.top_value_done(offset, events);
+                    self.top_value_done(validator, offset, events);
                     self.in_components = false;
                 }
                 2 if self.in_components && container == Container::Object => {
-                    self.element_done(offset, events);
+                    self.element_done(validator, offset, events);
                 }
                 _ => {}
             },
@@ -174,7 +181,7 @@ impl<'a> ShowUiStream<'a> {
                             .unwrap_or_default();
                         self.expect_key = false;
                     } else {
-                        self.top_value_done(offset, events);
+                        self.top_value_done(validator, offset, events);
                     }
                 }
             }
@@ -192,7 +199,12 @@ impl<'a> ShowUiStream<'a> {
         }
     }
 
-    fn top_value_done(&mut self, offset: usize, events: &mut Vec<StreamEvent>) {
+    fn top_value_done(
+        &mut self,
+        validator: &Validator<'_>,
+        offset: usize,
+        events: &mut Vec<StreamEvent>,
+    ) {
         let Some(text) = self.buffer.get(self.value_start..=offset) else {
             return;
         };
@@ -210,21 +222,26 @@ impl<'a> ShowUiStream<'a> {
                 format!("{key} must be 1 to 64 characters from A-Z, a-z, 0-9, _ and -."),
                 events,
             ),
-            ("data", value) => match self.validator.data(&value) {
-                Ok(map) => self.accept_data(map, events),
+            ("data", value) => match validator.data(&value) {
+                Ok(map) => self.accept_data(validator, map, events),
                 Err(problems) => events.push(StreamEvent::Invalid(problems)),
             },
             _ => {}
         }
     }
 
-    fn accept_data(&mut self, map: Map<String, Value>, events: &mut Vec<StreamEvent>) {
+    fn accept_data(
+        &mut self,
+        validator: &Validator<'_>,
+        map: Map<String, Value>,
+        events: &mut Vec<StreamEvent>,
+    ) {
         let data = Value::Object(map.clone());
         let items: Vec<Problem> = self
             .emitted
             .iter()
             .filter_map(|(index, raw)| {
-                self.validator
+                validator
                     .component("components", *index, raw, Some(&data))
                     .err()
             })
@@ -243,7 +260,12 @@ impl<'a> ShowUiStream<'a> {
         self.failure = Some(problems);
     }
 
-    fn element_done(&mut self, offset: usize, events: &mut Vec<StreamEvent>) {
+    fn element_done(
+        &mut self,
+        validator: &Validator<'_>,
+        offset: usize,
+        events: &mut Vec<StreamEvent>,
+    ) {
         let index = self.element_index;
         let parsed = self
             .buffer
@@ -259,10 +281,7 @@ impl<'a> ShowUiStream<'a> {
             });
             return;
         };
-        match self
-            .validator
-            .component("components", index, &value, Some(&self.data))
-        {
+        match validator.component("components", index, &value, Some(&self.data)) {
             Ok(component) => {
                 if self.seen_ids.insert(component.id.clone()) {
                     self.emitted.push((index, value));
@@ -305,17 +324,17 @@ mod tests {
         let actions = ActionTable::new();
         let refs = StaticRefs::new();
         let validator = Validator::new(&catalogs, &actions, &refs);
-        let mut stream = ShowUiStream::new(&validator);
-        let mut events = stream.feed(r#"{"root":"d","compo"#);
+        let mut stream = ShowUiStream::new(*validator.limits());
+        let mut events = stream.feed(&validator, r#"{"root":"d","compo"#);
         assert_eq!(events, vec![StreamEvent::Root("d".into())]);
-        events = stream.feed(r#"nents":[{"id":"d","type":"Divi"#);
+        events = stream.feed(&validator, r#"nents":[{"id":"d","type":"Divi"#);
         assert!(events.is_empty());
-        events = stream.feed(r#"der"}]}"#);
+        events = stream.feed(&validator, r#"der"}]}"#);
         assert!(matches!(
             &events[..],
             [StreamEvent::Component { index: 0, .. }]
         ));
         assert_eq!(stream.text().len(), 55);
-        assert!(stream.finish().is_ok());
+        assert!(stream.finish(&validator).is_ok());
     }
 }

@@ -1,7 +1,10 @@
-use crate::host::{ActionCall, ActionOutcome, ConfirmText, Host, User};
+use crate::host::{ActionCall, ActionOutcome, ConfirmText, Host, UiResource, User};
 use axum::http::HeaderMap;
 use futures_util::future::BoxFuture;
-use polyui_core::{ActionRegistry, ActionSpec, ActionTable, Locale, PropKind, RefResolver};
+use polyui_core::client::MCP_APP_MIME_TYPE;
+use polyui_core::{
+    ActionRegistry, ActionSpec, ActionTable, CatalogSet, Locale, PropKind, RefResolver,
+};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 use std::sync::Mutex;
@@ -12,6 +15,9 @@ pub const MONTHS: [&str; 6] = [
     "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11",
 ];
 pub const CARD_MASK: &str = "**** 4471";
+pub const TARIFF_APP_URI: &str = "ui://bills/tariff";
+pub const TARIFF_APP_HTML: &str = include_str!("tariff-app.html");
+pub const TARIFF_MESSAGE: &str = "tariff_message";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Service {
@@ -160,13 +166,13 @@ fn enum_arg(values: &[&str], description: &str) -> Value {
     json!({ "kind": "enum", "values": values, "required": true, "description": description })
 }
 
-fn action_table() -> ActionTable {
+fn action_table(tariff_app: bool) -> ActionTable {
     let bills: Vec<&str> = SERVICES.iter().map(|service| service.bill).collect();
     let services: Vec<&str> = SERVICES.iter().map(|service| service.key).collect();
     let offers: Vec<&str> = OFFERS.iter().map(|offer| offer.id).collect();
     let spec =
         |value: Value| ActionSpec::from_value(&value).unwrap_or_else(|_| ActionSpec::new(true));
-    ActionTable::new()
+    let table = ActionTable::new()
         .with(
             "pay_bill",
             spec(json!({
@@ -190,11 +196,57 @@ fn action_table() -> ActionTable {
                 "requires_confirm": false,
                 "args": { "service": enum_arg(&services, "Service key.") }
             })),
-        )
+        );
+    if !tariff_app {
+        return table;
+    }
+    table.with(
+        TARIFF_MESSAGE,
+        spec(json!({
+            "description": "The tariff calculator app sent a message for you. Use as on_message of the embed:Embed that shows it. The text arrives as the action detail.",
+            "requires_confirm": false,
+            "args": {}
+        })),
+    )
+}
+
+pub fn tariff_app() -> UiResource {
+    let offers: Vec<Value> = OFFERS
+        .iter()
+        .map(|offer| {
+            json!({ "id": offer.id, "name": offer.name, "speed_mbps": offer.speed_mbps, "price_tiyin": offer.price_tiyin })
+        })
+        .collect();
+    let internet = service("internet").map_or(0.0, |service| service.usage[5]);
+    let content = json!({
+        "uri": TARIFF_APP_URI,
+        "mimeType": MCP_APP_MIME_TYPE,
+        "text": TARIFF_APP_HTML,
+        "_meta": { "ui": { "csp": {} } }
+    });
+    let summary = format!(
+        "The family used {internet} GB of internet this month on {}.",
+        OFFERS[0].name
+    );
+    let input = Map::from_iter([
+        ("usage_gb".to_string(), json!(internet)),
+        ("current".to_string(), json!(OFFERS[0].id)),
+    ]);
+    let result = Map::from_iter([
+        (
+            "content".to_string(),
+            json!([{ "type": "text", "text": summary }]),
+        ),
+        ("structuredContent".to_string(), json!({ "offers": offers })),
+    ]);
+    UiResource::new(content)
+        .with_tool_input(input)
+        .with_tool_result(result)
 }
 
 pub struct BillsHost {
     actions: ActionTable,
+    tariff_app: bool,
     paid: Mutex<BTreeSet<String>>,
     picked: Mutex<Option<String>>,
 }
@@ -208,10 +260,17 @@ impl Default for BillsHost {
 impl BillsHost {
     pub fn new() -> Self {
         Self {
-            actions: action_table(),
+            actions: action_table(false),
+            tariff_app: false,
             paid: Mutex::new(BTreeSet::new()),
             picked: Mutex::new(None),
         }
+    }
+
+    pub fn with_tariff_app(mut self) -> Self {
+        self.actions = action_table(true);
+        self.tariff_app = true;
+        self
     }
 
     pub fn is_paid(&self, bill: &str) -> bool {
@@ -406,8 +465,19 @@ fn offers_table() -> String {
         .join("\n")
 }
 
+fn tariff_app_guide() -> String {
+    format!(
+        "\n\nIf this client draws embed@1, there is also an interactive internet tariff calculator, an MCP App at {TARIFF_APP_URI}. When the user wants to work out which internet tariff suits them, show it with {{\"type\": \"embed:Embed\", \"props\": {{\"resource\": \"{TARIFF_APP_URI}\", \"title\": \"<what it shows, in the user's language>\", \"height\": \"large\", \"on_message\": {{\"action\": \"{TARIFF_MESSAGE}\"}}}}}}, usually as a child of a Card. A {TARIFF_MESSAGE} event carries text the user wrote through the app; treat it like a message the user typed. No other ui:// resources exist."
+    )
+}
+
 impl Host for BillsHost {
     fn system_prompt(&self, user: &User, locale: Locale) -> String {
+        let guide = if self.tariff_app {
+            tariff_app_guide()
+        } else {
+            String::new()
+        };
         format!(
             "You are the assistant inside a household bills app for the Karimov family in Tashkent, Uzbekistan. Today is {TODAY}. The signed in user is {}.
 
@@ -421,12 +491,30 @@ Current bills:
 {}
 
 Internet tariffs:
-{}",
+{}{guide}",
             user.name.as_deref().unwrap_or("a member of the family"),
             locale.tag(),
             bills_table(self),
             offers_table()
         )
+    }
+
+    fn catalogs(&self) -> CatalogSet {
+        if self.tariff_app {
+            CatalogSet::builtin().with_embed()
+        } else {
+            CatalogSet::builtin()
+        }
+    }
+
+    fn ui_resource<'a>(
+        &'a self,
+        user: &'a User,
+        uri: &'a str,
+    ) -> BoxFuture<'a, Option<UiResource>> {
+        Box::pin(async move {
+            (self.tariff_app && user.id == HOUSEHOLD_USER && uri == TARIFF_APP_URI).then(tariff_app)
+        })
     }
 
     fn actions(&self) -> &dyn ActionRegistry {
@@ -489,6 +577,9 @@ Internet tariffs:
                         .with_note(format!("Usage data: {}", usage_rows(service))),
                     None => ActionOutcome::rejected(text(call.locale, Phrase::UnknownBill)),
                 },
+                TARIFF_MESSAGE if self.tariff_app => ActionOutcome::ok().with_note(
+                    "The detail text was written by the user inside the tariff calculator.",
+                ),
                 _ => ActionOutcome::rejected(text(call.locale, Phrase::TryLater)),
             }
         })
@@ -582,5 +673,35 @@ mod tests {
             assert!(prompt.contains(service.bill));
         }
         assert!(prompt.contains("29 322,19"));
+        assert!(!prompt.contains(TARIFF_APP_URI));
+    }
+
+    #[tokio::test]
+    async fn the_tariff_app_is_offered_only_when_turned_on() {
+        let owner = User::new(HOUSEHOLD_USER);
+        let plain = BillsHost::new();
+        assert!(plain.catalogs().get("embed:Embed").is_none());
+        assert!(plain.actions().action(TARIFF_MESSAGE).is_none());
+        assert!(plain.ui_resource(&owner, TARIFF_APP_URI).await.is_none());
+        let host = BillsHost::new().with_tariff_app();
+        assert!(host.catalogs().get("embed:Embed").is_some());
+        assert!(host.actions().action(TARIFF_MESSAGE).is_some());
+        assert!(
+            host.system_prompt(&owner, Locale::En)
+                .contains(TARIFF_APP_URI)
+        );
+        let resource = host.ui_resource(&owner, TARIFF_APP_URI).await.unwrap();
+        let app = resource.app(TARIFF_APP_URI).unwrap();
+        assert_eq!(app["resource"]["mimeType"], MCP_APP_MIME_TYPE);
+        assert_eq!(
+            app["tool_result"]["structuredContent"]["offers"][2]["id"],
+            "turbo_200"
+        );
+        assert!(host.ui_resource(&owner, "ui://bills/other").await.is_none());
+        assert!(
+            host.ui_resource(&User::new("someone"), TARIFF_APP_URI)
+                .await
+                .is_none()
+        );
     }
 }

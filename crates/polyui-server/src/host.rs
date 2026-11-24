@@ -2,6 +2,8 @@ use axum::http::HeaderMap;
 use futures_util::future::BoxFuture;
 use polyui_core::protocol::ActionSource;
 use polyui_core::{ActionRegistry, CatalogSet, Locale, RefResolver};
+
+pub use polyui_core::embed::UiResource;
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +119,15 @@ pub trait Host: Send + Sync + 'static {
     ) -> BoxFuture<'a, Result<String, String>> {
         let _ = (user, input);
         Box::pin(async move { Err(format!("unknown tool \"{name}\"")) })
+    }
+
+    fn ui_resource<'a>(
+        &'a self,
+        user: &'a User,
+        uri: &'a str,
+    ) -> BoxFuture<'a, Option<UiResource>> {
+        let _ = (user, uri);
+        Box::pin(async { None })
     }
 
     fn fallback_text(&self, locale: Locale) -> String {

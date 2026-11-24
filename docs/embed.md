@@ -12,7 +12,7 @@ The catalog is off unless the host asks for it. `CatalogSet::builtin()` still re
 
 | Side | What to do |
 |---|---|
-| Server | Return `CatalogSet::builtin().with_embed()` from your host's catalogs. `embed` is a reserved id, so nobody can register a look-alike catalog under that name. |
+| Server | Return `CatalogSet::builtin().with_embed()` from your host's catalogs and answer `Host::ui_resource` for the `ui://` URIs you offer (see [Server side](#server-side)). `embed` is a reserved id, so nobody can register a look-alike catalog under that name. |
 | Client | Declare `embed@1` in `hello`. The wasm client core knows the catalog, but only draws it for clients that declare it. |
 | Web renderer | Pass `embedOrigin`, the URL of the sandbox page on a separate origin (see below). Without it the renderer refuses every embed. |
 
@@ -118,13 +118,27 @@ npx -y -p playwright node scripts/embed-check.mjs
 
 It launches the installed Google Chrome by default; set `PLAYWRIGHT_CHANNEL` to use another channel.
 
-## Server side: the integration plan
+## Server side
 
-The server half is small and is not in this change, because `polyui-server` is being worked on separately. What it needs:
+`polyui-server` reads the app, checks it and fills `app`. Your host only has to say what a `ui://` URI stands for.
 
-1. **A host hook to read resources.** Add a method to the `Host` trait with a default that returns nothing, for example `fn ui_resource<'a>(&'a self, user: &'a User, uri: &'a str) -> BoxFuture<'a, Option<Value>>`, in the same style as `call_tool`. It returns one `contents` entry of `resources/read` for a `ui://` URI this user may see. The host does the MCP call and caches it as it likes; PolyUI does not talk to MCP servers itself.
-2. **Attach after validation, like chart scenes.** Next to `charts::attach_scenes`, add `attach_apps` for `embed:Embed` components in `show_ui` and `update_ui` upserts. For each one, call the hook with the literal `resource`. Decode `blob` to `text` if the server sent base64. Check that `mimeType` is exactly `text/html;profile=mcp-app` and `uri` matches; otherwise return a problem to the model, for example `components[2] id "forecast" prop "resource": ui://weather/forecast is not an MCP App this host offers.`, so it can fall back to the catalog. Put the result in `props.app`, together with `tool_input` and `tool_result` when the host has them.
-3. **Keep it out of the model's copy.** `props.app` goes into the client copy of the surface only. The summary the model sees already reads `embed:Embed "Forecast" (act)`, with no URI and no HTML, and should stay that way.
-4. **Size.** The outgoing check in `polyui-core` already gives `app` its own string limit. An app whose message would pass 256 KiB has to be refused as a problem, not sent.
-5. **Messages.** A `ui.action` from `on_message` arrives with `detail.text`. The host action decides what to do with it, usually adding it to the conversation as a user turn. It is user-controlled text from inside the app, so treat it exactly like typed user input.
-6. **Turning it on.** Hosts that want embeds return `CatalogSet::builtin().with_embed()` from `Host::catalogs`. The Python and Node bindings have their own copy of the chart scene code in `host.rs` and need the same `attach_apps` step.
+1. **The host hook.** `Host::ui_resource(user, uri)` is async, like `call_tool`, and returns `Option<UiResource>`. A `UiResource` is one `contents` entry of the MCP `resources/read` result, unchanged, plus the optional `tool_input` and `tool_result` the app was made for. The default returns `None`. The host does the MCP call, decides whether this user may see the app, and caches as it likes; PolyUI never talks to an MCP server itself.
+2. **When it is read.** After the model calls `show_ui` or `update_ui`, the server collects the literal `resource` of every `embed:Embed` in the call and asks the host once per distinct URI. A call that names more than 8 different apps (`polyui_core::embed::MAX_APPS`) is refused before anything is read. While a surface streams, each embed is read when its component is complete, and the final check reuses what was read.
+3. **`attach_apps`.** Next to `charts::attach_scenes`, `apps::attach_apps` runs on the client copy of the components after `$ref` values are resolved. For each embed it requires `mimeType` to be exactly `text/html;profile=mcp-app` and `uri` to equal the `resource` prop, decodes `blob` (standard base64, UTF-8) into `text` or takes `text` as it is, and puts the result in `props.app`. Anything else is a problem for the model, which can then fall back to the catalog: `components[1] id "calc" prop "resource": ui://bills/weather is not an MCP App this host offers. Show it with other components instead.`
+4. **Size.** The server sends the embed alone in a probe `ui.patch` through the same outgoing check the client copy gets. An app that would not fit in one 256 KiB message, or whose HTML is longer than `MAX_APP_STRING_CHARS`, is refused with a problem that says it is too large; it is never sent. The usual check of the whole message still runs afterwards.
+5. **Out of the model's copy.** `app` exists only in the client copy, the messages and `ui.snapshot`. The model copy keeps what the model wrote, so the tool result still reads `embed:Embed "Tariff calculator" (act)`, with no URI and no HTML.
+6. **Who gets it.** The session offers the `embed` catalog only when the host returns it from `catalogs()` and the client declared `embed@1`. Otherwise the catalog is dropped for that session: the tool schema and the prompt do not mention it, an `embed:Embed` the model writes anyway is an unknown type, and the host is never asked for a resource.
+7. **Messages.** A `ui.action` from `on_message` arrives with `detail.text`. The host action decides what to do with it, usually nothing more than letting the `[UI event]` report carry the text to the model. It is user-controlled text from inside the app, so treat it exactly like typed user input.
+
+The Python and Node bindings run the same step in `prepare_show` and `prepare_update` (`prepareShow`, `prepareUpdate`). Pass a resource callback when you build the validator, `ui_resource=` in Python and `uiResource` in Node. It is called as `(user, uri)` and returns a `resources/read` entry, an object `{"resource": entry, "tool_input": ..., "tool_result": ...}`, or nothing. Like the ref resolver it has to answer synchronously. `Catalogs.with_embed()` (`withEmbed()`) turns the catalog on, `attach_apps` (`attachApps`) runs the step on its own, and a call whose `declared` list leaves out `embed@1` never reads a resource.
+
+## Trying it locally
+
+The bills demo host has one app, an internet tariff calculator at `ui://bills/tariff` (`crates/polyui-server/src/tariff-app.html`). It gets the family's usage as `tool_input` and the three tariffs as `tool_result`, lets the user move two sliders, and has a button that sends the best tariff back as a `ui/message`. Turn it on with `--embed-origin`:
+
+```sh
+(cd examples/chat && npm run build)
+polyui serve --env-file ~/.config/polyui/anthropic.env --static examples/chat/dist --embed-origin http://localhost:8788/
+```
+
+The command serves the chat page on `127.0.0.1:8787` and `js/polyui-web/embed-sandbox` on `localhost:8788`, a different origin. The chat page reads `/config.json`, declares `embed@1` and passes `embedOrigin` to the renderer, with `allowHttp` on only because the sandbox is plain `http` on a loopback address.

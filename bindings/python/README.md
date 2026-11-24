@@ -54,10 +54,10 @@ What you get:
 
 | Name | What it does |
 |---|---|
-| `Catalogs` | `builtin()`, `with_catalog(json_or_dict)` for extension catalogs, `restrict(declared)`, `negotiate(declared)`, `tags`, `type_names()`. |
-| `Validator(catalogs, actions, ref_sources, resolver, allow_http)` | `show_ui`, `update_ui`, `close_ui` take the tool input as a dict or JSON text. |
+| `Catalogs` | `builtin()`, `with_embed()` to add the `embed` catalog, `with_catalog(json_or_dict)` for extension catalogs, `restrict(declared)`, `negotiate(declared)`, `tags`, `type_names()`. |
+| `Validator(catalogs, actions, ref_sources, resolver, allow_http, ui_resource)` | `show_ui`, `update_ui`, `close_ui` take the tool input as a dict or JSON text. |
 | `Validator.prepare_show` / `prepare_update` | The whole server pipeline in one call. Returns `Prepared` with `model`, `client`, `messages`, `summary`, `actions`, `seq` and `touched`. |
-| `Validator.resolve_refs`, `compile_charts`, `seal_actions`, `downgrade`, `summary`, `fallback` | The same steps one at a time, if you want to run them yourself. |
+| `Validator.resolve_refs`, `compile_charts`, `attach_apps`, `seal_actions`, `downgrade`, `summary`, `fallback` | The same steps one at a time, if you want to run them yourself. |
 | `Surface`, `Update` | Validated results. `to_dict()` and `Surface.from_dict()` let you keep them in a session store. |
 | `tool_definitions(catalogs, actions, strict=False)` | The Anthropic tool JSON for `show_ui`, `update_ui` and `close_ui`. |
 | `open_message`, `patch_message`, `close_message`, `closed_summary` | Protocol messages and the close summary. |
@@ -71,6 +71,10 @@ Errors all derive from `PolyUIError`: `ValidationError`, `CatalogError` (bad cat
 Every ref source declares the kind of value it gives, using the same prop spec format as the catalogs. The validator uses it to check that a `$ref` fits the prop before anything is resolved. The resolver is called as `resolver(user, source, key)` with whatever you passed as `user`. Return the value, return `None` when there is nothing, or raise `polyui.RefRefusedError` when this user may not see it. The model only ever learns that the ref could not be resolved. Any other exception from the resolver is raised again unchanged, so a database error does not turn into a validation problem.
 
 The model's copy of a surface (`prepared.model`) keeps the `$ref` objects, and its summary shows them as `[ref]`. Only `prepared.client` and the messages carry the resolved values.
+
+### MCP Apps
+
+With `Catalogs.builtin().with_embed()` the model can show an MCP App through `embed:Embed`. Pass `ui_resource=` to the validator; it is called as `ui_resource(user, uri)` for each distinct `ui://` URI in the call and returns the `resources/read` entry, a dict `{"resource": entry, "tool_input": ..., "tool_result": ...}`, or `None` when this user has no such app. `prepare_show` and `prepare_update` check the entry (exact `text/html;profile=mcp-app` mime type, matching `uri`, `text` or a base64 `blob`) and put it in the server-only `app` prop of the client copy. A missing or wrong entry, or one too large for a 256 KiB message, is a `ValidationError` for the model. `prepared.model` and the summary never contain the app. When `declared` leaves out `embed@1`, no resource is read. Exceptions from the callback are raised again unchanged. [docs/embed.md](../../docs/embed.md) has the rules.
 
 ### Actions
 
@@ -96,4 +100,4 @@ The client tests replay every fixture in `tests/conformance/client`, so the bind
 
 ## Not there yet
 
-The resolver is synchronous. An async resolver for asyncio code is not supported yet; look the values up before the call or run the call in a worker thread.
+The resolver and `ui_resource` are synchronous. Async callbacks for asyncio code are not supported yet; look the values up before the call or run the call in a worker thread.

@@ -52,10 +52,10 @@ try {
 
 | Name | What it does |
 |---|---|
-| `Catalogs` | `builtin()`, `withCatalog(objectOrJson)` for extension catalogs, `restrict(declared)`, `negotiate(declared)`, `tags`, `typeNames()`, `has(type)`. |
-| `new Validator(catalogs, { actions, refSources, resolver, allowHttp })` | `showUi`, `updateUi`, `closeUi` take the tool input as an object or JSON text. |
+| `Catalogs` | `builtin()`, `withEmbed()` to add the `embed` catalog, `withCatalog(objectOrJson)` for extension catalogs, `restrict(declared)`, `negotiate(declared)`, `tags`, `typeNames()`, `has(type)`. |
+| `new Validator(catalogs, { actions, refSources, resolver, allowHttp, uiResource })` | `showUi`, `updateUi`, `closeUi` take the tool input as an object or JSON text. |
 | `validator.prepareShow` / `prepareUpdate` | The whole server pipeline in one call. Returns a `Prepared` with `model`, `client`, `messages`, `summary`, `actions`, `seq` and `touched`. |
-| `validator.resolveRefs`, `compileCharts`, `sealActions`, `downgrade`, `summary`, `fallback` | The same steps one at a time. |
+| `validator.resolveRefs`, `compileCharts`, `attachApps`, `sealActions`, `downgrade`, `summary`, `fallback` | The same steps one at a time. |
 | `Surface`, `Update` | Validated results. `JSON.stringify(surface)` and `Surface.fromJSON()` let you keep a surface in a session store. |
 | `toolDefinitions(catalogs, actions, strict)` | The Anthropic tool JSON for the three UI tools. |
 | `openMessage`, `patchMessage`, `closeMessage`, `closedSummary` | Protocol messages and the close summary. |
@@ -72,10 +72,14 @@ Each ref source declares the kind of value it gives, in the catalog prop spec fo
 
 Only `prepared.client` and the messages carry resolved values. `prepared.model` keeps the `$ref` objects, and its summary shows them as `[ref]`.
 
+### MCP Apps
+
+With `Catalogs.builtin().withEmbed()` the model can show an MCP App through `embed:Embed`. Pass `uiResource` to the validator; it is called as `uiResource(user, uri)` for each distinct `ui://` URI in the call and returns the `resources/read` entry, `{ resource: entry, tool_input, tool_result }`, or `null` when this user has no such app. `prepareShow` and `prepareUpdate` check the entry (exact `text/html;profile=mcp-app` mime type, matching `uri`, `text` or a base64 `blob`) and put it in the server-only `app` prop of the client copy. A missing or wrong entry, or one too large for a 256 KiB message, is a `ValidationError` for the model. `prepared.model` and the summary never contain the app. When `declared` leaves out `embed@1`, no resource is read. [docs/embed.md](../../docs/embed.md) has the rules.
+
 ### Actions
 
 Action objects become handles like `{ action_id: 'act_3f2a...', confirm: true }`. Keep `prepared.actions` on the server and look the handle up when a `ui.action` comes in. Pass `nextId` to use your own ids.
 
 ## Not there yet
 
-The resolver is called synchronously, so it cannot return a Promise. Load what it needs before calling `prepareShow`. Prebuilt per-platform npm packages are not published yet; build locally with `npm run build`.
+The resolver and `uiResource` are called synchronously, so they cannot return a Promise. Load what it needs before calling `prepareShow`. Prebuilt per-platform npm packages are not published yet; build locally with `npm run build`.

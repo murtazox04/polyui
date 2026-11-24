@@ -1,4 +1,5 @@
 pub mod anthropic;
+pub mod apps;
 pub mod bills;
 pub mod charts;
 #[cfg(feature = "query")]
@@ -13,8 +14,8 @@ pub mod session;
 pub mod shop;
 
 pub use anthropic::{AnthropicProvider, ApiKey};
-pub use host::{ActionCall, ActionOutcome, ConfirmText, Host, User};
+pub use host::{ActionCall, ActionOutcome, ConfirmText, Host, UiResource, User};
 pub use provider::{ModelEvent, ModelProvider, ModelRequest, ProviderError, StopReason, Usage};
 pub use scripted::{ScriptedProvider, ScriptedReply};
-pub use server::{ServerConfig, router, serve};
+pub use server::{ServerConfig, router, serve, static_router};
 pub use session::{Agent, AgentConfig, CloseReason, Outgoing, Session, ToolOutcome, TurnRate};

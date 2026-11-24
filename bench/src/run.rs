@@ -430,7 +430,7 @@ pub async fn run_inline(bench: &Bench, prompt: &Prompt) -> RunRecord {
         let mut gave_up = false;
         if let Some(block) = fenced_json(&reply.text) {
             let outcome = match serde_json::from_str::<Value>(&block) {
-                Ok(input) => session.show_ui(&input),
+                Ok(input) => session.show_ui(&input).await,
                 Err(_) => ToolOutcome {
                     content: json!({ "INVALID_JSON": block }).to_string(),
                     is_error: true,

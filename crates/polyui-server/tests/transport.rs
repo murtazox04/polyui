@@ -215,3 +215,50 @@ async fn static_files_are_served() {
     assert_eq!(missing.status(), 404);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[tokio::test]
+async fn config_names_the_embed_sandbox_and_the_sandbox_has_its_own_server() {
+    let plain = spawn(Arc::new(ScriptedProvider::new()), None).await;
+    let config: Value = reqwest::get(format!("http://{plain}/config.json"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(config, json!({ "embed_origin": null }));
+
+    let agent = Agent::new(
+        Arc::new(BillsHost::new().with_tariff_app()),
+        Arc::new(ScriptedProvider::new()),
+    );
+    let app = polyui_server::router(
+        agent,
+        ServerConfig {
+            embed_origin: Some("http://localhost:8788/".into()),
+            ..ServerConfig::default()
+        },
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(polyui_server::serve(listener, app));
+    let response = reqwest::get(format!("http://{addr}/config.json"))
+        .await
+        .unwrap();
+    assert_eq!(response.headers()["content-type"], "application/json");
+    let config: Value = response.json().await.unwrap();
+    assert_eq!(config["embed_origin"], "http://localhost:8788/");
+
+    let dir = std::env::temp_dir().join(format!("polyui-sandbox-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("index.html"), "<p>sandbox</p>").unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let sandbox = listener.local_addr().unwrap();
+    tokio::spawn(polyui_server::serve(
+        listener,
+        polyui_server::static_router(dir.clone()),
+    ));
+    let response = reqwest::get(format!("http://{sandbox}/")).await.unwrap();
+    assert!(response.headers().get("content-security-policy").is_none());
+    assert_eq!(response.text().await.unwrap(), "<p>sandbox</p>");
+    std::fs::remove_dir_all(dir).unwrap();
+}

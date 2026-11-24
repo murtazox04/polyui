@@ -5,7 +5,7 @@ use polyui_server::anthropic::{self, AnthropicProvider, ApiKey};
 use polyui_server::bills::{self, BillsHost};
 use polyui_server::{Agent, Host, ServerConfig, User};
 use std::io::Write;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -53,6 +53,19 @@ enum Command {
             help = "Data directory for the shop host."
         )]
         data: PathBuf,
+        #[arg(
+            long,
+            value_name = "URL",
+            help = "Origin of the MCP App sandbox page. Adds the tariff calculator app to the bills host and tells the chat page where the sandbox is. An http URL on localhost, 127.0.0.1 or [::1] is served from --embed-sandbox on that port."
+        )]
+        embed_origin: Option<String>,
+        #[arg(
+            long,
+            value_name = "DIR",
+            default_value = DEFAULT_SANDBOX_DIR,
+            help = "Directory with the sandbox page, served at a local --embed-origin."
+        )]
+        embed_sandbox: PathBuf,
     },
     #[command(about = "Print the show_ui, update_ui and close_ui tool definitions as JSON.")]
     Tools {
@@ -101,6 +114,8 @@ enum Command {
     },
 }
 
+const DEFAULT_SANDBOX_DIR: &str = "js/polyui-web/embed-sandbox";
+
 #[cfg(feature = "query")]
 const DEFAULT_DATA_DIR: &str = polyui_server::shop::DEFAULT_DATA_DIR;
 #[cfg(not(feature = "query"))]
@@ -122,8 +137,13 @@ async fn shop_host(_: &Path) -> Result<Option<Arc<dyn Host>>, String> {
     Err(SHOP_NEEDS_QUERY.to_string())
 }
 
-async fn host_for(choice: HostChoice, data: &Path) -> Result<Option<Arc<dyn Host>>, String> {
+async fn host_for(
+    choice: HostChoice,
+    data: &Path,
+    tariff_app: bool,
+) -> Result<Option<Arc<dyn Host>>, String> {
     match choice {
+        HostChoice::Bills if tariff_app => Ok(Some(Arc::new(BillsHost::new().with_tariff_app()))),
         HostChoice::Bills => Ok(Some(Arc::new(BillsHost::new()))),
         HostChoice::Shop => shop_host(data).await,
         HostChoice::None => Ok(None),
@@ -148,7 +168,7 @@ async fn print_tools(
     let full = CatalogSet::builtin();
     let options = ToolOptions { strict };
     let empty = ActionTable::new();
-    let host = match host_for(choice, data).await {
+    let host = match host_for(choice, data, false).await {
         Ok(host) => host,
         Err(message) => {
             eprintln!("{message}");
@@ -186,7 +206,7 @@ async fn validate_file(file: &PathBuf, choice: HostChoice, data: &Path) -> ExitC
     let catalogs = CatalogSet::builtin();
     let empty_actions = ActionTable::new();
     let empty_refs = StaticRefs::new();
-    let host = match host_for(choice, data).await {
+    let host = match host_for(choice, data, false).await {
         Ok(host) => host,
         Err(message) => {
             eprintln!("{message}");
@@ -213,15 +233,97 @@ async fn validate_file(file: &PathBuf, choice: HostChoice, data: &Path) -> ExitC
     }
 }
 
-async fn serve(
+fn sandbox_address(origin: &str, app: SocketAddr) -> Result<Option<SocketAddr>, String> {
+    if origin.starts_with("https://") {
+        return Ok(None);
+    }
+    let Some(rest) = origin.strip_prefix("http://") else {
+        return Err(format!(
+            "--embed-origin must be an https:// or http:// URL, not {origin}"
+        ));
+    };
+    let authority = rest.split('/').next().unwrap_or_default();
+    let (host, port) = authority.rsplit_once(':').ok_or_else(|| {
+        format!("--embed-origin {origin} needs a port, for example http://localhost:8788/")
+    })?;
+    let ip = match host {
+        "localhost" | "127.0.0.1" => IpAddr::V4(Ipv4Addr::LOCALHOST),
+        "[::1]" => IpAddr::V6(Ipv6Addr::LOCALHOST),
+        _ => {
+            return Err(format!(
+                "an http --embed-origin must be on localhost, 127.0.0.1 or [::1], not {host}; use https for anything else"
+            ));
+        }
+    };
+    let port = port
+        .parse::<u16>()
+        .map_err(|_| format!("--embed-origin {origin} has no valid port"))?;
+    let sandbox = SocketAddr::new(ip, port);
+    if port == app.port() && (app.ip().is_unspecified() || app.ip().is_loopback()) {
+        return Err(format!(
+            "the sandbox needs an origin of its own; --embed-origin {origin} uses the port the app listens on ({app})"
+        ));
+    }
+    Ok(Some(sandbox))
+}
+
+async fn sandbox_listener(
+    origin: &str,
+    app: SocketAddr,
+    dir: &Path,
+) -> Result<Option<tokio::net::TcpListener>, String> {
+    let Some(sandbox) = sandbox_address(origin, app)? else {
+        return Ok(None);
+    };
+    if !dir.join("index.html").is_file() {
+        return Err(format!(
+            "{} has no index.html; pass the sandbox directory with --embed-sandbox",
+            dir.display()
+        ));
+    }
+    tokio::net::TcpListener::bind(sandbox)
+        .await
+        .map(Some)
+        .map_err(|error| format!("cannot listen on {sandbox} for the sandbox: {error}"))
+}
+
+struct ServeOptions {
     addr: SocketAddr,
     static_dir: Option<PathBuf>,
     env_file: Option<PathBuf>,
     model: String,
     choice: HostChoice,
     data: PathBuf,
-) -> ExitCode {
-    let host = match host_for(choice, &data).await {
+    embed_origin: Option<String>,
+    embed_sandbox: PathBuf,
+}
+
+async fn serve(options: ServeOptions) -> ExitCode {
+    let ServeOptions {
+        addr,
+        static_dir,
+        env_file,
+        model,
+        choice,
+        data,
+        embed_origin,
+        embed_sandbox,
+    } = options;
+    let tariff_app = embed_origin.is_some();
+    if tariff_app && !matches!(choice, HostChoice::Bills) {
+        eprintln!("--embed-origin only adds an MCP App to the bills host; this host has none");
+    }
+    let sandbox = match &embed_origin {
+        Some(origin) => match sandbox_listener(origin, addr, &embed_sandbox).await {
+            Ok(listener) => listener,
+            Err(message) => {
+                eprintln!("{message}");
+                return ExitCode::FAILURE;
+            }
+        },
+        None => None,
+    };
+    let host = match host_for(choice, &data, tariff_app).await {
         Ok(Some(host)) => host,
         Ok(None) => {
             eprintln!("serve needs a host; use --host bills or --host shop");
@@ -250,6 +352,7 @@ async fn serve(
         agent,
         ServerConfig {
             static_dir: static_dir.clone(),
+            embed_origin: embed_origin.clone(),
             ..ServerConfig::default()
         },
     );
@@ -265,7 +368,26 @@ async fn serve(
     if let Some(dir) = &static_dir {
         println!("Static files from {}", dir.display());
     }
-    match polyui_server::serve(listener, app).await {
+    if let Some(origin) = &embed_origin {
+        match &sandbox {
+            Some(_) => println!(
+                "MCP App sandbox: {origin} (files from {})",
+                embed_sandbox.display()
+            ),
+            None => println!("MCP App sandbox: {origin} (served elsewhere)"),
+        }
+    }
+    let served = match sandbox {
+        Some(sandbox) => {
+            let pages = polyui_server::static_router(embed_sandbox);
+            tokio::select! {
+                result = polyui_server::serve(listener, app) => result,
+                result = polyui_server::serve(sandbox, pages) => result,
+            }
+        }
+        None => polyui_server::serve(listener, app).await,
+    };
+    match served {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("server stopped: {error}");
@@ -284,7 +406,21 @@ async fn main() -> ExitCode {
             model,
             host,
             data,
-        } => serve(addr, static_dir, env_file, model, host, data).await,
+            embed_origin,
+            embed_sandbox,
+        } => {
+            serve(ServeOptions {
+                addr,
+                static_dir,
+                env_file,
+                model,
+                choice: host,
+                data,
+                embed_origin,
+                embed_sandbox,
+            })
+            .await
+        }
         Command::Tools {
             catalogs,
             strict,
@@ -292,5 +428,34 @@ async fn main() -> ExitCode {
             data,
         } => print_tools(&catalogs, strict, host, &data).await,
         Command::Validate { file, host, data } => validate_file(&file, host, &data).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> SocketAddr {
+        SocketAddr::from(([127, 0, 0, 1], 8787))
+    }
+
+    #[test]
+    fn local_http_sandboxes_get_their_own_port() {
+        assert_eq!(
+            sandbox_address("http://localhost:8788/", app()),
+            Ok(Some(SocketAddr::from(([127, 0, 0, 1], 8788))))
+        );
+        assert_eq!(
+            sandbox_address("http://[::1]:9000", app()),
+            Ok(Some(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 9000)))
+        );
+        assert_eq!(
+            sandbox_address("https://sandbox.example-usercontent.net/", app()),
+            Ok(None)
+        );
+        assert!(sandbox_address("http://127.0.0.1:8787/", app()).is_err());
+        assert!(sandbox_address("http://example.com:8788/", app()).is_err());
+        assert!(sandbox_address("http://localhost/", app()).is_err());
+        assert!(sandbox_address("ftp://localhost:21/", app()).is_err());
     }
 }

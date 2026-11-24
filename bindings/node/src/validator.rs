@@ -1,12 +1,14 @@
 use crate::catalogs::Catalogs;
 use crate::errors::{catalog_error, is_refusal, is_thenable, validation_error};
 use crate::host::{
-    self, Current, Input, Settings, SourceRefs, View, action_id, attach_scenes, chart_options,
+    self, Current, Input, Settings, SourceRefs, View, action_id, attach_apps, attach_scenes,
+    chart_options,
 };
 use crate::surface::{Prepared, Surface, Update, sealed_list};
 use napi::bindgen_prelude::{FnArgs, Function, FunctionRef, Unknown};
 use napi::{Env, Error, JsError, Result, Status, ValueType};
 use napi_derive::napi;
+use polyui_core::embed::UiResource;
 use polyui_core::tools::{self, ToolOptions};
 use polyui_core::validate::{Operation, Problems, is_valid_id};
 use polyui_core::{Locale, RefResolver};
@@ -15,6 +17,8 @@ use std::cell::RefCell;
 
 type ResolverArgs<'a> = FnArgs<(Option<Unknown<'a>>, String, String)>;
 type StoredResolver = FunctionRef<ResolverArgs<'static>, Unknown<'static>>;
+type ReaderArgs<'a> = FnArgs<(Option<Unknown<'a>>, String)>;
+type StoredReader = FunctionRef<ReaderArgs<'static>, Unknown<'static>>;
 
 #[napi(object, object_to_js = false)]
 pub struct ValidatorOptions {
@@ -22,6 +26,7 @@ pub struct ValidatorOptions {
     pub ref_sources: Option<Value>,
     pub resolver: Option<StoredResolver>,
     pub allow_http: Option<bool>,
+    pub ui_resource: Option<StoredReader>,
 }
 
 #[napi(object, object_to_js = false)]
@@ -122,6 +127,75 @@ impl<'a> Lookup<'a> {
     }
 }
 
+struct Apps<'a> {
+    env: &'a Env,
+    reader: Option<Function<'a, ReaderArgs<'a>, Unknown<'a>>>,
+    user: Option<Unknown<'a>>,
+    failure: Option<Error>,
+}
+
+impl<'a> Apps<'a> {
+    fn new(env: &'a Env, stored: Option<&StoredReader>, user: Option<Unknown<'a>>) -> Result<Self> {
+        let reader = match stored {
+            Some(stored) => {
+                let function: Function<'a, ReaderArgs<'a>, Unknown<'a>> =
+                    stored.borrow_back(env)?;
+                Some(function)
+            }
+            None => None,
+        };
+        Ok(Self {
+            env,
+            reader,
+            user,
+            failure: None,
+        })
+    }
+
+    fn keep(&mut self, error: Error) {
+        self.failure.get_or_insert(error);
+    }
+
+    fn read(&mut self, uri: &str) -> Option<UiResource> {
+        let reader = self.reader.as_ref()?;
+        let found = match reader.call(FnArgs::from((self.user, uri.to_string()))) {
+            Ok(found) => found,
+            Err(error) => {
+                self.keep(error);
+                return None;
+            }
+        };
+        match found.get_type() {
+            Ok(ValueType::Undefined | ValueType::Null) => None,
+            _ if is_thenable(&found) => {
+                self.keep(Error::new(
+                    Status::InvalidArg,
+                    "uiResource returned a Promise; it must return the resource itself",
+                ));
+                None
+            }
+            _ => {
+                let resource = self.env.from_js_value::<Value, _>(found).and_then(|value| {
+                    UiResource::from_value(value).map_err(|message| {
+                        Error::new(Status::InvalidArg, format!("uiResource returned {message}"))
+                    })
+                });
+                match resource {
+                    Ok(resource) => Some(resource),
+                    Err(error) => {
+                        self.keep(error);
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    fn finish(self) -> Result<()> {
+        self.failure.map_or(Ok(()), Err)
+    }
+}
+
 struct Ids<'a> {
     factory: Option<Function<'a, (), String>>,
     failure: Option<Error>,
@@ -175,6 +249,7 @@ fn input(value: Value) -> Input {
 pub struct Validator {
     settings: Settings,
     resolver: Option<StoredResolver>,
+    ui_resource: Option<StoredReader>,
 }
 
 impl Validator {
@@ -204,6 +279,7 @@ impl Validator {
             ref_sources: None,
             resolver: None,
             allow_http: None,
+            ui_resource: None,
         });
         let actions = host::action_table(&options.actions.unwrap_or_default())
             .map_err(|failure| catalog_error(&env, &failure))?;
@@ -217,6 +293,7 @@ impl Validator {
                 allow_http: options.allow_http.unwrap_or(false),
             },
             resolver: options.resolver,
+            ui_resource: options.ui_resource,
         })
     }
 
@@ -327,6 +404,32 @@ impl Validator {
     }
 
     #[napi]
+    pub fn attach_apps<'a>(
+        &self,
+        env: &'a Env,
+        surface: &Surface,
+        user: Option<Unknown<'a>>,
+    ) -> Result<Surface> {
+        let mut apps = Apps::new(env, self.ui_resource.as_ref(), user)?;
+        let mut attached = surface.inner.clone();
+        let problems = attach_apps(&mut attached.components, "components", &mut |uri| {
+            apps.read(uri)
+        });
+        apps.finish()?;
+        if problems.is_empty() {
+            Ok(attached.into())
+        } else {
+            Err(validation_error(
+                env,
+                &Problems {
+                    operation: Operation::Show,
+                    items: problems,
+                },
+            ))
+        }
+    }
+
+    #[napi]
     pub fn downgrade(
         &self,
         surface: &Surface,
@@ -386,6 +489,7 @@ impl Validator {
         let view = View::new(options.declared.as_deref(), &locale);
         let mut ids = Ids::new(options.next_id);
         let surface_id = options.surface_id;
+        let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
         let prepared = self.with_refs(env, options.user, |refs| {
             host::prepare_show(
                 &self.settings,
@@ -394,8 +498,11 @@ impl Validator {
                 surface_id.as_deref(),
                 &view,
                 &mut || ids.next(),
+                &mut |uri| apps.read(uri),
             )
-        })?;
+        });
+        apps.finish()?;
+        let prepared = prepared?;
         ids.finish()?;
         Ok(Prepared { inner: prepared })
     }
@@ -426,11 +533,20 @@ impl Validator {
             client: &client.inner,
             seq: u64::from(seq),
         };
+        let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
         let prepared = self.with_refs(env, options.user, |refs| {
-            host::prepare_update(&self.settings, &payload, current, refs, &view, &mut || {
-                ids.next()
-            })
-        })?;
+            host::prepare_update(
+                &self.settings,
+                &payload,
+                current,
+                refs,
+                &view,
+                &mut || ids.next(),
+                &mut |uri| apps.read(uri),
+            )
+        });
+        apps.finish()?;
+        let prepared = prepared?;
         ids.finish()?;
         Ok(Prepared { inner: prepared })
     }

@@ -1,10 +1,15 @@
-#[cfg(all(feature = "client-lite", any(feature = "tools", feature = "stream")))]
+#[cfg(all(
+    feature = "client-lite",
+    any(feature = "tools", feature = "stream", feature = "embed")
+))]
 compile_error!("client-lite is the wasm client build, enable it without the default features");
 
 pub mod catalog;
 pub mod client;
 mod codec;
 mod decode;
+#[cfg(feature = "embed")]
+pub mod embed;
 mod fits;
 #[cfg(any(test, feature = "client-lite"))]
 mod json;

@@ -22,8 +22,8 @@ pub(crate) const CHART_TYPE: &str = "chart:Chart";
 pub(crate) const SCENE_PROP: &str = "scene";
 pub const MAX_APP_STRING_CHARS: usize = 200 * 1024;
 pub const MCP_APP_MIME_TYPE: &str = "text/html;profile=mcp-app";
-pub(crate) const EMBED_TYPE: &str = "embed:Embed";
-pub(crate) const APP_PROP: &str = "app";
+pub const EMBED_TYPE: &str = "embed:Embed";
+pub const APP_PROP: &str = "app";
 const APP_TOOL_FIELDS: [&str; 2] = ["tool_input", "tool_result"];
 
 fn checked_app<'a>(app: &'a Value, resource: Option<&Value>) -> Option<&'a Value> {

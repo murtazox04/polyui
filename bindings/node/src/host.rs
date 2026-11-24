@@ -1,17 +1,22 @@
 use polyui_chart::{ChartOptions, ChartSpec};
+use polyui_core::catalog::EMBED_ID;
+use polyui_core::embed::{self, UiResource};
 use polyui_core::pointer;
 use polyui_core::protocol::{Close, Component, DataUpdate, Message, Open, Patch};
 use polyui_core::validate::{
     self, Location, Operation, Problem, Problems, SealedAction, Surface, Update, Validator,
 };
 use polyui_core::{
-    ActionSpec, ActionTable, CatalogError, CatalogSet, Locale, PropKind, PropSpec, RefResolver,
+    ActionSpec, ActionTable, CatalogError, CatalogSet, Limits, Locale, PropKind, PropSpec,
+    RefResolver,
 };
 use serde_json::{Map, Value, json};
 
 pub const CHART_TYPE: &str = "chart:Chart";
 pub const SCENE_PROP: &str = "scene";
 pub const DEFAULT_SURFACE: &str = "s1";
+
+pub type ReadApp<'a> = dyn FnMut(&str) -> Option<UiResource> + 'a;
 
 pub enum Input {
     Text(String),
@@ -206,6 +211,14 @@ impl<'a> View<'a> {
     pub fn locale(&self) -> Locale {
         Locale::from_tag(self.locale_tag)
     }
+
+    pub fn draws_embeds(&self) -> bool {
+        self.declared.is_none_or(|declared| {
+            declared
+                .iter()
+                .any(|tag| tag.split_once('@').is_some_and(|(id, _)| id == EMBED_ID))
+        })
+    }
 }
 
 pub struct Prepared {
@@ -295,6 +308,14 @@ pub fn attach_scenes(
     problems
 }
 
+pub fn attach_apps(
+    components: &mut [Component],
+    list: &str,
+    read: &mut ReadApp<'_>,
+) -> Vec<Problem> {
+    embed::attach_apps(components, list, &Limits::default(), read)
+}
+
 fn fail(operation: Operation, items: Vec<Problem>) -> Result<(), Problems> {
     if items.is_empty() {
         Ok(())
@@ -320,15 +341,17 @@ pub fn prepare_show(
     surface_id: Option<&str>,
     view: &View<'_>,
     next_id: &mut dyn FnMut() -> String,
+    read: &mut ReadApp<'_>,
 ) -> Result<Prepared, Problems> {
     let mut model = settings.show_ui(input)?;
     let mut client = model.clone();
     client.components = settings.resolve(&model.components, refs, Operation::Show)?;
     let data = client.data_value();
-    fail(
-        Operation::Show,
-        attach_scenes(&mut client.components, &data, "components", &view.chart),
-    )?;
+    let mut problems = attach_scenes(&mut client.components, &data, "components", &view.chart);
+    if view.draws_embeds() {
+        problems.extend(attach_apps(&mut client.components, "components", read));
+    }
+    fail(Operation::Show, problems)?;
     let id = model
         .id
         .clone()
@@ -367,6 +390,7 @@ pub fn prepare_update(
     refs: &dyn RefResolver,
     view: &View<'_>,
     next_id: &mut dyn FnMut() -> String,
+    read: &mut ReadApp<'_>,
 ) -> Result<Prepared, Problems> {
     let update = settings.update_ui(input, current.model)?;
     if let Some(open) = current.model.id.as_deref()
@@ -389,10 +413,11 @@ pub fn prepare_update(
             ..Update::default()
         })
         .map_err(|error| data_problem(Operation::Update, error))?;
-    fail(
-        Operation::Update,
-        attach_scenes(&mut upsert, &data_after.data_value(), "upsert", &view.chart),
-    )?;
+    let mut problems = attach_scenes(&mut upsert, &data_after.data_value(), "upsert", &view.chart);
+    if view.draws_embeds() {
+        problems.extend(attach_apps(&mut upsert, "upsert", read));
+    }
+    fail(Operation::Update, problems)?;
     let actions = settings.seal(&mut upsert, next_id);
     let mut model = current.model.clone();
     let mut client = current.client.clone();

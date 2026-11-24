@@ -61,7 +61,7 @@ Buttons on a surface that is still streaming are not live yet. A `ui.action` on 
 
 How much sooner the UI appears depends on how long the call is. In a live run against `claude-haiku-5-5` ("Show all four of my bills with a pay button for each", 2357 bytes of `show_ui` input in 148 fragments over 3.1 s, about 15 bytes every 21 ms), the first `ui.open` came at 4.9 s after the user message, while the full input was only complete at 7.7 s. A second call without streaming opened its surface at 6.8 s, right when its input was complete. With the same timing replayed by `ScriptedProvider` for a bills card with 15 components, the first `ui.open` comes after 0.32 s with streaming and after 2.47 s without (`cargo test -p polyui-server --test streaming -- --nocapture` prints both).
 
-The server checks the input again from the start each time a fragment that can close a component arrives. `ShowUiStream` borrows a `Validator`, and `Validator` holds `&dyn ActionRegistry` and `&dyn RefResolver` without `Sync`, so it cannot be kept across an `await` in a spawned task. For tool inputs up to the 256 KiB limit this costs little, but it is quadratic in the worst case.
+The server keeps one `ShowUiStream` per streamed tool call, for the whole call. The stream owns only its parser state; the `Validator` is passed to `feed` on every fragment, so the stream can live across an `await` even though `Validator` borrows the host's registry and ref resolver, which are not `Sync`. Each byte is scanned once and each component is checked once while it streams, so the work grows with the size of the input, not with its square. `tests/embed.rs` streams 100 and 200 components that each hold a `$ref` and counts the host's ref lookups: 400 and 800, four per component.
 
 The server keeps two copies of every surface. The model copy is what the model wrote, and the summaries are built from it. The client copy has the resolved values, the chart scenes and the sealed handles, and it is what `ui.snapshot` returns after a `ui.resync`. When the user fires an action with form values (the paths listed in the action's `with`), both copies are updated, so the next summary shows what the user typed. Before that, every component that binds to the data model is checked again against the data with the new values, the same way `show_ui` data is checked. A value that does not fit a prop, for example `javascript:alert(1)` typed into a field bound to `Image.src`, is refused: the action does not run and the client gets `ui.action.result` with `rejected`. Charts that bind to the data model are drawn again, and the client gets a `ui.patch` with the new scene.
 
@@ -90,6 +90,7 @@ Your application implements `Host`. The server calls it; it never calls the mode
 | `run_action(user, call)` | Runs the action. Return `ActionOutcome::ok()` or `ActionOutcome::rejected(message)`. The message is shown to the user; `with_note` adds a note only the model sees. |
 | `authenticate(headers)` | Turns request headers into a `User`. The default is a guest. |
 | `tools()` and `call_tool(...)` | Optional plain tools, for example a data lookup. |
+| `ui_resource(user, uri)` | Optional. Returns the MCP Apps `resources/read` entry for a `ui://` URI this user may see, for `embed:Embed`. See [Embedding MCP Apps](embed.md). |
 | `catalogs()`, `fallback_text(locale)`, `allow_http()` | Optional overrides. |
 
 Wiring it up:
@@ -111,6 +112,7 @@ The model sits behind the `ModelProvider` trait. `AnthropicProvider` streams fro
 | `POST /send` | With a `hello` body and no `session`, starts a session and returns `welcome`. |
 | `GET /events?session=<id>` | The server messages for that session as an SSE stream. One stream per session; the session ends when it closes. |
 | `POST /send?session=<id>` | Any client message. Answers `202`. |
+| `GET /config.json` | `{"embed_origin": ...}`, the sandbox URL from `ServerConfig::embed_origin` or `null`. The chat example reads it to decide whether to declare `embed@1`. |
 | `/` | Static files from `--static DIR`, if given. |
 
 Every incoming message is size checked before it is parsed: the WebSocket frame and message limit and the HTTP body limit are both 256 KiB, and the text then goes through `polyui-core`'s guarded parser. Bad input gets `ui.error`; it never reaches the model.
@@ -138,7 +140,16 @@ The `bills` demo host is a household in Tashkent with gas, electricity, water an
 polyui serve --env-file ~/.config/polyui/anthropic.env --static js/polyui-web/demo
 ```
 
-Options: `--addr` (default `127.0.0.1:8787`), `--model` (default `claude-haiku-5-5`), `--static DIR`, `--host bills|shop`, `--data DIR`. Without `--env-file` the key is read from `ANTHROPIC_API_KEY`. The key is never printed or logged.
+Options: `--addr` (default `127.0.0.1:8787`), `--model` (default `claude-haiku-5-5`), `--static DIR`, `--host bills|shop`, `--data DIR`, `--embed-origin URL`, `--embed-sandbox DIR`. Without `--env-file` the key is read from `ANTHROPIC_API_KEY`. The key is never printed or logged.
+
+`--embed-origin` turns on the MCP App demo. The bills host then offers the `embed` catalog and one app, an internet tariff calculator at `ui://bills/tariff`, and `/config.json` tells the chat page where the sandbox page lives. When the URL is `http` on `localhost`, `127.0.0.1` or `[::1]`, the command also serves `js/polyui-web/embed-sandbox` (or `--embed-sandbox DIR`) on that port, so the sandbox has an origin of its own:
+
+```sh
+(cd examples/chat && npm run build)
+polyui serve --env-file ~/.config/polyui/anthropic.env --static examples/chat/dist --embed-origin http://localhost:8788/
+```
+
+Open `http://127.0.0.1:8787/` and ask which internet tariff suits the family. The calculator's button sends a `ui/message`, which reaches the model as a `tariff_message` action with the text as its detail. For an `https` URL the command serves nothing and expects you to host the sandbox page there.
 
 `--host shop` runs a small store whose dashboards are built from SQL over local CSV and Parquet files. It needs the `query` feature, which is off by default because DataFusion grows the binary from about 7 MB to about 92 MB. Build with `cargo run -p polyui --features query -- serve --host shop ...` or `cargo install --path crates/polyui-cli --features query`. A binary built without it stops with a message that says so. See [dashboards.md](dashboards.md).
 
@@ -151,7 +162,7 @@ polyui validate surface.json                       # problems, or the summary if
 
 ## Tests
 
-`cargo test -p polyui-server -p polyui` runs everything that does not need the network: the stream parser, the agent loop with `ScriptedProvider` (valid calls, a fixed retry, the retry limit, cut-off replies, the confirm flow, reused and expired nonces, forged handles, `$ref` values never reaching the model, chart scenes, patches and snapshots, streamed surfaces), the session limits and the WebSocket, SSE and static file transports on a real socket. `cargo test -p polyui-server --features query` adds the dashboard tests. `ScriptedReply::paced(bytes, every)` splits text and tool input into fragments of that many bytes and waits between them, so tests can replay realistic model timing.
+`cargo test -p polyui-server -p polyui` runs everything that does not need the network: the stream parser, the agent loop with `ScriptedProvider` (valid calls, a fixed retry, the retry limit, cut-off replies, the confirm flow, reused and expired nonces, forged handles, `$ref` values never reaching the model, chart scenes, patches and snapshots, streamed surfaces, embedded MCP Apps), the session limits and the WebSocket, SSE and static file transports on a real socket. `cargo test -p polyui-server --features query` adds the dashboard tests. `ScriptedReply::paced(bytes, every)` splits text and tool input into fragments of that many bytes and waits between them, so tests can replay realistic model timing.
 
 Two tests in `tests/live.rs` talk to the real API. They are ignored by default:
 
