@@ -138,8 +138,41 @@ struct ChatView: View {
         }
     }
 
+    @ViewBuilder
+    private var voiceNote: some View {
+        switch model.listener.state {
+        case .unavailable(let message):
+            Label(message, systemImage: "mic.slash")
+                .foregroundStyle(theme.warning)
+        case .listening:
+            Label(model.listener.transcript.isEmpty ? "Listening. Tap the microphone again when you are done." : model.listener.transcript, systemImage: "waveform")
+                .foregroundStyle(theme.foreground)
+        case .starting:
+            Label("Starting the microphone", systemImage: "mic")
+                .foregroundStyle(theme.muted)
+        case .idle:
+            if let heard = model.heard {
+                Label("Heard \u{201C}\(heard)\u{201D}", systemImage: "checkmark.circle")
+                    .foregroundStyle(theme.muted)
+            }
+        }
+    }
+
     private var composer: some View {
-        HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
+            voiceNote
+                .font(.footnote)
+                .padding(.horizontal, 20)
+                .accessibilityIdentifier("voice-note")
+            composerField
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .background(page)
+    }
+
+    private var composerField: some View {
+        HStack(spacing: 6) {
             TextField("Message the assistant", text: $draft, axis: .vertical)
                 .lineLimit(1...4)
                 .focused($composing)
@@ -147,6 +180,16 @@ struct ChatView: View {
                 .onSubmit(send)
                 .padding(.vertical, 12)
                 .padding(.leading, 16)
+            Button {
+                model.toggleListening()
+            } label: {
+                Image(systemName: model.listener.isListening ? "stop.fill" : "mic")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(model.listener.isListening ? theme.accentForeground : theme.muted)
+                    .frame(width: 36, height: 36)
+                    .background(model.listener.isListening ? theme.negative : Color.clear, in: Circle())
+            }
+            .accessibilityLabel(model.listener.isListening ? "Stop listening" : "Speak")
             Button(action: send) {
                 Image(systemName: "arrow.up")
                     .font(.body.weight(.semibold))
@@ -161,9 +204,6 @@ struct ChatView: View {
         .background(theme.raised, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(theme.border))
         .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
-        .background(page)
     }
 
     private func send() {

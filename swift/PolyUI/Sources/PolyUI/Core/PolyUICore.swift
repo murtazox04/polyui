@@ -186,6 +186,18 @@ public final class PolyUICore {
         return raw == "null" ? nil : try Self.decode(VoiceMatch.self, from: raw)
     }
 
+    public nonisolated static func embedPage(propsJSON: String, nonce: String) throws -> String {
+        var error: UnsafeMutablePointer<CChar>?
+        let page = propsJSON.withCString { props in
+            nonce.withCString { polyui_embed_page(props, $0, &error) }
+        }
+        guard let page else {
+            throw PolyUIError.core(consume(error) ?? "PolyUI could not build the embed page")
+        }
+        defer { polyui_string_free(page) }
+        return String(cString: page)
+    }
+
     private func call(_ body: (OpaquePointer, ErrorSlot) -> UnsafeMutablePointer<CChar>?) throws -> String {
         var error: UnsafeMutablePointer<CChar>?
         let result = withUnsafeMutablePointer(to: &error) { body(native.handle, $0) }
@@ -196,7 +208,7 @@ public final class PolyUICore {
         return String(cString: result)
     }
 
-    private static func consume(_ pointer: UnsafeMutablePointer<CChar>?) -> String? {
+    private nonisolated static func consume(_ pointer: UnsafeMutablePointer<CChar>?) -> String? {
         guard let pointer else { return nil }
         defer { polyui_string_free(pointer) }
         return String(cString: pointer)

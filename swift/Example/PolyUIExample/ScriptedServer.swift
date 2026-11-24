@@ -7,6 +7,7 @@ final class ScriptedServer {
     private let deliver: (String) -> Void
     private let gap: Duration
     private var opened = false
+    private var forecastOpened = false
     private var nonceCounter = 0
 
     init(script: JSONValue, instant: Bool, deliver: @escaping (String) -> Void) {
@@ -27,11 +28,46 @@ final class ScriptedServer {
         script["question"]?.stringValue ?? "What do we owe this month?"
     }
 
+    var forecastQuestion: String {
+        script["forecast"]?["question"]?.stringValue ?? "What is the weather in Tashkent this week?"
+    }
+
+    static func loadForecastApp() -> String? {
+        guard let url = Bundle.main.url(forResource: "forecast-app", withExtension: "html") else { return nil }
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    static func fillingApps(in message: JSONValue, with html: String) -> JSONValue {
+        guard case .object(var fields) = message, case .array(let components) = fields["components"] else { return message }
+        fields["components"] = .array(components.map { component in
+            guard case .object(var parts) = component, parts["type"] == "embed:Embed",
+                case .object(var props) = parts["props"], case .object(var app) = props["app"],
+                case .object(var resource) = app["resource"]
+            else { return component }
+            resource["text"] = .string(html)
+            app["resource"] = .object(resource)
+            props["app"] = .object(app)
+            parts["props"] = .object(props)
+            return .object(parts)
+        })
+        return .object(fields)
+    }
+
     func receive(_ text: String) async {
         guard let message = try? JSONValue.parse(text) else { return }
         switch message["t"]?.stringValue {
         case "hello":
             await send(script["welcome"])
+        case "user.say" where message["text"]?.stringValue == forecastQuestion && !forecastOpened:
+            forecastOpened = true
+            let forecast = script["forecast"]
+            for chunk in forecast?["answer"]?.arrayValue ?? [] {
+                await send(["v": 1, "t": "agent.delta", "text": chunk])
+            }
+            if let open = forecast?["open"], let html = Self.loadForecastApp() {
+                await send(Self.fillingApps(in: open, with: html))
+            }
+            await send(["v": 1, "t": "agent.done"])
         case "user.say" where !opened:
             opened = true
             for chunk in script["answer"]?.arrayValue ?? [] {
@@ -40,7 +76,7 @@ final class ScriptedServer {
             await send(script["open"])
             await send(["v": 1, "t": "agent.done"])
         case "user.say":
-            await say("This demo only knows one conversation. Reset it from the menu to replay it.")
+            await say("This demo only knows two questions. Reset it from the menu to replay it.")
         case "ui.action":
             await action(message)
         default:
@@ -67,6 +103,10 @@ final class ScriptedServer {
                 await send(step)
             }
             await say("Paid. 184 500 so'm went to Hududiy elektr tarmoqlari.")
+        case "act_ask":
+            let asked = message["detail"]?["text"]?.stringValue ?? ""
+            let reply = script["forecast"]?["reply"]?.stringValue ?? ""
+            await say("The forecast app asked: \u{201C}\(asked)\u{201D} \(reply)")
         case "act_month":
             guard let row = message["detail"]?["row"]?.doubleValue.map({ Int($0) }) else { return }
             let months = script["months"]?.arrayValue ?? []

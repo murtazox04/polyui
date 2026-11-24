@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 @MainActor
 @Observable
@@ -7,6 +8,9 @@ public final class PolyUISession {
     @ObservationIgnored public let core: PolyUICore
     @ObservationIgnored public var send: (String) -> Void
     @ObservationIgnored public let allowHTTP: Bool
+    @ObservationIgnored public var openLink: @MainActor (URL) -> Void = { url in
+        UIApplication.shared.open(url)
+    }
     public private(set) var surfaceIDs: [String] = []
     public private(set) var lastError: String?
     @ObservationIgnored private var surfaces: [String: PolyUISurfaceModel] = [:]
@@ -65,6 +69,26 @@ public final class PolyUISession {
         surfaces[surface]?.pendingConfirm = nil
     }
 
+    public func askToOpen(_ url: URL, surface: String, component: String, answer: @escaping @MainActor (Bool) -> Void) {
+        let model = self.surface(surface)
+        let busy = surfaces.values.contains { $0.pendingLink != nil || $0.pendingConfirm != nil }
+        guard !busy, !model.isClosed, SafeURL.check(url.absoluteString) != nil else {
+            answer(false)
+            return
+        }
+        model.pendingLink = PolyUILinkRequest(url: url, component: component, answer: answer)
+    }
+
+    public func answerLink(surface: String, id: UUID, accepted: Bool) {
+        guard let link = surfaces[surface]?.takeLink(id) else { return }
+        if accepted { openLink(link.url) }
+        link.answer(accepted)
+    }
+
+    public func withdrawLink(surface: String, component: String) {
+        surfaces[surface]?.withdrawLink(from: component)
+    }
+
     public func say(surface: String) -> [Utterance] {
         attempt(surface: surface) { try core.say(surface: surface) } ?? []
     }
@@ -75,7 +99,12 @@ public final class PolyUISession {
             return nil
         }
         if let batch = found.batch { accept(batch) }
-        if let action = found.action { transmit(action) }
+        if let action = found.action {
+            if let nonce = action["confirm"]?.stringValue, surfaces[surface]?.pendingConfirm?.nonce == nonce {
+                dismissConfirm(surface: surface)
+            }
+            transmit(action)
+        }
         return found
     }
 

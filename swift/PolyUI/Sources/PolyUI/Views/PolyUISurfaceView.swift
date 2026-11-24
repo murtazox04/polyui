@@ -4,6 +4,7 @@ public struct PolyUISurfaceView: View {
     private let session: PolyUISession
     private let surface: PolyUISurfaceModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.polyUILabels) private var labels
 
     public init(session: PolyUISession, surface id: String) {
         self.session = session
@@ -11,7 +12,6 @@ public struct PolyUISurfaceView: View {
     }
 
     public var body: some View {
-        @Bindable var surface = surface
         VStack(alignment: .leading, spacing: 0) {
             if let rootID = surface.rootID {
                 PolyUIComponentView(id: rootID)
@@ -21,13 +21,45 @@ public struct PolyUISurfaceView: View {
         .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: surface.structureRevision)
         .environment(session)
         .environment(surface)
-        .sheet(item: $surface.pendingConfirm) { request in
-            PolyUIConfirmRequestSheet(request: request) {
-                session.confirm(surface: surface.id, request: request)
-            } onDismiss: {
-                session.dismissConfirm(surface: surface.id)
+        .sheet(item: sheetBinding) { sheet in
+            switch sheet {
+            case .confirm(let request):
+                PolyUIConfirmRequestSheet(request: request) {
+                    session.confirm(surface: surface.id, request: request)
+                } onDismiss: {
+                    session.dismissConfirm(surface: surface.id)
+                }
+            case .link(let link):
+                PolyUIConfirmRequestSheet(request: linkQuestion(link)) {
+                    session.answerLink(surface: surface.id, id: link.id, accepted: true)
+                } onDismiss: {
+                    session.answerLink(surface: surface.id, id: link.id, accepted: false)
+                }
             }
         }
+    }
+
+    private var sheetBinding: Binding<PolyUISheet?> {
+        Binding {
+            surface.presentedSheet
+        } set: { next in
+            guard next == nil else { return }
+            switch surface.presentedSheet {
+            case .confirm: session.dismissConfirm(surface: surface.id)
+            case .link(let link): session.answerLink(surface: surface.id, id: link.id, accepted: false)
+            case nil: break
+            }
+        }
+    }
+
+    private func linkQuestion(_ link: PolyUILinkRequest) -> ConfirmRequest {
+        ConfirmRequest(
+            actionID: "open-link",
+            nonce: link.id.uuidString,
+            title: labels.openLinkTitle,
+            body: link.url.absoluteString,
+            confirmLabel: labels.openLink
+        )
     }
 }
 

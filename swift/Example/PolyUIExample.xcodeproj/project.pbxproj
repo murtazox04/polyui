@@ -9,10 +9,16 @@
 		B10000000000000000000001 = {isa = PBXBuildFile; productRef = B10000000000000000000010; };
 
 		B10000000000000000000002 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PolyUIExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000030 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PolyUIExampleUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 
 		B10000000000000000000003 = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = PolyUIExample;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000031 = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PolyUIExampleUITests;
 			sourceTree = "<group>";
 		};
 
@@ -29,6 +35,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000003,
+				B10000000000000000000031,
 				B10000000000000000000006,
 			);
 			sourceTree = "<group>";
@@ -37,6 +44,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000002,
+				B10000000000000000000030,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -65,6 +73,40 @@
 			productReference = B10000000000000000000002;
 			productType = "com.apple.product-type.application";
 		};
+		B10000000000000000000035 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B10000000000000000000040;
+			buildPhases = (
+				B10000000000000000000032,
+				B10000000000000000000033,
+				B10000000000000000000034,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B10000000000000000000037,
+			);
+			fileSystemSynchronizedGroups = (
+				B10000000000000000000031,
+			);
+			name = PolyUIExampleUITests;
+			productName = PolyUIExampleUITests;
+			productReference = B10000000000000000000030;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+
+		B10000000000000000000036 = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B10000000000000000000011;
+			proxyType = 1;
+			remoteGlobalIDString = B10000000000000000000007;
+			remoteInfo = PolyUIExample;
+		};
+		B10000000000000000000037 = {
+			isa = PBXTargetDependency;
+			target = B10000000000000000000007;
+			targetProxy = B10000000000000000000036;
+		};
 
 		B10000000000000000000011 = {
 			isa = PBXProject;
@@ -75,6 +117,10 @@
 				TargetAttributes = {
 					B10000000000000000000007 = {
 						CreatedOnToolsVersion = 27.0;
+					};
+					B10000000000000000000035 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = B10000000000000000000007;
 					};
 				};
 			};
@@ -96,6 +142,7 @@
 			projectRoot = "";
 			targets = (
 				B10000000000000000000007,
+				B10000000000000000000035,
 			);
 		};
 
@@ -109,6 +156,27 @@
 
 		B10000000000000000000008 = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000000000000000000032 = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000000000000000000033 = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000000000000000000034 = {
+			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -161,6 +229,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PolyUI;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "PolyUI listens after you tap the microphone button, so you can answer a card by voice.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "PolyUI turns what you say into text to pick an option or answer a question on screen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -189,6 +259,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PolyUI;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "PolyUI listens after you tap the microphone button, so you can answer a card by voice.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "PolyUI turns what you say into text to pick an option or answer a question on screen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -210,11 +282,55 @@
 			name = Release;
 		};
 
+		B10000000000000000000038 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.polyui.example.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = PolyUIExample;
+			};
+			name = Debug;
+		};
+		B10000000000000000000039 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.polyui.example.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = PolyUIExample;
+			};
+			name = Release;
+		};
+
 		B10000000000000000000020 = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B10000000000000000000015,
 				B10000000000000000000016,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B10000000000000000000040 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000000000000000000038,
+				B10000000000000000000039,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

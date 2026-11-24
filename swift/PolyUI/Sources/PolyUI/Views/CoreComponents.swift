@@ -430,26 +430,3 @@ struct ConfirmSheetComponent: View {
         }
     }
 }
-
-struct EmbedComponent: View {
-    let node: ComponentNode
-    @Environment(\.polyUITheme) private var theme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "square.on.square.dashed")
-                .font(.title3)
-                .foregroundStyle(theme.muted)
-                .accessibilityHidden(true)
-            Text(node.string("title"))
-                .font(.body.weight(.medium))
-                .foregroundStyle(theme.foreground)
-            Spacer(minLength: 0)
-        }
-        .padding(theme.spacing)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.sunken, in: RoundedRectangle(cornerRadius: theme.innerCornerRadius, style: .continuous))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(node.a11y.label.isEmpty ? node.string("title") : node.a11y.label)
-    }
-}

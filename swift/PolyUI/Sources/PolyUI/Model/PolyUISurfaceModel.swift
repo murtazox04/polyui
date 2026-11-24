@@ -9,6 +9,7 @@ public final class PolyUISurfaceModel: Identifiable {
     public private(set) var nodes: [String: ComponentNode] = [:]
     public private(set) var highlightedID: String?
     public internal(set) var pendingConfirm: ConfirmRequest?
+    public internal(set) var pendingLink: PolyUILinkRequest?
     public private(set) var isClosed = false
     public private(set) var fallback: String?
     public private(set) var structureRevision = 0
@@ -23,6 +24,12 @@ public final class PolyUISurfaceModel: Identifiable {
 
     public func node(_ id: String) -> ComponentNode? {
         nodes[id]
+    }
+
+    public var presentedSheet: PolyUISheet? {
+        if let pendingConfirm { return .confirm(pendingConfirm) }
+        if let pendingLink { return .link(pendingLink) }
+        return nil
     }
 
     public func apply(_ batch: RenderBatch) {
@@ -92,11 +99,53 @@ public final class PolyUISurfaceModel: Identifiable {
         if highlightedID == id { highlightedID = nil }
     }
 
+    func takeLink(_ id: UUID) -> PolyUILinkRequest? {
+        guard let link = pendingLink, link.id == id else { return nil }
+        pendingLink = nil
+        return link
+    }
+
+    func withdrawLink(from component: String) {
+        guard let link = pendingLink, link.component == component else { return }
+        pendingLink = nil
+        link.answer(false)
+    }
+
     private func close() {
         nodes.removeAll()
         rootID = nil
         highlightedID = nil
         pendingConfirm = nil
+        if let link = pendingLink {
+            pendingLink = nil
+            link.answer(false)
+        }
         isClosed = true
+    }
+}
+
+public struct PolyUILinkRequest: Identifiable {
+    public let id: UUID
+    public let url: URL
+    public let component: String
+    let answer: @MainActor (Bool) -> Void
+
+    init(url: URL, component: String, answer: @escaping @MainActor (Bool) -> Void) {
+        id = UUID()
+        self.url = url
+        self.component = component
+        self.answer = answer
+    }
+}
+
+public enum PolyUISheet: Identifiable {
+    case confirm(ConfirmRequest)
+    case link(PolyUILinkRequest)
+
+    public var id: String {
+        switch self {
+        case .confirm(let request): "confirm:\(request.id)"
+        case .link(let link): "link:\(link.id.uuidString)"
+        }
     }
 }
