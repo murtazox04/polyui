@@ -1,0 +1,134 @@
+{
+  "description": "ui.sync becomes a highlight op, null clears it, ui.close closes the surface.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "t",
+        "components": [
+          {
+            "id": "t",
+            "type": "Text",
+            "props": {
+              "text": "Hello"
+            }
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "t",
+            "type": "Text",
+            "props": {
+              "text": "Hello",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "Hello"
+            }
+          },
+          {
+            "op": "root",
+            "id": "t"
+          }
+        ],
+        "fallback": "Hello"
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.sync",
+        "surface": "s1",
+        "highlight": "t",
+        "at_ms": 120
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "highlight",
+            "id": "t"
+          }
+        ]
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.sync",
+        "surface": "s1",
+        "highlight": null
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "highlight",
+            "id": null
+          }
+        ]
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.sync",
+        "surface": "s1",
+        "highlight": "ghost"
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": []
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.close",
+        "surface": "s1",
+        "seq": 2
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "close"
+          }
+        ]
+      }
+    },
+    {
+      "say": "s1",
+      "expect": []
+    }
+  ]
+}

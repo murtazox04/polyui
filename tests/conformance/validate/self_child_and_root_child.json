@@ -1,0 +1,29 @@
+{
+  "description": "A component cannot list itself or the root as a child.",
+  "input": {
+    "root": "r",
+    "components": [
+      {
+        "id": "r",
+        "type": "Row",
+        "children": [
+          "a"
+        ]
+      },
+      {
+        "id": "a",
+        "type": "Card",
+        "children": [
+          "a",
+          "r"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[1] id \"a\": lists itself as a child.",
+      "components[1] id \"a\": children references the root \"r\"."
+    ]
+  }
+}

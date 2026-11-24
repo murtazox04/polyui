@@ -1,0 +1,21 @@
+{
+  "description": "http is rejected unless the host allows it.",
+  "input": {
+    "root": "a",
+    "components": [
+      {
+        "id": "a",
+        "type": "Image",
+        "props": {
+          "src": "http://example.com/a.png",
+          "alt": "x"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"a\" prop \"src\": URL scheme \"http\" is not allowed, allowed: https."
+    ]
+  }
+}

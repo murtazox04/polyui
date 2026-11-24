@@ -1,0 +1,9 @@
+{
+  "description": "Nesting deeper than 32 is rejected before parsing.",
+  "input_text": "{\"root\":\"a\",\"components\":[{\"id\":\"a\",\"type\":\"Text\",\"props\":{\"text\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}}]}",
+  "expect": {
+    "problems": [
+      "input: JSON nesting is deeper than 32."
+    ]
+  }
+}

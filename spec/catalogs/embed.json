@@ -1,0 +1,19 @@
+{
+  "id": "embed",
+  "version": 1,
+  "types": {
+    "Embed": {
+      "description": "Shows an MCP App the host provides, in a sandboxed frame. Use only when no other component can show it.",
+      "role": "figure",
+      "children": false,
+      "props": {
+        "resource": { "kind": "url", "schemes": ["ui"], "required": true, "bindable": false, "description": "ui:// URI of an MCP App the host offers." },
+        "title": { "kind": "string", "max": 120, "required": true, "description": "What the app shows. Read aloud and shown when the app cannot load." },
+        "height": { "kind": "enum", "values": ["small", "medium", "large"], "default": "medium" },
+        "on_message": { "kind": "action", "description": "Fires when the app sends a message. The text goes in the action detail." }
+      },
+      "alt": "{title}",
+      "say": "{title}"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "description": "data entries need a JSON Pointer path and a string, number or bool value.",
+  "input": {
+    "root": "t",
+    "components": [
+      {
+        "id": "t",
+        "type": "Text",
+        "props": {
+          "text": "x"
+        }
+      }
+    ],
+    "data": [
+      {
+        "path": "/a",
+        "value": {
+          "nested": true
+        }
+      },
+      {
+        "path": "/b",
+        "value": "ok"
+      },
+      {
+        "path": "/b/c",
+        "value": 1
+      },
+      {
+        "path": "/d",
+        "value": null
+      },
+      {
+        "path": "/e",
+        "value": 1,
+        "extra": 2
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "data[0] path \"/a\": value: expected text, a number or true/false, got an object.",
+      "data[2] path \"/b/c\": \"/b\" already holds a value, not an object.",
+      "data[3] path \"/d\": value: expected text, a number or true/false, got null.",
+      "data[4] path \"/e\": unknown field \"extra\". Known: path, value."
+    ]
+  }
+}

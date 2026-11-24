@@ -1,0 +1,22 @@
+[package]
+name = "polyui-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["stream", "tools", "embed"]
+stream = []
+tools = []
+embed = ["dep:base64"]
+client-lite = ["dep:zmij"]
+catalog-checks = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+zmij = { version = "1.0.23", optional = true }
+base64 = { version = "0.22.1", optional = true }

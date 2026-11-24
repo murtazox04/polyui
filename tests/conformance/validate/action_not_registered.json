@@ -1,0 +1,41 @@
+{
+  "description": "Actions must be registered on the server.",
+  "actions": {
+    "pay_bill": {
+      "args": {
+        "bill": {
+          "kind": "string",
+          "required": true,
+          "max": 32
+        }
+      },
+      "requires_confirm": true
+    },
+    "pick_store": {
+      "args": {}
+    }
+  },
+  "input": {
+    "root": "b",
+    "components": [
+      {
+        "id": "b",
+        "type": "Button",
+        "props": {
+          "label": "Steal",
+          "on_press": {
+            "action": "transfer_all",
+            "args": {
+              "to": "evil"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"b\" prop \"on_press\": action \"transfer_all\" is not registered. Known: pay_bill, pick_store."
+    ]
+  }
+}

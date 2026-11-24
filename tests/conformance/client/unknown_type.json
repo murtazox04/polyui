@@ -1,0 +1,152 @@
+{
+  "description": "Types outside the client's catalogs become Text with the alt, and ui.error is sent once per type.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "row",
+        "components": [
+          {
+            "id": "row",
+            "type": "Row",
+            "children": [
+              "a",
+              "b",
+              "c"
+            ]
+          },
+          {
+            "id": "a",
+            "type": "acme:Card",
+            "alt": "Invoice 17: 120 000 so'm"
+          },
+          {
+            "id": "b",
+            "type": "acme:Card",
+            "alt": "Invoice 18"
+          },
+          {
+            "id": "c",
+            "type": "chart:Chart",
+            "props": {
+              "title": "Spend",
+              "kind": "bar",
+              "rows": []
+            },
+            "alt": "Spend chart"
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "row",
+            "type": "Row",
+            "props": {
+              "gap": "medium",
+              "align": "start"
+            },
+            "a11y": {
+              "role": "group",
+              "label": ""
+            }
+          },
+          {
+            "op": "create",
+            "id": "a",
+            "type": "Text",
+            "props": {
+              "text": "Invoice 17: 120 000 so'm",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "Invoice 17: 120 000 so'm"
+            }
+          },
+          {
+            "op": "create",
+            "id": "b",
+            "type": "Text",
+            "props": {
+              "text": "Invoice 18",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "Invoice 18"
+            }
+          },
+          {
+            "op": "create",
+            "id": "c",
+            "type": "Text",
+            "props": {
+              "text": "Spend chart",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "Spend chart"
+            }
+          },
+          {
+            "op": "children",
+            "id": "row",
+            "children": [
+              "a",
+              "b",
+              "c"
+            ]
+          },
+          {
+            "op": "root",
+            "id": "row"
+          }
+        ],
+        "fallback": "Invoice 17: 120 000 so'm. Invoice 18. Spend chart",
+        "send": [
+          {
+            "v": 1,
+            "t": "ui.error",
+            "surface": "s1",
+            "reason": "unknown_component",
+            "detail": "acme:Card"
+          },
+          {
+            "v": 1,
+            "t": "ui.error",
+            "surface": "s1",
+            "reason": "unknown_component",
+            "detail": "chart:Chart"
+          }
+        ]
+      }
+    }
+  ]
+}

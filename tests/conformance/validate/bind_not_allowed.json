@@ -1,0 +1,57 @@
+{
+  "description": "$bind is not allowed on action and path props.",
+  "actions": {
+    "pay_bill": {
+      "args": {
+        "bill": {
+          "kind": "string",
+          "required": true,
+          "max": 32
+        }
+      },
+      "requires_confirm": true
+    },
+    "pick_store": {
+      "args": {}
+    }
+  },
+  "input": {
+    "root": "f",
+    "components": [
+      {
+        "id": "f",
+        "type": "Card",
+        "children": [
+          "b",
+          "i"
+        ]
+      },
+      {
+        "id": "b",
+        "type": "Button",
+        "props": {
+          "label": "Go",
+          "on_press": {
+            "$bind": "/act"
+          }
+        }
+      },
+      {
+        "id": "i",
+        "type": "Input",
+        "props": {
+          "label": "Name",
+          "value": {
+            "$bind": "/where"
+          }
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[1] id \"b\" prop \"on_press\": $bind and $ref are not allowed here.",
+      "components[2] id \"i\" prop \"value\": $bind and $ref are not allowed here."
+    ]
+  }
+}

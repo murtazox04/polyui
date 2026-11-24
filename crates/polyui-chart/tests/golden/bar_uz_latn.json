@@ -1,0 +1,333 @@
+{
+  "view_box": {
+    "x": 0.0,
+    "y": 0.0,
+    "width": 640.0,
+    "height": 360.0
+  },
+  "kind": "bar",
+  "locale": "uz-Latn",
+  "title": "Gaz uchun to'lovlar",
+  "description": "Gaz uchun to'lovlar. Eng yuqori qiymat: Fev, 205,5 ming so'm. Eng past qiymat: Iyun, 29,3 ming so'm. Jami 6 ta nuqta.",
+  "marks": [
+    {
+      "type": "text",
+      "x": 12.0,
+      "y": 27.0,
+      "text": "Gaz uchun to'lovlar",
+      "anchor": "start",
+      "role": "title",
+      "color": "text",
+      "size": 15.0
+    },
+    {
+      "type": "text",
+      "x": 12.0,
+      "y": 48.0,
+      "text": "Summa, so'm",
+      "anchor": "start",
+      "role": "axis_title",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "text",
+      "x": 320.0,
+      "y": 348.0,
+      "text": "Oy",
+      "anchor": "middle",
+      "role": "axis_title",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "line",
+      "x1": 67.72,
+      "y1": 314.0,
+      "x2": 628.0,
+      "y2": 314.0,
+      "stroke": "grid",
+      "stroke_width": 1.0
+    },
+    {
+      "type": "text",
+      "x": 61.72,
+      "y": 317.85,
+      "text": "0",
+      "anchor": "end",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "line",
+      "x1": 67.72,
+      "y1": 263.5,
+      "x2": 628.0,
+      "y2": 263.5,
+      "stroke": "grid",
+      "stroke_width": 1.0
+    },
+    {
+      "type": "text",
+      "x": 61.72,
+      "y": 267.35,
+      "text": "50 ming",
+      "anchor": "end",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "line",
+      "x1": 67.72,
+      "y1": 213.0,
+      "x2": 628.0,
+      "y2": 213.0,
+      "stroke": "grid",
+      "stroke_width": 1.0
+    },
+    {
+      "type": "text",
+      "x": 61.72,
+      "y": 216.85,
+      "text": "100 ming",
+      "anchor": "end",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "line",
+      "x1": 67.72,
+      "y1": 162.5,
+      "x2": 628.0,
+      "y2": 162.5,
+      "stroke": "grid",
+      "stroke_width": 1.0
+    },
+    {
+      "type": "text",
+      "x": 61.72,
+      "y": 166.35,
+      "text": "150 ming",
+      "anchor": "end",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "line",
+      "x1": 67.72,
+      "y1": 112.0,
+      "x2": 628.0,
+      "y2": 112.0,
+      "stroke": "grid",
+      "stroke_width": 1.0
+    },
+    {
+      "type": "text",
+      "x": 61.72,
+      "y": 115.85,
+      "text": "200 ming",
+      "anchor": "end",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "line",
+      "x1": 67.72,
+      "y1": 61.5,
+      "x2": 628.0,
+      "y2": 61.5,
+      "stroke": "grid",
+      "stroke_width": 1.0
+    },
+    {
+      "type": "text",
+      "x": 61.72,
+      "y": 65.35,
+      "text": "250 ming",
+      "anchor": "end",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "text",
+      "x": 114.41,
+      "y": 331.0,
+      "text": "Yan",
+      "anchor": "middle",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "text",
+      "x": 207.79,
+      "y": 331.0,
+      "text": "Fev",
+      "anchor": "middle",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "text",
+      "x": 301.17,
+      "y": 331.0,
+      "text": "Mar",
+      "anchor": "middle",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "text",
+      "x": 394.55,
+      "y": 331.0,
+      "text": "Apr",
+      "anchor": "middle",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "text",
+      "x": 487.93,
+      "y": 331.0,
+      "text": "May",
+      "anchor": "middle",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "text",
+      "x": 581.31,
+      "y": 331.0,
+      "text": "Iyun",
+      "anchor": "middle",
+      "role": "tick",
+      "color": "muted",
+      "size": 11.0
+    },
+    {
+      "type": "rect",
+      "x": 80.79,
+      "y": 130.18,
+      "width": 67.23,
+      "height": 183.82,
+      "fill": "series-1"
+    },
+    {
+      "type": "rect",
+      "x": 174.17,
+      "y": 106.45,
+      "width": 67.23,
+      "height": 207.55,
+      "fill": "series-1"
+    },
+    {
+      "type": "rect",
+      "x": 267.55,
+      "y": 141.09,
+      "width": 67.23,
+      "height": 172.91,
+      "fill": "series-1"
+    },
+    {
+      "type": "rect",
+      "x": 360.93,
+      "y": 192.8,
+      "width": 67.23,
+      "height": 121.2,
+      "fill": "series-1"
+    },
+    {
+      "type": "rect",
+      "x": 454.31,
+      "y": 249.06,
+      "width": 67.23,
+      "height": 64.94,
+      "fill": "series-1"
+    },
+    {
+      "type": "rect",
+      "x": 547.69,
+      "y": 284.38,
+      "width": 67.23,
+      "height": 29.62,
+      "fill": "series-1"
+    },
+    {
+      "type": "line",
+      "x1": 67.72,
+      "y1": 314.0,
+      "x2": 628.0,
+      "y2": 314.0,
+      "stroke": "axis",
+      "stroke_width": 1.0
+    }
+  ],
+  "legend": [],
+  "hits": [
+    {
+      "row": 0,
+      "shape": "rect",
+      "x": 67.72,
+      "y": 61.5,
+      "width": 93.38,
+      "height": 252.5,
+      "label": "Yan: 182 000 so'm"
+    },
+    {
+      "row": 1,
+      "shape": "rect",
+      "x": 161.1,
+      "y": 61.5,
+      "width": 93.38,
+      "height": 252.5,
+      "label": "Fev: 205 500 so'm"
+    },
+    {
+      "row": 2,
+      "shape": "rect",
+      "x": 254.48,
+      "y": 61.5,
+      "width": 93.38,
+      "height": 252.5,
+      "label": "Mar: 171 200 so'm"
+    },
+    {
+      "row": 3,
+      "shape": "rect",
+      "x": 347.86,
+      "y": 61.5,
+      "width": 93.38,
+      "height": 252.5,
+      "label": "Apr: 120 000 so'm"
+    },
+    {
+      "row": 4,
+      "shape": "rect",
+      "x": 441.24,
+      "y": 61.5,
+      "width": 93.38,
+      "height": 252.5,
+      "label": "May: 64 300 so'm"
+    },
+    {
+      "row": 5,
+      "shape": "rect",
+      "x": 534.62,
+      "y": 61.5,
+      "width": 93.38,
+      "height": 252.5,
+      "label": "Iyun: 29 322,19 so'm"
+    }
+  ],
+  "skipped": 0
+}

@@ -1,0 +1,63 @@
+{
+  "description": "Messages for a surface the client never saw ask for ui.resync.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.data",
+        "surface": "s9",
+        "seq": 5,
+        "ops": [
+          {
+            "op": "set",
+            "path": "/a",
+            "value": 1
+          }
+        ]
+      },
+      "expect": {
+        "surface": "s9",
+        "ops": [],
+        "send": [
+          {
+            "v": 1,
+            "t": "ui.resync",
+            "surface": "s9"
+          }
+        ]
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.close",
+        "surface": "s404",
+        "seq": 1
+      },
+      "expect": {
+        "surface": "s404",
+        "ops": []
+      }
+    }
+  ]
+}

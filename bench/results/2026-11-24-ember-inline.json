@@ -1,0 +1,446 @@
+{
+  "date": "2026-11-24",
+  "model": "model/chat/ember",
+  "tools": {
+    "profile": "compact",
+    "catalog_subset": []
+  },
+  "prices": {
+    "input_per_million": 0.0,
+    "output_per_million": 0.0,
+    "cache_write_factor": 1.25,
+    "cache_read_factor": 0.1
+  },
+  "prompts": 8,
+  "total_model_calls": 17,
+  "provider_requests": 17,
+  "stopped_early": false,
+  "total_cost_usd": 0.0,
+  "variants": [
+    {
+      "variant": "inline",
+      "overall": {
+        "runs": 8,
+        "ui_runs": 5,
+        "first_try_valid": 1,
+        "valid_after_one_retry": 1,
+        "valid_after_two_retries": 1,
+        "ui_expected": 6,
+        "ui_shown_when_expected": 1,
+        "no_ui_expected": 1,
+        "no_ui_when_not_expected": 1,
+        "mean_ms_to_open": 69047.0,
+        "model_calls": 17,
+        "input_tokens": 42261,
+        "output_tokens": 2924,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
+        "cost_usd": 0.0,
+        "budget_cut": 0,
+        "problem_kinds": [
+          [
+            "the input is not valid JSON",
+            9
+          ],
+          [
+            "is not reachable from root \"x\"",
+            6
+          ],
+          [
+            "action \"x\" is not registered",
+            2
+          ],
+          [
+            "ConfirmSheet cannot have children",
+            1
+          ],
+          [
+            "required prop is missing",
+            1
+          ]
+        ]
+      },
+      "per_locale": {
+        "en": {
+          "runs": 2,
+          "ui_runs": 1,
+          "first_try_valid": 0,
+          "valid_after_one_retry": 0,
+          "valid_after_two_retries": 0,
+          "ui_expected": 2,
+          "ui_shown_when_expected": 0,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": null,
+          "model_calls": 4,
+          "input_tokens": 7661,
+          "output_tokens": 411,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost_usd": 0.0,
+          "budget_cut": 0,
+          "problem_kinds": [
+            [
+              "is not reachable from root \"x\"",
+              4
+            ],
+            [
+              "action \"x\" is not registered",
+              1
+            ],
+            [
+              "the input is not valid JSON",
+              1
+            ]
+          ]
+        },
+        "ru": {
+          "runs": 2,
+          "ui_runs": 0,
+          "first_try_valid": 0,
+          "valid_after_one_retry": 0,
+          "valid_after_two_retries": 0,
+          "ui_expected": 0,
+          "ui_shown_when_expected": 0,
+          "no_ui_expected": 1,
+          "no_ui_when_not_expected": 1,
+          "mean_ms_to_open": null,
+          "model_calls": 2,
+          "input_tokens": 4528,
+          "output_tokens": 45,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost_usd": 0.0,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "uz-Cyrl": {
+          "runs": 2,
+          "ui_runs": 2,
+          "first_try_valid": 0,
+          "valid_after_one_retry": 0,
+          "valid_after_two_retries": 0,
+          "ui_expected": 2,
+          "ui_shown_when_expected": 0,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": null,
+          "model_calls": 6,
+          "input_tokens": 17027,
+          "output_tokens": 1579,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost_usd": 0.0,
+          "budget_cut": 0,
+          "problem_kinds": [
+            [
+              "the input is not valid JSON",
+              6
+            ]
+          ]
+        },
+        "uz-Latn": {
+          "runs": 2,
+          "ui_runs": 2,
+          "first_try_valid": 1,
+          "valid_after_one_retry": 1,
+          "valid_after_two_retries": 1,
+          "ui_expected": 2,
+          "ui_shown_when_expected": 1,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": 69047.0,
+          "model_calls": 5,
+          "input_tokens": 13045,
+          "output_tokens": 889,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost_usd": 0.0,
+          "budget_cut": 0,
+          "problem_kinds": [
+            [
+              "is not reachable from root \"x\"",
+              2
+            ],
+            [
+              "the input is not valid JSON",
+              2
+            ],
+            [
+              "ConfirmSheet cannot have children",
+              1
+            ],
+            [
+              "action \"x\" is not registered",
+              1
+            ],
+            [
+              "required prop is missing",
+              1
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "prompt": "en-bills",
+      "locale": "en",
+      "category": "bills",
+      "expect": "ui",
+      "variant": "inline",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 85669,
+      "model_calls": 1,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "error: HTTP 503: model_call_failed: {'detail': {'error': 'model_unavailable', 'message': 'all rungs failed for chat/ember: ember streamed past 85 s'}}",
+      "text": ""
+    },
+    {
+      "prompt": "en-phone-form",
+      "locale": "en",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "inline",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "the input is not valid JSON"
+          ],
+          "call": "{\"surface\":\"settings\",\"root\":\"title\",\"components\":[{\"id\":\"title\",\"type\":\"Text\",\"props\":{\"text\":\"Update Notification Phone\",\"style\":\"title\"}},{\"id\":\"input_field\",\"type\":\"Input\",\"props\":{\"label\":\"New Phone Number\",\"value\":\"/phone\",\"input\":\"phone\",\"placeholder\":\"+998 ...\",\"required\":true}},{\"id\":\"save_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Save Changes\",\"tone\":\"primary\",\"on_press\":{\"action\":\"save_phone\"}}],\"data\":[]}"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "action \"x\" is not registered",
+            "is not reachable from root \"x\"",
+            "is not reachable from root \"x\""
+          ],
+          "call": "{\"surface\":\"settings\",\"root\":\"title\",\"components\":[{\"id\":\"title\",\"type\":\"Text\",\"props\":{\"text\":\"Update Notification Phone\",\"style\":\"title\"}},{\"id\":\"input_field\",\"type\":\"Input\",\"props\":{\"label\":\"New Phone Number\",\"value\":\"/phone\",\"input\":\"phone\",\"placeholder\":\"+998 ...\",\"required\":true}},{\"id\":\"save_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Save Changes\",\"tone\":\"primary\",\"on_press\":{\"action\":\"save_phone\"}}}]}"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "is not reachable from root \"x\"",
+            "is not reachable from root \"x\""
+          ],
+          "call": "{\"surface\":\"settings\",\"root\":\"title\",\"components\":[{\"id\":\"title\",\"type\":\"Text\",\"props\":{\"text\":\"Update Notification Phone\",\"style\":\"title\"}},{\"id\":\"content\",\"type\":\"List\",\"props\":{\"title\":\"\",\"ordered\":false}, \"children\":[\"input_field\"]},{\"id\":\"input_field\",\"type\":\"Input\",\"props\":{\"label\":\"New Phone Number\",\"value\":\"/phone\",\"input\":\"phone\",\"placeholder\":\"+998 ...\",\"required\":true}}],\"data\":[]}"
+        }
+      ],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 109649,
+      "model_calls": 3,
+      "input_tokens": 7661,
+      "output_tokens": 411,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "I can help you update your phone number for payment notifications. Please enter the new number below.\n\n```json\n{\"surface\":\"settings\",\"root\":\"title\",\"components\":[{\"id\":\"title\",\"type\":\"Text\",\"props\":{\"text\":\"Update Notification Phone\",\"style\":\"title\"}},{\"id\":\"input_field\",\"type\":\"Input\",\"props\":{\"label\":\"New Phone Number\",\"value\":\"/phone\",\"input\":\"phone\",\"placeholder\":\"+998 ...\",\"required\":true}},{"
+    },
+    {
+      "prompt": "ru-ambiguous",
+      "locale": "ru",
+      "category": "ambiguous",
+      "expect": "either",
+      "variant": "inline",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 24230,
+      "model_calls": 1,
+      "input_tokens": 2265,
+      "output_tokens": 20,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Какой именно счёт вас интересует? Пожалуйста, уточните, чтобы я мог показать детали."
+    },
+    {
+      "prompt": "ru-no-ui",
+      "locale": "ru",
+      "category": "no-ui",
+      "expect": "no-ui",
+      "variant": "inline",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 2741,
+      "model_calls": 1,
+      "input_tokens": 2263,
+      "output_tokens": 25,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Хорошо, если возникнут вопросы по счетам или другим услугам \u2014 обращайтесь. Хорошего дня!"
+    },
+    {
+      "prompt": "uz-cyrl-bill-detail",
+      "locale": "uz-Cyrl",
+      "category": "bill-detail",
+      "expect": "ui",
+      "variant": "inline",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "the input is not valid JSON"
+          ],
+          "call": "{\"surface\":\"bills_summary\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"List\",\"props\":{\"title\":\"Ҳисоблар\",\"ordered\":false},\"children\":[\"gas_card\"]},{\"id\":\"gas_card\",\"type\":\"Card\",\"props\":{\"title\":\"Газ (Hududgaz Toshkent)\",\"subtitle\":\"Ҳисоб рақами: {\"$ref\": \"account:gas\"}\",\"tone\":\"info\"},\"children\":[\"gas_stat\",\"gas_btn\"]},{\"id\":\"gas_stat\",\"type\":\"Row\",\"props\":{\"gap\":\"medium\",\"align\":\"between\"},\"children\":[{\"id\":\"gas_amount\",\"type\":\"Stat\",\"props\":{\"label\":\"Сумма\",\"value\":\"29 322,19\",\"unit\":\"so'm\",\"tone\":\"neutral\"}},{\"id\":\"gas_due\",\"type\":\"Stat\",\"props\":{\"label\":\"Муддати\",\"value\":\"2026-12-10\",\"tone\":\"warning\",\"hint\":\"Тўлаш керак бўлган сана\"}}]},{\"id\":\"gas_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Тўлаш\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}} जय}]"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "the input is not valid JSON"
+          ],
+          "call": "{\"surface\":\"bills_summary\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"List\",\"props\":{\"title\":\"Ҳисоблар\",\"ordered\":false},\"children\":[\"gas_card\"]},{\"id\":\"gas_card\",\"type\":\"Card\",\"props\":{\"title\":\"Газ (Hududgaz Toshkent)\",\"subtitle\":\"Ҳисоб рақами: {\\\"$ref\\\": \\\"account:gas\\\"}\",\"tone\":\"info\"},\"children\":[\"gas_stat\",\"gas_btn\"]},{\"id\":\"gas_stat\",\"type\":\"Row\",\"props\":{\"gap\":\"medium\",\"align\":\"between\"},\"children\":[{\"id\":\"gas_amount\",\"type\":\"Stat\",\"props\":{\"label\":\"Сумма\",\"value\":\"29 322,19\",\"unit\":\"so'm\",\"tone\":\"neutral\"}},{\"id\":\"gas_due\",\"type\":\"Stat\",\"props\":{\"label\":\"Муддати\",\"value\":\"2026-12-10\",\"tone\":\"warning\",\"hint\":\"Тўлаш керак бўлган сана\"}}]},{\"id\":\"gas_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Тўлаш\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}} ]}]}"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "the input is not valid JSON"
+          ],
+          "call": "{\"surface\":\"bills_summary\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"List\",\"props\":{\"title\":\"Ҳисоблар\",\"ordered\":false},\"children\":[\"gas_card\"]},{\"id\":\"gas_card\",\"type\":\"Card\",\"props\":{\"title\":\"Газ (Hududgaz Toshkent)\",\"subtitle\":\"Ҳисоб рақами: {\\\"$ref\\\": \\\"account:gas\\\"}\",\"tone\":\"info\"},\"children\":[\"gas_stat\",\"gas_btn\"]},{\"id\":\"gas_stat\",\"type\":\"Row\",\"props\":{\"gap\":\"medium\",\"align\":\"between\"},\"children\":[{\"id\":\"gas_amount\",\"type\":\"Stat\",\"props\":{\"label\":\"Сумма\",\"value\":\"29 322,19\",\"unit\":\"so'm\",\"tone\":\"neutral\"}},{\"id\":\"gas_due\",\"type\":\"Stat\",\"props\":{\"label\":\"Муддати\",\"value\":\"2026-12-10\",\"tone\":\"warning\",\"hint\":\"Тўлаш керак бўлган сана\"}}]},{\"id\":\"gas_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Тўлаш\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}}]}]}"
+        }
+      ],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 102164,
+      "model_calls": 3,
+      "input_tokens": 8683,
+      "output_tokens": 846,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "```json\n{\"surface\":\"bills_summary\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"List\",\"props\":{\"title\":\"Ҳисоблар\",\"ordered\":false},\"children\":[\"gas_card\"]},{\"id\":\"gas_card\",\"type\":\"Card\",\"props\":{\"title\":\"Газ (Hududgaz Toshkent)\",\"subtitle\":\"Ҳисоб рақами: {\"$ref\": \"account:gas\"}\",\"tone\":\"info\"},\"children\":[\"gas_stat\",\"gas_btn\"]},{\"id\":\"gas_stat\",\"type\":\"Row\",\"props\":{\"gap\":\"medium\",\"align\":\"be"
+    },
+    {
+      "prompt": "uz-cyrl-offers",
+      "locale": "uz-Cyrl",
+      "category": "offers",
+      "expect": "ui",
+      "variant": "inline",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "the input is not valid JSON"
+          ],
+          "call": "{\"surface\":\"offers\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"Text\",\"props\":{\"text\":\"Интернет тарифлари\",\"style\":\"title\"}},{\"id\":\"offers_list\",\"type\":\"ChoiceGroup\",\"props\":{\"label\":\"Тарифни танланг\",\"options\":[{\"id\":\"oila_50\",\"label\":\"Oila 50\",\"detail\":\"50 Mbit/s - 99 000,00 so'm\"},{\"id\":\"oila_100\",\"label\":\"Oila 100\",\"detail\":\"100 Mbit/s - 149 000,00 so'm\"},{\"id\":\"turbo_200\",\"label\":\"Turbo 200\",\"detail\":\"200 Mbit/s - 219 000,00 so'm\"}],\"value\":\"/offer\",\"on_change\":{\"action\":\"pick_offer\",\"with\":[\"/offer\"]}}],\"data\":[]}"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "the input is not valid JSON"
+          ],
+          "call": "{\"surface\":\"offers\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"Text\",\"props\":{\"text\":\"Интернет тарифлари\",\"style\":\"title\"}},{\"id\":\"offers_list\",\"type\":\"ChoiceGroup\",\"props\":{\"label\":\"Тарифни танланг\",\"options\":[{\"id\":\"oila_50\",\"label\":\"Oila 50\",\"detail\":\"50 Mbit/s - 99 000,00 so'm\"},{\"id\":\"oila_100\",\"label\":\"Oila 100\",\"detail\":\"100 Mbit/s - 149 000,00 so'm\"},{\"id\":\"turbo_200\",\"label\":\"Turbo 200\",\"detail\":\"200 Mbit/s - 219 000,00 so'm\"}],\"value\":\"/offer\",\"on_change\":{\"action\":\"pick_offer\",\"with\":[\"/offer\"]}}],\"data\":[]}"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "the input is not valid JSON"
+          ],
+          "call": "{\"surface\":\"offers\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"Text\",\"props\":{\"text\":\"Интернет тарифлари\",\"style\":\"title\"}},{\"id\":\"offers_list\",\"type\":\"ChoiceGroup\",\"props\":{\"label\":\"Тарифни танланг\",\"options\":[{\"id\":\"oila_50\",\"label\":\"Oila 50\",\"detail\":\"50 Mbit/s - 99 000,00 so'm\"},{\"id\":\"oila_100\",\"label\":\"Oila 100\",\"detail\":\"100 Mbit/s - 149 000,00 so'm\"},{\"id\":\"turbo_200\",\"label\":\"Turbo 200\",\"detail\":\"200 Mbit/s - 219 000,00 so'm\"}],\"value\":\"/offer\",\"on_change\":{\"action\":\"pick_offer\",\"with\":[\"/offer\"]}}],\"data\":[]}"
+        }
+      ],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 82590,
+      "model_calls": 3,
+      "input_tokens": 8344,
+      "output_tokens": 733,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Интернет тарифларини солиштириш ва янги тариф танлаш мумкин. Қуйидагиvariantларни кўришингиз мумкин:\n\n```json\n{\"surface\":\"offers\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"Text\",\"props\":{\"text\":\"Интернет тарифлари\",\"style\":\"title\"}},{\"id\":\"offers_list\",\"type\":\"ChoiceGroup\",\"props\":{\"label\":\"Тарифни танланг\",\"options\":[{\"id\":\"oila_50\",\"label\":\"Oila 50\",\"detail\":\"50 Mbit/s - 99 000,00 so'm\"},"
+    },
+    {
+      "prompt": "uz-latn-chart",
+      "locale": "uz-Latn",
+      "category": "chart",
+      "expect": "ui",
+      "variant": "inline",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"surface\":\"usage_chart\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"List\",\"props\":{\"title\":\"Gaz sarfimi\",\"ordered\":false},\"children\":[\"chart1\"]},{\"id\":\"chart1\",\"type\":\"chart:Chart\",\"props\":{\"title\":\"Oylik gaz sarfimi\",\"kind\":\"bar\",\"x_label\":\"Oy\",\"y_label\":\"Sarf\",\"unit\":\"m3\",\"rows\":[{\"x\":\"2026-06\",\"y\":38.0,\"series\":\"Sarf\"},{\"x\":\"2026-07\",\"y\":35.0,\"series\":\"Sarf\"},{\"x\":\"2026-08\",\"y\":36.0,\"series\":\"Sarf\"},{\"x\":\"2026-09\",\"y\":44.0,\"series\":\"Sarf\"},{\"x\":\"2026-10\",\"y\":71.0,\"series\":\"Sarf\"},{\"x\":\"2026-11\",\"y\":112.0,\"series\":\"Sarf\"}]}}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 69047,
+      "ms_total": 69047,
+      "model_calls": 2,
+      "input_tokens": 4805,
+      "output_tokens": 279,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Gaz sarfimi bo'yicha oxirgi olti oylik statistikani grafikda ko'rishingiz mumkin:\n\n```json\n{\"surface\":\"usage_chart\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"List\",\"props\":{\"title\":\"Gaz sarfimi\",\"ordered\":false},\"children\":[\"chart1\"]},{\"id\":\"chart1\",\"type\":\"chart:Chart\",\"props\":{\"title\":\"Oylik gaz sarfimi\",\"kind\":\"bar\",\"x_label\":\"Oy\",\"y_label\":\"Sarf\",\"unit\":\"m3\",\"rows\":[{\"x\":\"2026-06\",\"y\":3"
+    },
+    {
+      "prompt": "uz-latn-pay",
+      "locale": "uz-Latn",
+      "category": "pay",
+      "expect": "ui",
+      "variant": "inline",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "the input is not valid JSON"
+          ],
+          "call": "{\"surface\":\"payment_confirmation\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"ConfirmSheet\",\"props\":{\"title\":\"To'lovni tasdiqlang\",\"body\":\"Hududgaz Toshkent uchun 29 322,19 so'm miqdorida to'lovni amalga oshirishni tasdiqlaysizmi?\",\"confirm_label\":\"Tasdiqlayman\",\"cancel_label\":\"Bekor qilish\"},\"children\":[\"confirm_button\",\"cancel_button\"],\"data\":{\"/confirm_action\":\"pay_bill\",\"/cancel_action\":\"close_ui\"}}},{\"id\":\"confirm_button\",\"type\":\"Button\",\"props\":{\"label\":\"Tasdiqlayman\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}},\"children\":[]},{\"id\":\"cancel_button\",\"type\":\"Button\",\"props\":{\"label\":\"Bekor qilish\",\"tone\":\"secondary\",\"on_press\":{\"action\":\"close_ui\"}},\"children\":[]}]}"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "the input is not valid JSON"
+          ],
+          "call": "{\"surface\":\"payment_confirmation\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"ConfirmSheet\",\"props\":{\"title\":\"To'lovni tasdiqlang\",\"body\":\"Hududgaz Toshkent uchun 29 322,19 so'm miqdorida to'lovni amalga oshirishni tasdiqlaysizmi?\",\"confirm_label\":\"Tasdiqlayman\",\"cancel_label\":\"Bekor qilish\"},\"children\":[\"confirm_button\",\"cancel_button\"]},{\"id\":\"confirm_button\",\"type\":\"Button\",\"props\":{\"label\":\"Tasdiqlayman\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}}},{\"id\":\"cancel_button\",\"type\":\"Button\",\"props\":{\"label\":\"Bekor qilish\",\"tone\":\"secondary\",\"on_press\":{\"action\":\"close_ui\"}}}}]}"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "required prop is missing",
+            "action \"x\" is not registered",
+            "ConfirmSheet cannot have children",
+            "is not reachable from root \"x\"",
+            "is not reachable from root \"x\""
+          ],
+          "call": "{\"surface\":\"payment_confirmation\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"ConfirmSheet\",\"props\":{\"title\":\"To'lovni tasdiqlang\",\"body\":\"Hududgaz Toshkent uchun 29 322,19 so'm miqdorida to'lovni amalga oshirishni tasdiqlaysizmi?\",\"confirm_label\":\"Tasdiqlayman\",\"cancel_label\":\"Bekor qilish\"},\"children\":[\"confirm_button\",\"cancel_button\"]},{\"id\":\"confirm_button\",\"type\":\"Button\",\"props\":{\"label\":\"Tasdiqlayman\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}}},{\"id\":\"cancel_button\",\"type\":\"Button\",\"props\":{\"label\":\"Bekor qilish\",\"tone\":\"secondary\",\"on_press\":{\"action\":\"close_ui\"}}}]}"
+        }
+      ],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 127735,
+      "model_calls": 3,
+      "input_tokens": 8240,
+      "output_tokens": 610,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "```json\n{\"surface\":\"payment_confirmation\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"ConfirmSheet\",\"props\":{\"title\":\"To'lovni tasdiqlang\",\"body\":\"Hududgaz Toshkent uchun 29 322,19 so'm miqdorida to'lovni amalga oshirishni tasdiqlaysizmi?\",\"confirm_label\":\"Tasdiqlayman\",\"cancel_label\":\"Bekor qilish\"},\"children\":[\"confirm_button\",\"cancel_button\"],\"data\":{\"/confirm_action\":\"pay_bill\",\"/cancel_a"
+    }
+  ]
+}

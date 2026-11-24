@@ -1,0 +1,102 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARYEN_VERSION: "133"
+  MDBOOK_VERSION: "0.5.4"
+  MDBOOK_MERMAID_VERSION: "0.17.1"
+
+jobs:
+  build:
+    name: Build the book and the demos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/mdbook
+            ~/.cargo/bin/mdbook-mermaid
+            target
+          key: pages-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'bindings/wasm/Cargo.toml') }}-${{ env.MDBOOK_VERSION }}-${{ env.MDBOOK_MERMAID_VERSION }}
+          restore-keys: pages-${{ runner.os }}-
+      - name: Install the wasm-bindgen CLI pinned in bindings/wasm/Cargo.toml
+        run: |
+          version=$(grep -oP 'wasm-bindgen = "=\K[0-9.]+' bindings/wasm/Cargo.toml)
+          test -n "$version"
+          if ! wasm-bindgen --version 2>/dev/null | grep -qx "wasm-bindgen $version"; then
+            cargo install wasm-bindgen-cli --version "$version" --locked --force
+          fi
+      - name: Install mdBook and mdbook-mermaid
+        run: |
+          if ! mdbook --version 2>/dev/null | grep -qx "mdbook v$MDBOOK_VERSION"; then
+            cargo install mdbook --version "$MDBOOK_VERSION" --locked --force
+          fi
+          if ! mdbook-mermaid --version 2>/dev/null | grep -qx "mdbook-mermaid $MDBOOK_MERMAID_VERSION"; then
+            cargo install mdbook-mermaid --version "$MDBOOK_MERMAID_VERSION" --locked --force
+          fi
+      - name: Install binaryen
+        run: |
+          curl -sSfL -o binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          curl -sSfL -o binaryen.tar.gz.sha256 "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz.sha256"
+          echo "$(cut -d' ' -f1 binaryen.tar.gz.sha256)  binaryen.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/binaryen"
+          tar -xzf binaryen.tar.gz -C "$RUNNER_TEMP/binaryen" --strip-components=1
+          echo "$RUNNER_TEMP/binaryen/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            js/polyui-web/package-lock.json
+            examples/chat/package-lock.json
+            site/package-lock.json
+      - name: Install the JavaScript dependencies
+        run: |
+          (cd js/polyui-web && npm ci)
+          (cd examples/chat && npm ci)
+          (cd site && npm ci)
+      - uses: actions/configure-pages@v6
+      - name: Build the wasm core, the renderer, the chat replay, the dashboard demo and the book
+        run: node site/build.mjs
+      - name: No em dash in the built pages
+        run: |
+          if grep -rlP '\x{2014}' site/dist --include='*.html'; then
+            echo "em dash found in the pages above"
+            exit 1
+          fi
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

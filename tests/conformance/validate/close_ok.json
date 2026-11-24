@@ -1,0 +1,11 @@
+{
+  "description": "close_ui needs only a surface id.",
+  "tool": "close_ui",
+  "input": {
+    "surface": "s1"
+  },
+  "expect": {
+    "ok": true,
+    "summary": "surface s1 closed"
+  }
+}

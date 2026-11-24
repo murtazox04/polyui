@@ -1,0 +1,45 @@
+{
+  "description": "$ref sources must be registered by the host, and the shape is source:key.",
+  "refs": {
+    "bill": {
+      "power": "Power 12 000 so'm",
+      "gas_amount": "29 322"
+    },
+    "account": {
+      "card": "4471"
+    }
+  },
+  "ref_kinds": {
+    "bill": {
+      "kind": "string",
+      "max": 40
+    },
+    "account": {
+      "kind": "string",
+      "max": 16
+    }
+  },
+  "input": {
+    "root": "c",
+    "components": [
+      {
+        "id": "c",
+        "type": "Card",
+        "props": {
+          "title": {
+            "$ref": "secrets:root_password"
+          },
+          "subtitle": {
+            "$ref": "nocolon"
+          }
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"c\" prop \"title\": $ref source \"secrets\" is not registered.",
+      "components[0] id \"c\" prop \"subtitle\": $ref \"nocolon\" must look like \"source:key\"."
+    ]
+  }
+}

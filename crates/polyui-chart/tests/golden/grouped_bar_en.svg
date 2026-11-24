@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" font-family="system-ui, -apple-system, &#39;Segoe UI&#39;, Roboto, sans-serif">
+<title>Revenue and profit</title>
+<desc>Revenue and profit. Highest is Q4 (Revenue) at 210 k USD, lowest is Q1 (Profit) at -40 k USD. 8 points in 2 series.</desc>
+<rect x="0" y="0" width="640" height="360" fill="#ffffff"/>
+<text x="12" y="27" font-size="15" fill="#111827" text-anchor="start" font-weight="600">Revenue and profit</text>
+<rect x="12" y="39" width="10" height="10" fill="#4e79a7"/>
+<text x="26" y="48" font-size="11" fill="#111827" text-anchor="start">Revenue</text>
+<rect x="87.3" y="39" width="10" height="10" fill="#f28e2b"/>
+<text x="101.3" y="48" font-size="11" fill="#111827" text-anchor="start">Profit</text>
+<text x="12" y="70" font-size="11" fill="#6b7280" text-anchor="start">k USD</text>
+<line x1="37.14" y1="331" x2="628" y2="331" stroke="#e5e7eb" stroke-width="1"/>
+<text x="31.14" y="334.85" font-size="11" fill="#6b7280" text-anchor="end">-50</text>
+<line x1="37.14" y1="289.75" x2="628" y2="289.75" stroke="#e5e7eb" stroke-width="1"/>
+<text x="31.14" y="293.6" font-size="11" fill="#6b7280" text-anchor="end">0</text>
+<line x1="37.14" y1="248.5" x2="628" y2="248.5" stroke="#e5e7eb" stroke-width="1"/>
+<text x="31.14" y="252.35" font-size="11" fill="#6b7280" text-anchor="end">50</text>
+<line x1="37.14" y1="207.25" x2="628" y2="207.25" stroke="#e5e7eb" stroke-width="1"/>
+<text x="31.14" y="211.1" font-size="11" fill="#6b7280" text-anchor="end">100</text>
+<line x1="37.14" y1="166" x2="628" y2="166" stroke="#e5e7eb" stroke-width="1"/>
+<text x="31.14" y="169.85" font-size="11" fill="#6b7280" text-anchor="end">150</text>
+<line x1="37.14" y1="124.75" x2="628" y2="124.75" stroke="#e5e7eb" stroke-width="1"/>
+<text x="31.14" y="128.6" font-size="11" fill="#6b7280" text-anchor="end">200</text>
+<line x1="37.14" y1="83.5" x2="628" y2="83.5" stroke="#e5e7eb" stroke-width="1"/>
+<text x="31.14" y="87.35" font-size="11" fill="#6b7280" text-anchor="end">250</text>
+<text x="111" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Q1</text>
+<text x="258.71" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Q2</text>
+<text x="406.43" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Q3</text>
+<text x="554.14" y="348" font-size="11" fill="#6b7280" text-anchor="middle">Q4</text>
+<rect x="62.07" y="190.75" width="44.67" height="99" fill="#4e79a7"/>
+<rect x="115.25" y="289.75" width="44.67" height="33" fill="#f28e2b"/>
+<rect x="209.79" y="166" width="44.67" height="123.75" fill="#4e79a7"/>
+<rect x="262.97" y="277.38" width="44.67" height="12.38" fill="#f28e2b"/>
+<rect x="357.5" y="215.5" width="44.67" height="74.25" fill="#4e79a7"/>
+<rect x="410.68" y="289.75" width="44.67" height="20.63" fill="#f28e2b"/>
+<rect x="505.22" y="116.5" width="44.67" height="173.25" fill="#4e79a7"/>
+<rect x="558.4" y="240.25" width="44.67" height="49.5" fill="#f28e2b"/>
+<line x1="37.14" y1="289.75" x2="628" y2="289.75" stroke="#6b7280" stroke-width="1"/>
+</svg>

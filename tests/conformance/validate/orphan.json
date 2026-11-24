@@ -1,0 +1,24 @@
+{
+  "description": "A finished surface may not have components that the root does not reach.",
+  "input": {
+    "root": "card",
+    "components": [
+      {
+        "id": "card",
+        "type": "Card"
+      },
+      {
+        "id": "lost",
+        "type": "Text",
+        "props": {
+          "text": "nobody"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[1] id \"lost\": is not reachable from root \"card\"."
+    ]
+  }
+}

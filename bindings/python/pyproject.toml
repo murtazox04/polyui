@@ -1,0 +1,42 @@
+[build-system]
+requires = ["maturin>=1.16,<2"]
+build-backend = "maturin"
+
+[project]
+name = "polyui"
+description = "Python bindings for the PolyUI core: check generative UI from LLM agents, build tool schemas, compile charts."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Murtazo Xurramov" }]
+keywords = ["llm", "agents", "generative-ui", "tool-use"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Typing :: Typed",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.115", "uvicorn>=0.30"]
+test = ["pytest>=8", "ruff>=0.15"]
+
+[project.urls]
+Repository = "https://github.com/murtazox04/polyui"
+
+[tool.maturin]
+module-name = "polyui"
+features = ["pyo3/abi3-py310"]
+profile = "release"
+strip = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "PYI", "RUF"]

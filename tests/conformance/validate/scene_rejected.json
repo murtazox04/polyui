@@ -1,0 +1,30 @@
+{
+  "description": "Only the server adds a chart scene; the model may not write one.",
+  "input": {
+    "root": "c",
+    "components": [
+      {
+        "id": "c",
+        "type": "chart:Chart",
+        "props": {
+          "title": "T",
+          "kind": "bar",
+          "rows": [
+            {
+              "x": "a",
+              "y": 1
+            }
+          ],
+          "scene": {
+            "svg": "<svg/>"
+          }
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"c\" prop \"scene\": unknown prop for chart:Chart. Known: title, kind, x_label, y_label, unit, rows, on_select."
+    ]
+  }
+}

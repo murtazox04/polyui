@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="referrer" content="no-referrer">
+    <title>PolyUI embed sandbox</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: transparent; }
+      iframe { display: block; width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <script>
+      (() => {
+        const sourcePattern = /^(https|wss):\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*(:\d{1,5})?$/i;
+        const reserved = "ui/notifications/sandbox-";
+        const host = document.referrer ? new URL(document.referrer).origin : "";
+        if (window.parent === window || host === "" || host === "null") return;
+        const inner = document.createElement("iframe");
+        inner.setAttribute("sandbox", "allow-scripts");
+        inner.setAttribute("referrerpolicy", "no-referrer");
+        let port = null;
+
+        const sources = (csp, key) => {
+          const list = csp && Array.isArray(csp[key]) ? csp[key] : [];
+          return list.filter((item) => typeof item === "string" && sourcePattern.test(item)).slice(0, 32).join(" ");
+        };
+
+        const policy = (csp) => {
+          const resources = sources(csp, "resourceDomains");
+          return [
+            "default-src 'none'",
+            `script-src 'self' 'unsafe-inline' ${resources}`,
+            `style-src 'self' 'unsafe-inline' ${resources}`,
+            `img-src 'self' data: ${resources}`,
+            `media-src 'self' data: ${resources}`,
+            `font-src 'self' ${resources}`,
+            `connect-src ${sources(csp, "connectDomains") || "'none'"}`,
+            `frame-src ${sources(csp, "frameDomains") || "'none'"}`,
+            `base-uri ${sources(csp, "baseUriDomains") || "'self'"}`,
+            "object-src 'none'",
+          ].map((directive) => directive.trim()).join("; ");
+        };
+
+        const withPolicy = (html, csp) => {
+          const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
+          const at = doctype ? doctype[0].length : 0;
+          const meta = `<meta http-equiv="Content-Security-Policy" content="${policy(csp)}">`;
+          return html.slice(0, at) + meta + html.slice(at);
+        };
+
+        const isReserved = (data) => Boolean(data) && typeof data.method === "string" && data.method.startsWith(reserved);
+
+        window.addEventListener("message", (event) => {
+          if (event.source === window.parent) {
+            const data = event.data;
+            if (event.origin !== host || port || !data || data.method !== `${reserved}resource-ready`) return;
+            const params = data.params || {};
+            if (typeof params.html !== "string" || !event.ports[0]) return;
+            port = event.ports[0];
+            port.onmessage = (message) => {
+              if (!isReserved(message.data) && inner.contentWindow) inner.contentWindow.postMessage(message.data, "*");
+            };
+            inner.srcdoc = withPolicy(params.html, params.csp);
+            document.body.append(inner);
+          } else if (port && event.source === inner.contentWindow && event.origin === "null" && !isReserved(event.data)) {
+            port.postMessage(event.data);
+          }
+        });
+
+        window.parent.postMessage({ jsonrpc: "2.0", method: `${reserved}proxy-ready`, params: {} }, host);
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,174 @@
+{
+  "description": "A seq gap asks for ui.resync once, ignores messages until ui.snapshot, then diffs against what was drawn.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "t",
+        "components": [
+          {
+            "id": "t",
+            "type": "Text",
+            "props": {
+              "text": "one"
+            }
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "t",
+            "type": "Text",
+            "props": {
+              "text": "one",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "one"
+            }
+          },
+          {
+            "op": "root",
+            "id": "t"
+          }
+        ],
+        "fallback": "one"
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.patch",
+        "surface": "s1",
+        "seq": 3,
+        "upsert": [
+          {
+            "id": "t",
+            "type": "Text",
+            "props": {
+              "text": "three"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [],
+        "send": [
+          {
+            "v": 1,
+            "t": "ui.resync",
+            "surface": "s1"
+          }
+        ]
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.patch",
+        "surface": "s1",
+        "seq": 4,
+        "upsert": [
+          {
+            "id": "t",
+            "type": "Text",
+            "props": {
+              "text": "four"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": []
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.snapshot",
+        "surface": "s1",
+        "seq": 4,
+        "root": "t",
+        "components": [
+          {
+            "id": "t",
+            "type": "Text",
+            "props": {
+              "text": "four"
+            }
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "update",
+            "id": "t",
+            "props": {
+              "text": "four",
+              "style": "body"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "four"
+            }
+          }
+        ],
+        "fallback": "four"
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.patch",
+        "surface": "s1",
+        "seq": 4,
+        "upsert": [
+          {
+            "id": "t",
+            "type": "Text",
+            "props": {
+              "text": "duplicate"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "description": "Input that is not JSON is reported, not a crash.",
+  "input_text": "{\"root\": \"a\", \"components\": [",
+  "expect": {
+    "problems": [
+      "input: invalid JSON: EOF while parsing a list at line 1 column 29."
+    ]
+  }
+}

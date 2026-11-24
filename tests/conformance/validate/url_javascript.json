@@ -1,0 +1,48 @@
+{
+  "description": "javascript: URLs are rejected in every case and spacing variant.",
+  "input": {
+    "root": "r",
+    "components": [
+      {
+        "id": "r",
+        "type": "Row",
+        "children": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      {
+        "id": "a",
+        "type": "Image",
+        "props": {
+          "src": "javascript:alert(1)",
+          "alt": "x"
+        }
+      },
+      {
+        "id": "b",
+        "type": "Image",
+        "props": {
+          "src": " JaVaScRiPt:alert(1)",
+          "alt": "x"
+        }
+      },
+      {
+        "id": "c",
+        "type": "Image",
+        "props": {
+          "src": "data:image/png;base64,AAAA",
+          "alt": "x"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[1] id \"a\" prop \"src\": URL scheme \"javascript\" is never allowed.",
+      "components[2] id \"b\" prop \"src\": URL contains whitespace, a backslash or a control character.",
+      "components[3] id \"c\" prop \"src\": URL scheme \"data\" is never allowed."
+    ]
+  }
+}

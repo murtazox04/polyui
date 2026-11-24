@@ -1,0 +1,24 @@
+[package]
+name = "polyui"
+description = "Command line tool for PolyUI: run the reference server, print tool schemas, validate show_ui files."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "polyui"
+path = "src/main.rs"
+
+[features]
+default = []
+query = ["polyui-server/query"]
+
+[dependencies]
+polyui-core = { workspace = true }
+polyui-server = { workspace = true }
+serde_json = { workspace = true }
+clap = { version = "4.6.9", features = ["derive"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net"] }

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Internet tariff calculator</title>
+    <style>
+      :root { color-scheme: light; font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2433; }
+      body { margin: 0; padding: 16px 18px; background: #f6f7fb; }
+      h1 { margin: 0 0 2px; font-size: 17px; }
+      p { margin: 0 0 12px; color: #4b5563; }
+      label { display: block; font-weight: 600; margin-bottom: 4px; }
+      input[type="range"] { width: 100%; }
+      ul { display: grid; gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
+      li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: #fff; box-shadow: 0 1px 2px #0001; }
+      li[data-best] { outline: 2px solid #0f766e; }
+      li span { color: #6b7280; font-size: 13px; }
+      footer { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+      button { padding: 8px 14px; border: 0; border-radius: 9px; background: #0f766e; color: #fff; font: inherit; cursor: pointer; }
+      button:disabled { background: #9ca3af; cursor: default; }
+      small { color: #6b7280; }
+    </style>
+  </head>
+  <body>
+    <h1>Which internet tariff fits?</h1>
+    <p id="summary">Waiting for your usage.</p>
+    <label for="usage">Data a month: <output id="amount">0 GB</output></label>
+    <input id="usage" type="range" min="50" max="600" step="10" value="240">
+    <label for="people">People online at the same time: <output id="crowd">3</output></label>
+    <input id="people" type="range" min="1" max="8" step="1" value="3">
+    <ul id="offers"></ul>
+    <footer>
+      <button id="ask" type="button" disabled>Ask the assistant to switch</button>
+      <small id="status"></small>
+    </footer>
+    <script>
+      (() => {
+        const pending = new Map();
+        let nextId = 1;
+        let offers = [];
+        let current = "";
+        let best = null;
+        const byId = (id) => document.getElementById(id);
+
+        const request = (method, params) => new Promise((resolve, reject) => {
+          const id = nextId++;
+          pending.set(id, { resolve, reject });
+          window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+        });
+        const notify = (method, params) => window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+        const som = (tiyin) => `${Math.round(tiyin / 100).toLocaleString("en-US").replace(/,/g, " ")} so'm`;
+
+        const pick = () => {
+          const usage = Number(byId("usage").value);
+          const people = Number(byId("people").value);
+          byId("amount").textContent = `${usage} GB`;
+          byId("crowd").textContent = String(people);
+          const needed = people * 20 + usage / 10;
+          const fitting = offers.filter((offer) => offer.speed_mbps >= needed);
+          best = (fitting.length > 0 ? fitting : offers.slice(-1)).reduce((cheapest, offer) => (cheapest === null || offer.price_tiyin < cheapest.price_tiyin ? offer : cheapest), null);
+          byId("offers").replaceChildren(...offers.map((offer) => {
+            const item = document.createElement("li");
+            const name = document.createElement("b");
+            const detail = document.createElement("span");
+            name.textContent = offer.id === current ? `${offer.name} (now)` : offer.name;
+            detail.textContent = `${offer.speed_mbps} Mbit/s, ${som(offer.price_tiyin)} a month, ${som(offer.price_tiyin / usage)} per GB`;
+            if (best && offer.id === best.id) item.dataset.best = "";
+            item.append(name, detail);
+            return item;
+          }));
+          const ask = byId("ask");
+          ask.disabled = !best || best.id === current;
+          ask.textContent = best && best.id !== current ? `Ask the assistant to switch to ${best.name}` : "Your tariff already fits";
+        };
+
+        window.addEventListener("message", (event) => {
+          if (event.source !== window.parent) return;
+          const message = event.data;
+          if (!message || message.jsonrpc !== "2.0") return;
+          if (message.id !== undefined && pending.has(message.id) && !message.method) {
+            const { resolve, reject } = pending.get(message.id);
+            pending.delete(message.id);
+            if (message.error) reject(new Error(message.error.message));
+            else resolve(message.result);
+          } else if (message.method === "ui/notifications/tool-input") {
+            const args = message.params.arguments || {};
+            if (typeof args.usage_gb === "number") byId("usage").value = String(Math.round(args.usage_gb / 10) * 10);
+            if (typeof args.current === "string") current = args.current;
+            pick();
+          } else if (message.method === "ui/notifications/tool-result") {
+            const data = message.params && message.params.structuredContent;
+            if (!data || !Array.isArray(data.offers)) return;
+            offers = data.offers;
+            byId("summary").textContent = message.params.content.map((block) => block.text).join(" ");
+            pick();
+          }
+        });
+
+        byId("usage").addEventListener("input", pick);
+        byId("people").addEventListener("input", pick);
+        byId("ask").addEventListener("click", () => {
+          if (!best) return;
+          const text = `Please switch our internet to ${best.name}. We use about ${byId("usage").value} GB a month with ${byId("people").value} people online at once.`;
+          request("ui/message", { role: "user", content: [{ type: "text", text }] })
+            .then(() => { byId("status").textContent = "Sent to the assistant."; })
+            .catch((error) => { byId("status").textContent = error.message; });
+        });
+
+        request("ui/initialize", { appInfo: { name: "Bills tariff calculator", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then(() => {
+          notify("ui/notifications/initialized", {});
+          const report = () => notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
+          new ResizeObserver(report).observe(document.body);
+          report();
+        });
+      })();
+    </script>
+  </body>
+</html>

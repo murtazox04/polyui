@@ -1,0 +1,243 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARYEN_VERSION: "133"
+
+jobs:
+  rules:
+    name: House rules
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: No em dash, no comments in Rust or TypeScript, no leading-underscore names
+        run: |
+          python3 - <<'PY'
+          import re
+          import subprocess
+          import sys
+
+          EM_DASH = "\u2014"
+          CODE = (".rs", ".ts", ".tsx", ".mts", ".cts")
+          SKIP = ("node_modules/", "dist/", "target/", "/wasm/polyui_core")
+          UNDERSCORE = re.compile(r"(?<![A-Za-z0-9_$])_[A-Za-z0-9_]")
+          DUNDER = re.compile(r"\b__[a-z][a-z0-9_]*__\b")
+          CHAR_LITERAL = re.compile(r"'(\\(x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]+\}|.)|[^\\'\n])'")
+
+          def code_only(text, rust):
+              out = []
+              i = 0
+              n = len(text)
+              comments = []
+              line = 1
+              while i < n:
+                  c = text[i]
+                  if c == "\n":
+                      line += 1
+                      out.append(c)
+                      i += 1
+                      continue
+                  if text.startswith("//", i) or text.startswith("/*", i):
+                      comments.append(line)
+                      end = text.find("\n", i) if text.startswith("//", i) else text.find("*/", i) + 2
+                      end = n if end <= 1 else end
+                      line += text.count("\n", i, end)
+                      out.append("\n" * text.count("\n", i, end))
+                      i = end
+                      continue
+                  if rust and c == "r" and re.match(r'r#*"', text[i:]) and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+                      hashes = len(re.match(r"r(#*)", text[i:]).group(1))
+                      close = '"' + "#" * hashes
+                      start = i + 2 + hashes
+                      end = text.find(close, start)
+                      end = n if end < 0 else end + len(close)
+                      line += text.count("\n", i, end)
+                      out.append("\n" * text.count("\n", i, end))
+                      i = end
+                      continue
+                  if c == "'" and rust:
+                      literal = CHAR_LITERAL.match(text, i)
+                      if literal:
+                          i = literal.end()
+                          out.append(" ")
+                          continue
+                      out.append(c)
+                      i += 1
+                      continue
+                  if c == '"' or (not rust and c in "'`"):
+                      j = i + 1
+                      while j < n and text[j] != c:
+                          j += 2 if text[j] == "\\" else 1
+                      end = min(j + 1, n)
+                      line += text.count("\n", i, end)
+                      out.append("\n" * text.count("\n", i, end))
+                      i = end
+                      continue
+                  out.append(c)
+                  i += 1
+              return "".join(out), comments
+
+          listed = ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+          files = sorted(set(subprocess.run(listed, capture_output=True, check=True).stdout.decode().split("\0")))
+          failures = []
+          for path in filter(None, files):
+              if any(part in path for part in SKIP):
+                  continue
+              try:
+                  text = open(path, encoding="utf-8").read()
+              except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
+                  continue
+              for number, line in enumerate(text.splitlines(), 1):
+                  if EM_DASH in line:
+                      failures.append(f"{path}:{number}: em dash")
+              if not path.endswith(CODE):
+                  continue
+              code, comments = code_only(text, path.endswith(".rs"))
+              failures.extend(f"{path}:{number}: comment" for number in comments)
+              for number, line in enumerate(code.splitlines(), 1):
+                  if UNDERSCORE.search(DUNDER.sub("", line)):
+                      failures.append(f"{path}:{number}: leading-underscore name")
+          for failure in failures:
+              print(failure)
+          print(f"{len(failures)} rule violations")
+          sys.exit(1 if failures else 0)
+          PY
+
+  rust:
+    name: Rust fmt, clippy and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install
+          rustup component add rustfmt clippy
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: rust-${{ runner.os }}-
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy for the query and client-lite feature sets
+        run: |
+          cargo clippy -p polyui-server -p polyui --features polyui-server/query,polyui/query --all-targets -- -D warnings
+          cargo clippy -p polyui-core --no-default-features --features client-lite --lib --test conformance -- -D warnings
+      - name: Clippy for the C ABI and Node bindings
+        run: |
+          cargo clippy -p polyui-ffi --all-targets -- -D warnings
+          cargo clippy -p polyui-ffi --features lite --all-targets -- -D warnings
+          cargo clippy -p polyui-node --all-targets -- -D warnings
+      - uses: actions/setup-python@v7
+        id: python
+        with:
+          python-version: "3.12"
+      - name: Clippy for the Python binding
+        env:
+          PYO3_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: cargo clippy -p polyui-python --all-targets -- -D warnings
+      - run: cargo test
+      - name: Tests with the query feature
+        run: cargo test -p polyui-server -p polyui --features polyui-server/query,polyui/query
+      - name: Tests for the client-lite core used by the wasm build
+        run: cargo test -p polyui-core --no-default-features --features client-lite --lib --test conformance
+      - name: Tests for the C ABI, full and lite
+        run: |
+          cargo test -p polyui-ffi
+          cargo test -p polyui-ffi --features lite
+
+  ffi-c:
+    name: C ABI test from C and C++ with address, leak and undefined behavior sanitizers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - name: Show the C compiler
+        run: clang --version
+      - name: C test with the full core
+        run: bash bindings/ffi/tests/c/run.sh
+      - name: Same with the lite core used by the apps
+        run: POLYUI_FFI_FEATURES=lite bash bindings/ffi/tests/c/run.sh
+
+  web:
+    name: Wasm size gate, web renderer and chat example
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            target
+          key: wasm-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'bindings/wasm/Cargo.toml') }}
+          restore-keys: wasm-${{ runner.os }}-
+      - name: Install the wasm-bindgen CLI pinned in bindings/wasm/Cargo.toml
+        run: |
+          version=$(grep -oP 'wasm-bindgen = "=\K[0-9.]+' bindings/wasm/Cargo.toml)
+          test -n "$version"
+          if ! wasm-bindgen --version 2>/dev/null | grep -qx "wasm-bindgen $version"; then
+            cargo install wasm-bindgen-cli --version "$version" --locked --force
+          fi
+      - name: Install binaryen
+        run: |
+          curl -sSfL -o binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          curl -sSfL -o binaryen.tar.gz.sha256 "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz.sha256"
+          echo "$(cut -d' ' -f1 binaryen.tar.gz.sha256)  binaryen.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/binaryen"
+          tar -xzf binaryen.tar.gz -C "$RUNNER_TEMP/binaryen" --strip-components=1
+          echo "$RUNNER_TEMP/binaryen/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            js/polyui-web/package-lock.json
+            examples/chat/package-lock.json
+      - name: Build the wasm core
+        run: node bindings/wasm/build.mjs
+      - name: Check the wasm size against the budget in docs/adr/0001-stack.md
+        run: |
+          budget=$(sed -nE 's/.*budget is ([0-9][0-9 ]*) bytes brotli.*/\1/p' docs/adr/0001-stack.md | tr -d ' ')
+          test -n "$budget"
+          size=$(node -e '
+            const zlib = require("node:zlib");
+            const raw = require("node:fs").readFileSync(process.argv[1]);
+            const params = { [zlib.constants.BROTLI_PARAM_QUALITY]: zlib.constants.BROTLI_MAX_QUALITY, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length };
+            console.log(zlib.brotliCompressSync(raw, { params }).length);
+          ' js/polyui-web/wasm/polyui_core_bg.wasm)
+          echo "wasm core: $size B brotli, budget $budget B" | tee -a "$GITHUB_STEP_SUMMARY"
+          test "$size" -le "$budget"
+      - name: Web renderer tests
+        working-directory: js/polyui-web
+        run: npm ci && npm test
+      - name: Web renderer size against its 12 288 B brotli budget
+        working-directory: js/polyui-web
+        run: npm run size
+      - name: Chat example build
+        working-directory: examples/chat
+        run: npm ci && npm run build

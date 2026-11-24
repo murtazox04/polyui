@@ -1,0 +1,95 @@
+# Renderer contract
+
+A renderer is the platform code that draws components. It is deliberately dumb. All the thinking (applying patches, resolving bindings, filling defaults, building `alt` and `say`, matching speech) happens in `polyui-core`, which is the same Rust code on every platform. A renderer only turns a short list of operations into native views.
+
+```mermaid
+flowchart LR
+    W[protocol messages] --> C[polyui-core<br/>Rust, wasm or native]
+    C -->|render ops| R[renderer<br/>DOM, SwiftUI, Compose, Flutter]
+    R -->|set_value, fire| C
+    C -->|ui.action| W
+```
+
+## The client core API
+
+Every binding exposes the same five calls. Arguments and results are JSON strings so one call crosses the language boundary once.
+
+| Call | Input | Output |
+|---|---|---|
+| `Client::new(hello)` | the `hello` object the client will send | a client |
+| `client.receive(message)` | one server message | a `RenderBatch` |
+| `client.set_value(surface, path, value)` | a local edit from an input or choice | a `RenderBatch` with every component bound to `path` |
+| `client.fire(surface, component, prop, detail?)` | the user pressed something; `detail` is an optional JSON object, for example `{"row": 3}` when a chart bar is tapped, of at most 4096 bytes once serialized | the `ui.action` message to send (with `detail` copied in), or `null`, also when `detail` is not an object or is too large |
+| `client.confirm(surface, action_id, nonce)` | the user accepted a `confirm` sheet | the `ui.action` message with the nonce |
+
+Two helpers are also exposed: `client.say(surface)` returns the utterances for voice (section below) and `client.match_voice(surface, text)` returns a voice match or `null`.
+
+## RenderBatch
+
+```json
+{
+  "surface": "s1",
+  "ops": [
+    { "op": "create", "id": "pay", "type": "Button", "props": { "label": "Pay", "tone": "primary", "on_press": { "action_id": "act_4kq9", "confirm": true }, "disabled": false }, "a11y": { "role": "button", "label": "Pay" } },
+    { "op": "update", "id": "total", "props": { "label": "Total", "value": "29 322", "unit": "so'm", "tone": "negative" }, "a11y": { "role": "status", "label": "Total: 29 322 so'm" } },
+    { "op": "children", "id": "card", "children": ["total", "pay"] },
+    { "op": "remove", "id": "old_note" },
+    { "op": "root", "id": "card" },
+    { "op": "confirm", "action_id": "act_4kq9", "nonce": "n_77ad", "title": "Pay Hududgaz", "body": "29 322,19 so'm from card 4471", "confirm_label": "Pay", "expires_ms": 60000 },
+    { "op": "highlight", "id": "opt_2" },
+    { "op": "close" }
+  ],
+  "fallback": "Total: 29 322 so'm. [Pay]",
+  "send": [{ "v": 1, "t": "ui.resync", "surface": "s1" }]
+}
+```
+
+`send` lists protocol messages the core needs sent back to the server, in order. It is left out when there are none. The core never talks to the network itself, so whatever owns the connection sends each entry as it is, as one JSON message. It does not have to wait until the ops are drawn. The core puts these in `send`:
+
+- `ui.resync` when a `seq` is missing, or when a message could not be applied and the core needs a snapshot (section 8 of the protocol).
+- `ui.error` with `bad_message` when a server message breaks the protocol or the limits. When the message was about a surface the core already has, a `ui.resync` for that surface follows.
+- `ui.error` with `unknown_component`, once per type, when a surface uses a type the client did not declare.
+- `ui.error` with `unsupported_version` when a message has a `v` the core does not know. The batch then carries the message's `fallback` text, if it had one.
+
+A renderer that drops `send` leaves the server unaware of gaps and errors, and the surface stays out of date until the next full `ui.open`.
+
+Rules the core guarantees, so renderers do not have to check:
+
+- `props` are complete: defaults are filled and `$bind` values are resolved. A renderer never sees `$bind`, `$ref` or action `args`.
+- `create` comes before any `children` op that references the new id.
+- When a component is replaced (its type changes, or it falls back to a muted `Text`), the batch has `remove` and `create` for it, then a `children` op for its parent, and a `root` op when it is the root. A renderer that detaches a node on `remove` attaches the new one again from these ops; a renderer that swaps the node in place can apply them as no-ops.
+- Components with a `path` prop (Input, ChoiceGroup) also carry an op-level `value`: the current data model value at that path, or `null`.
+- `chart:Chart` props carry a `scene` object built by the server with `polyui-chart`. The client core never compiles charts, which keeps the wasm small.
+- `embed:Embed` props may carry an `app` object that the server filled from the host's `resources/read` result. The core passes it on only when its `resource.mimeType` is exactly `text/html;profile=mcp-app`, `resource.text` is a string and `resource.uri` equals the `resource` prop. Without a valid `app` the renderer shows the `title`.
+- `update` carries all props of the component, not a delta. Renderers replace, they do not merge.
+- Ops for one batch are applied together. A renderer should apply a whole batch in one frame.
+- A component whose required prop resolved to nothing arrives as `{ "op": "create", "type": "Text", "props": { "text": "<its alt>", "style": "muted" } }` instead.
+- Unknown types never reach a renderer. The core turns them into `Text` with the `alt`.
+- A `url` prop with an `http` URL counts as not fitting unless the client core was built with `allow_http` (in Rust, `Client::with_allow_http(true)`), the same rule the server applies with its own `allow_http` setting.
+
+## Voice utterances
+
+`client.say(surface)` returns:
+
+```json
+[ { "id": "card", "text": "Your bills." }, { "id": "choices", "text": "Pick one. First, Gas; second, Power." } ]
+```
+
+The voice layer speaks them in order and can send `highlight` ops (through `ui.sync` or locally) as it goes.
+
+`client.match_voice(surface, "ikkinchisini tanla")` returns:
+
+```json
+{ "component": "choices", "option": "power", "batch": { "surface": "s1", "ops": [] }, "action": null }
+```
+
+When the match selects an option, the core has already written it to the data model, so `batch` holds the updates. When the matched component has an action, `action` is the `ui.action` message to send.
+
+## What a renderer must do
+
+1. Expose `a11y.role` and `a11y.label` to the platform's accessibility API.
+2. Keep focus stable: updating a component must not move focus away from it.
+3. Never put any prop into HTML, a URL handler or a style without going through the platform's safe API. On the web that means `textContent` and attribute setters, never `innerHTML`.
+4. Draw the `confirm` op in its own sheet that the surface cannot style or cover.
+5. Animate changes, but respect the platform's reduced motion setting.
+6. Draw `embed:Embed` only inside a sandbox the host set up on a separate origin, with scripts allowed and same-origin access never allowed, and refuse (show the `title`) when there is none. Check the source of every message from the frame, send `ui/message` only through `fire` on `on_message`, and open links only for `https` URLs the user confirmed in the renderer's own sheet. [Embedding MCP Apps](../docs/embed.md) has the full rules.

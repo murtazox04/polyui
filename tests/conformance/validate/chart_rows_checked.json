@@ -1,0 +1,44 @@
+{
+  "description": "Chart rows are closed objects: x scalar, y number, series string.",
+  "input": {
+    "root": "c",
+    "components": [
+      {
+        "id": "c",
+        "type": "chart:Chart",
+        "props": {
+          "title": "T",
+          "kind": "pie",
+          "rows": [
+            {
+              "x": "a",
+              "y": "12"
+            },
+            {
+              "x": {
+                "no": 1
+              },
+              "y": 1
+            },
+            {
+              "x": "b",
+              "y": 2,
+              "colour": "red"
+            },
+            {
+              "y": 3
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"c\" prop \"rows[0].y\": expected a number, got text.",
+      "components[0] id \"c\" prop \"rows[1].x\": expected text, a number or true/false, got an object.",
+      "components[0] id \"c\" prop \"rows[2]\": unknown field \"colour\". Known: x, y, series.",
+      "components[0] id \"c\" prop \"rows[3].x\": required field is missing."
+    ]
+  }
+}

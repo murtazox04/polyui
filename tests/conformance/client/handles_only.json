@@ -1,0 +1,81 @@
+{
+  "description": "The client never passes action args to a renderer: a raw action object counts as missing.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.open",
+        "surface": "s1",
+        "seq": 1,
+        "root": "b",
+        "components": [
+          {
+            "id": "b",
+            "type": "Button",
+            "props": {
+              "label": "Pay",
+              "on_press": {
+                "action": "pay_bill",
+                "args": {
+                  "bill": "b_17"
+                }
+              }
+            }
+          }
+        ],
+        "data": {}
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [
+          {
+            "op": "create",
+            "id": "b",
+            "type": "Text",
+            "props": {
+              "text": "[Pay]",
+              "style": "muted"
+            },
+            "a11y": {
+              "role": "text",
+              "label": "[Pay]"
+            }
+          },
+          {
+            "op": "root",
+            "id": "b"
+          }
+        ],
+        "fallback": "[Pay]"
+      }
+    },
+    {
+      "fire": {
+        "surface": "s1",
+        "component": "b",
+        "prop": "on_press"
+      },
+      "expect": null
+    }
+  ]
+}

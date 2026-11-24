@@ -1,0 +1,34 @@
+{
+  "description": "ids are unique in a surface.",
+  "input": {
+    "root": "a",
+    "components": [
+      {
+        "id": "a",
+        "type": "Row",
+        "children": [
+          "b"
+        ]
+      },
+      {
+        "id": "b",
+        "type": "Text",
+        "props": {
+          "text": "one"
+        }
+      },
+      {
+        "id": "b",
+        "type": "Text",
+        "props": {
+          "text": "two"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[2] id \"b\": duplicate id, first used by components[1]."
+    ]
+  }
+}

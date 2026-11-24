@@ -1,0 +1,44 @@
+{
+  "description": "enum, int, bool and string kinds are checked.",
+  "input": {
+    "root": "d",
+    "components": [
+      {
+        "id": "d",
+        "type": "chart:Dashboard",
+        "props": {
+          "columns": 5
+        },
+        "children": [
+          "c"
+        ]
+      },
+      {
+        "id": "c",
+        "type": "Card",
+        "props": {
+          "title": 12,
+          "tone": "blue"
+        },
+        "children": [
+          "l"
+        ]
+      },
+      {
+        "id": "l",
+        "type": "List",
+        "props": {
+          "ordered": "yes"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"d\" prop \"columns\": 5 is above the max 4.",
+      "components[1] id \"c\" prop \"title\": expected text, got a number.",
+      "components[1] id \"c\" prop \"tone\": \"blue\" is not one of plain, info, success, warning, danger.",
+      "components[2] id \"l\" prop \"ordered\": expected true or false, got text."
+    ]
+  }
+}

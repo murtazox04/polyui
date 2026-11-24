@@ -1,0 +1,10 @@
+/target
+node_modules/
+dist/
+*.env
+.env*
+__pycache__/
+*.so
+*.node
+.DS_Store
+.claude/

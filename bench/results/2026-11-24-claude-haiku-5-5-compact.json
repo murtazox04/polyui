@@ -1,0 +1,870 @@
+{
+  "date": "2026-11-24",
+  "model": "claude-haiku-5-5",
+  "tools": {
+    "profile": "compact",
+    "catalog_subset": []
+  },
+  "prices": {
+    "input_per_million": 0.1,
+    "output_per_million": 0.5,
+    "cache_write_factor": 1.25,
+    "cache_read_factor": 0.1
+  },
+  "prompts": 32,
+  "total_model_calls": 63,
+  "provider_requests": null,
+  "stopped_early": false,
+  "total_cost_usd": 0.032532495,
+  "variants": [
+    {
+      "variant": "tools",
+      "overall": {
+        "runs": 32,
+        "ui_runs": 26,
+        "first_try_valid": 26,
+        "valid_after_one_retry": 26,
+        "valid_after_two_retries": 26,
+        "ui_expected": 24,
+        "ui_shown_when_expected": 22,
+        "no_ui_expected": 4,
+        "no_ui_when_not_expected": 4,
+        "mean_ms_to_open": 4505.461538461538,
+        "model_calls": 63,
+        "input_tokens": 190,
+        "output_tokens": 27574,
+        "cache_write_tokens": 139271,
+        "cache_read_tokens": 131762,
+        "cost_usd": 0.032532495,
+        "budget_cut": 0,
+        "problem_kinds": []
+      },
+      "per_locale": {
+        "en": {
+          "runs": 8,
+          "ui_runs": 6,
+          "first_try_valid": 6,
+          "valid_after_one_retry": 6,
+          "valid_after_two_retries": 6,
+          "ui_expected": 6,
+          "ui_shown_when_expected": 5,
+          "no_ui_expected": 1,
+          "no_ui_when_not_expected": 1,
+          "mean_ms_to_open": 4297.666666666667,
+          "model_calls": 15,
+          "input_tokens": 46,
+          "output_tokens": 5981,
+          "cache_write_tokens": 32382,
+          "cache_read_tokens": 29839,
+          "cost_usd": 0.00734124,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "ru": {
+          "runs": 8,
+          "ui_runs": 6,
+          "first_try_valid": 6,
+          "valid_after_one_retry": 6,
+          "valid_after_two_retries": 6,
+          "ui_expected": 6,
+          "ui_shown_when_expected": 5,
+          "no_ui_expected": 1,
+          "no_ui_when_not_expected": 1,
+          "mean_ms_to_open": 4879.833333333333,
+          "model_calls": 15,
+          "input_tokens": 46,
+          "output_tokens": 7256,
+          "cache_write_tokens": 36664,
+          "cache_read_tokens": 29877,
+          "cost_usd": 0.00851437,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "uz-Cyrl": {
+          "runs": 8,
+          "ui_runs": 7,
+          "first_try_valid": 7,
+          "valid_after_one_retry": 7,
+          "valid_after_two_retries": 7,
+          "ui_expected": 6,
+          "ui_shown_when_expected": 6,
+          "no_ui_expected": 1,
+          "no_ui_when_not_expected": 1,
+          "mean_ms_to_open": 4549.714285714285,
+          "model_calls": 16,
+          "input_tokens": 48,
+          "output_tokens": 7480,
+          "cache_write_tokens": 36382,
+          "cache_read_tokens": 33806,
+          "cost_usd": 0.00863061,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "uz-Latn": {
+          "runs": 8,
+          "ui_runs": 7,
+          "first_try_valid": 7,
+          "valid_after_one_retry": 7,
+          "valid_after_two_retries": 7,
+          "ui_expected": 6,
+          "ui_shown_when_expected": 6,
+          "no_ui_expected": 1,
+          "no_ui_when_not_expected": 1,
+          "mean_ms_to_open": 4318.428571428572,
+          "model_calls": 17,
+          "input_tokens": 50,
+          "output_tokens": 6857,
+          "cache_write_tokens": 33843,
+          "cache_read_tokens": 38240,
+          "cost_usd": 0.008046275000000002,
+          "budget_cut": 0,
+          "problem_kinds": []
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "prompt": "en-ambiguous",
+      "locale": "en",
+      "category": "ambiguous",
+      "expect": "either",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 4614,
+      "ms_total": 5635,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 842,
+      "cache_write_tokens": 4628,
+      "cache_read_tokens": 3681,
+      "ending": "done",
+      "text": "Here's your water bill: 18 900,00 so'm, due 2026-12-15. You can pay it from the button above."
+    },
+    {
+      "prompt": "en-bill-detail",
+      "locale": "en",
+      "category": "bill-detail",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 2838,
+      "ms_total": 3695,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 584,
+      "cache_write_tokens": 4332,
+      "cache_read_tokens": 3691,
+      "ending": "done",
+      "text": "Your internet bill is **99 000,00 so'm**, due on **1 December 2026**."
+    },
+    {
+      "prompt": "en-bills",
+      "locale": "en",
+      "category": "bills",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 6514,
+      "ms_total": 8232,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1574,
+      "cache_write_tokens": 1912,
+      "cache_read_tokens": 7386,
+      "ending": "done",
+      "text": "You owe **231 732,19 so'm** across four unpaid bills. The internet bill is due first, on 1 December.\n\nEach card below has a pay button. The app will ask you to confirm before any payment goes through."
+    },
+    {
+      "prompt": "en-chart",
+      "locale": "en",
+      "category": "chart",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3643,
+      "ms_total": 4923,
+      "model_calls": 3,
+      "input_tokens": 8,
+      "output_tokens": 703,
+      "cache_write_tokens": 4736,
+      "cache_read_tokens": 7701,
+      "ending": "done",
+      "text": "Here is your electricity usage for the last six months. November so far is 318 kWh. Your current bill of 84 510,00 so'm is due 2026-12-05."
+    },
+    {
+      "prompt": "en-no-ui",
+      "locale": "en",
+      "category": "no-ui",
+      "expect": "no-ui",
+      "variant": "tools",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 1706,
+      "model_calls": 1,
+      "input_tokens": 4,
+      "output_tokens": 211,
+      "cache_write_tokens": 3686,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "**kWh** stands for **kilowatt-hour**, a unit of energy. One kWh is the energy used by a 1,000-watt appliance running for one hour. Your electricity use this month is 318 kWh."
+    },
+    {
+      "prompt": "en-offers",
+      "locale": "en",
+      "category": "offers",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 4782,
+      "ms_total": 6038,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1118,
+      "cache_write_tokens": 4929,
+      "cache_read_tokens": 3694,
+      "ending": "done",
+      "text": "Here are the three Uztelecom tariffs. Pick one above and I'll update the screen. Your current internet bill of 99 000,00 so'm is due 2026-12-01."
+    },
+    {
+      "prompt": "en-pay",
+      "locale": "en",
+      "category": "pay",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3395,
+      "ms_total": 4315,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 718,
+      "cache_write_tokens": 4458,
+      "cache_read_tokens": 3686,
+      "ending": "done",
+      "text": "Your gas bill is 29 322,19 so'm, due by 2026-12-10. Tap the button to pay; the app will ask you to confirm."
+    },
+    {
+      "prompt": "en-phone-form",
+      "locale": "en",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 1895,
+      "model_calls": 1,
+      "input_tokens": 4,
+      "output_tokens": 231,
+      "cache_write_tokens": 3701,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Please type the new phone number you want to use for payment notifications, including the country code (for example +998 90 123 45 67)."
+    },
+    {
+      "prompt": "ru-ambiguous",
+      "locale": "ru",
+      "category": "ambiguous",
+      "expect": "either",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 7002,
+      "ms_total": 8509,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 2052,
+      "cache_write_tokens": 6913,
+      "cache_read_tokens": 3688,
+      "ending": "done",
+      "text": "Сейчас открыто четыре неоплаченных счёта. Какой из них вас интересует? Ниже все они, с суммами и сроками:\n\n- **Интернет** (Uztelecom): 99 000,00 so'm, срок до 01.12.2026\n- **Электричество**: 84 510,00 so'm, срок до 05.12.2026\n- **Газ**: 29 322,19 so'm, срок до 10.12.2026\n- **Вода**: 18 900,00 so'm, срок до 15.12.2026\n\nМогу показать историю расходов по любой услуге или сменить тариф интернета."
+    },
+    {
+      "prompt": "ru-bill-detail",
+      "locale": "ru",
+      "category": "bill-detail",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 2616,
+      "ms_total": 4237,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 561,
+      "cache_write_tokens": 4473,
+      "cache_read_tokens": 3700,
+      "ending": "done",
+      "text": "За воду нужно заплатить **18 900,00 so'm** до **15 декабря 2026**."
+    },
+    {
+      "prompt": "ru-bills",
+      "locale": "ru",
+      "category": "bills",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 7364,
+      "ms_total": 9393,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1958,
+      "cache_write_tokens": 6642,
+      "cache_read_tokens": 3705,
+      "ending": "done",
+      "text": "В этом месяце к оплате 231 732,19 so'm за четыре счёта. Все они не оплачены:\n\n- **Газ:** 29 322,19 so'm, срок до 10.12.2026\n- **Электричество:** 84 510,00 so'm, срок до 05.12.2026\n- **Вода:** 18 900,00 so'm, срок до 15.12.2026\n- **Интернет:** 99 000,00 so'm, срок до 01.12.2026\n\nБлижайший срок \u2014 интернет, 01.12.2026."
+    },
+    {
+      "prompt": "ru-chart",
+      "locale": "ru",
+      "category": "chart",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 5262,
+      "ms_total": 6363,
+      "model_calls": 3,
+      "input_tokens": 8,
+      "output_tokens": 906,
+      "cache_write_tokens": 1771,
+      "cache_read_tokens": 11393,
+      "ending": "done",
+      "text": "Вот график начислений за газ за последние 6 месяцев. Счёт за ноябрь (29 322,19 so'm) ещё не оплачен, срок \u2014 10 декабря 2026."
+    },
+    {
+      "prompt": "ru-no-ui",
+      "locale": "ru",
+      "category": "no-ui",
+      "expect": "no-ui",
+      "variant": "tools",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 1364,
+      "model_calls": 1,
+      "input_tokens": 4,
+      "output_tokens": 37,
+      "cache_write_tokens": 3693,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Пожалуйста, хорошего вечера! Если понадобится что-то по счетам, я на связи."
+    },
+    {
+      "prompt": "ru-offers",
+      "locale": "ru",
+      "category": "offers",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3789,
+      "ms_total": 4925,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 852,
+      "cache_write_tokens": 4886,
+      "cache_read_tokens": 3701,
+      "ending": "done",
+      "text": "Вот три тарифа Uztelecom. Выберите один в списке:\n\n- **Oila 50**: 50 Мбит/с, 99 000,00 so'm в месяц\n- **Oila 100**: 100 Мбит/с, 149 000,00 so'm в месяц\n- **Turbo 200**: 200 Мбит/с, 219 000,00 so'm в месяц"
+    },
+    {
+      "prompt": "ru-pay",
+      "locale": "ru",
+      "category": "pay",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3246,
+      "ms_total": 4172,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 721,
+      "cache_write_tokens": 4572,
+      "cache_read_tokens": 3690,
+      "ending": "done",
+      "text": "Счёт за воду на 18 900,00 so'm, срок оплаты 15.12.2026. Нажмите кнопку, чтобы оплатить. Приложение попросит подтверждение."
+    },
+    {
+      "prompt": "ru-phone-form",
+      "locale": "ru",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 1939,
+      "model_calls": 1,
+      "input_tokens": 4,
+      "output_tokens": 169,
+      "cache_write_tokens": 3714,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Введите новый номер телефона, на который будут приходить уведомления об оплате счетов. Формат: +998 XX XXX XX XX."
+    },
+    {
+      "prompt": "uz-cyrl-ambiguous",
+      "locale": "uz-Cyrl",
+      "category": "ambiguous",
+      "expect": "either",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 6387,
+      "ms_total": 7638,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1570,
+      "cache_write_tokens": 5803,
+      "cache_read_tokens": 3694,
+      "ending": "done",
+      "text": "Интернет от Uztelecom: к оплате **99 000,00 so'm**, срок до 01.12.2026. Счёт не оплачен. Кнопка оплаты на экране. Ниже можно сравнить тарифы."
+    },
+    {
+      "prompt": "uz-cyrl-bill-detail",
+      "locale": "uz-Cyrl",
+      "category": "bill-detail",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3700,
+      "ms_total": 4666,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 851,
+      "cache_write_tokens": 4850,
+      "cache_read_tokens": 3718,
+      "ending": "done",
+      "text": "Газ ҳисобингиз: **29 322,19 so'm**. Тўлаш муддати: **2026 йил 10 декабрь**."
+    },
+    {
+      "prompt": "uz-cyrl-bills",
+      "locale": "uz-Cyrl",
+      "category": "bills",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 7272,
+      "ms_total": 8707,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1946,
+      "cache_write_tokens": 6567,
+      "cache_read_tokens": 3727,
+      "ending": "done",
+      "text": "Бу ой жами **231 732,19 so'm** тўлашингиз керак. Тўлов муддатлари бўйича ҳисоблар пастда. Ҳар бир ҳисобни алоҳида ҳам тўлашингиз мумкин."
+    },
+    {
+      "prompt": "uz-cyrl-chart",
+      "locale": "uz-Cyrl",
+      "category": "chart",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3334,
+      "ms_total": 4565,
+      "model_calls": 3,
+      "input_tokens": 8,
+      "output_tokens": 579,
+      "cache_write_tokens": 4705,
+      "cache_read_tokens": 7793,
+      "ending": "done",
+      "text": "Сувнинг ойлик сарфи график кўринишида кўрсатилди. Энг юқори сарф июль ойида (15,1 m³), энг паст октябрь ойида (12,9 m³) бўлган."
+    },
+    {
+      "prompt": "uz-cyrl-no-ui",
+      "locale": "uz-Cyrl",
+      "category": "no-ui",
+      "expect": "no-ui",
+      "variant": "tools",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 2366,
+      "model_calls": 1,
+      "input_tokens": 4,
+      "output_tokens": 333,
+      "cache_write_tokens": 3703,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "**кВт·соат (кВт·ч, kWh)** \u2014 это единица измерения электроэнергии. Она показывает, сколько энергии вы потребили.\n\n1 кВт·ч \u2014 это работа прибора мощностью 1 кВт в течение 1 часа. Например, лампа на 100 Вт, горящая 10 часов, потребляет 1 кВт·ч.\n\nВ этом месяце у вас израсходовано **318 кВт·ч** электроэнергии."
+    },
+    {
+      "prompt": "uz-cyrl-offers",
+      "locale": "uz-Cyrl",
+      "category": "offers",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 4568,
+      "ms_total": 5759,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 862,
+      "cache_write_tokens": 1288,
+      "cache_read_tokens": 7434,
+      "ending": "done",
+      "text": "Uchta tarif bor. Tanlang, keyin uni ko'rib chiqamiz."
+    },
+    {
+      "prompt": "uz-cyrl-pay",
+      "locale": "uz-Cyrl",
+      "category": "pay",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3893,
+      "ms_total": 5307,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 807,
+      "cache_write_tokens": 4851,
+      "cache_read_tokens": 3703,
+      "ending": "done",
+      "text": "Электр энергияси тўловини тасдиқлаш учун «Тўлаш» тугмасини босинг. Илова тўловни яна бир марта тасдиқлашингizni сўрайди."
+    },
+    {
+      "prompt": "uz-cyrl-phone-form",
+      "locale": "uz-Cyrl",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 2694,
+      "ms_total": 3817,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 532,
+      "cache_write_tokens": 4615,
+      "cache_read_tokens": 3737,
+      "ending": "done",
+      "text": "Янги телефон рақамингизни киритинг. Сақлаганингиздан сўнг тўлов хабарлари янги рақамга келади."
+    },
+    {
+      "prompt": "uz-latn-ambiguous",
+      "locale": "uz-Latn",
+      "category": "ambiguous",
+      "expect": "either",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 5041,
+      "ms_total": 6013,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1127,
+      "cache_write_tokens": 4912,
+      "cache_read_tokens": 3692,
+      "ending": "done",
+      "text": "Suv hisobi: 18 900,00 so'm, 2026-12-15 gacha to'lanishi kerak. Bu oy sarfi 13.3 m3. Hozircha to'lanmagan."
+    },
+    {
+      "prompt": "uz-latn-bill-detail",
+      "locale": "uz-Latn",
+      "category": "bill-detail",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3273,
+      "ms_total": 4494,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 803,
+      "cache_write_tokens": 4557,
+      "cache_read_tokens": 3713,
+      "ending": "done",
+      "text": "Elektr hisobingiz bo'yicha to'lov quyidagicha:\n\n- **Summa:** 84 510,00 so'm\n- **Muddati:** 2026-12-05\n- **Holat:** to'lanmagan\n\nQuyidagi tugma orqali to'lashingiz mumkin."
+    },
+    {
+      "prompt": "uz-latn-bills",
+      "locale": "uz-Latn",
+      "category": "bills",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 7015,
+      "ms_total": 8117,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1824,
+      "cache_write_tokens": 5876,
+      "cache_read_tokens": 3722,
+      "ending": "done",
+      "text": "Bu oy jami **231 732,19 so'm** to'lashingiz kerak. To'lovlar ekranda ko'rsatildi. Har bir hisob uchun alohida to'lash tugmasi bor."
+    },
+    {
+      "prompt": "uz-latn-chart",
+      "locale": "uz-Latn",
+      "category": "chart",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 4011,
+      "ms_total": 5218,
+      "model_calls": 3,
+      "input_tokens": 8,
+      "output_tokens": 742,
+      "cache_write_tokens": 4754,
+      "cache_read_tokens": 7732,
+      "ending": "done",
+      "text": "Oxirgi 6 oyda gaz sarfi ekrandagi grafikda ko'rsatildi. Noyabr sarfi 112 m3 bo'lib, eng yuqori ko'rsatkich. Hisob-kitob 29 322,19 so'm, to'lov muddati 2026-12-10."
+    },
+    {
+      "prompt": "uz-latn-no-ui",
+      "locale": "uz-Latn",
+      "category": "no-ui",
+      "expect": "no-ui",
+      "variant": "tools",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 1257,
+      "model_calls": 1,
+      "input_tokens": 4,
+      "output_tokens": 51,
+      "cache_write_tokens": 3709,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Arzimaydi! Kerak bo'lsa, istalgan vaqtda murojaat qiling. Yaxshi kun tilayman!"
+    },
+    {
+      "prompt": "uz-latn-offers",
+      "locale": "uz-Latn",
+      "category": "offers",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3602,
+      "ms_total": 5071,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 781,
+      "cache_write_tokens": 4609,
+      "cache_read_tokens": 3714,
+      "ending": "done",
+      "text": "Uchta tarif bor. Birini tanlang, shunga qarab ko'rsataman."
+    },
+    {
+      "prompt": "uz-latn-pay",
+      "locale": "uz-Latn",
+      "category": "pay",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3838,
+      "ms_total": 5053,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 775,
+      "cache_write_tokens": 821,
+      "cache_read_tokens": 7404,
+      "ending": "done",
+      "text": "Gaz to'lovi ekranda: 29 322,19 so'm, muddati 2026-12-10. \"Gaz uchun to'lash\" tugmasini bosing, so'ng ilova to'lovni tasdiqlashingizni so'raydi."
+    },
+    {
+      "prompt": "uz-latn-phone-form",
+      "locale": "uz-Latn",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        },
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": []
+        },
+        {
+          "tool": "close_ui",
+          "ok": true,
+          "problems": []
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3449,
+      "ms_total": 5780,
+      "model_calls": 3,
+      "input_tokens": 8,
+      "output_tokens": 754,
+      "cache_write_tokens": 4605,
+      "cache_read_tokens": 8263,
+      "ending": "done",
+      "text": "Yangi telefon raqamingizni kiriting. Ekranda maydon ochildi. Raqamni kiritgandan keyin ayting, uni saqlashga harakat qilaman."
+    }
+  ]
+}

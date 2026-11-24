@@ -1,0 +1,25 @@
+{
+  "description": "A client that declared only core@1 cannot get chart types.",
+  "catalogs": [
+    "core@1"
+  ],
+  "input": {
+    "root": "c",
+    "components": [
+      {
+        "id": "c",
+        "type": "chart:Chart",
+        "props": {
+          "title": "T",
+          "kind": "bar",
+          "rows": []
+        }
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "components[0] id \"c\": type \"chart:Chart\" is not in the catalog. Known: Badge, Button, Card, ChoiceGroup, ConfirmSheet, Divider, Image, Input, List, Row, Stat, Text."
+    ]
+  }
+}

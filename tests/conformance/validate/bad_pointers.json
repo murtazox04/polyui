@@ -1,0 +1,71 @@
+{
+  "description": "$bind, path props, data paths and with lists must be JSON Pointers.",
+  "actions": {
+    "pay_bill": {
+      "args": {
+        "bill": {
+          "kind": "string",
+          "required": true,
+          "max": 32
+        }
+      },
+      "requires_confirm": true
+    },
+    "pick_store": {
+      "args": {}
+    }
+  },
+  "input": {
+    "root": "f",
+    "components": [
+      {
+        "id": "f",
+        "type": "Card",
+        "props": {
+          "title": {
+            "$bind": "form/title"
+          }
+        },
+        "children": [
+          "i",
+          "b"
+        ]
+      },
+      {
+        "id": "i",
+        "type": "Input",
+        "props": {
+          "label": "Name",
+          "value": "/a~2b"
+        }
+      },
+      {
+        "id": "b",
+        "type": "Button",
+        "props": {
+          "label": "Go",
+          "on_press": {
+            "action": "pick_store",
+            "with": [
+              "phone"
+            ]
+          }
+        }
+      }
+    ],
+    "data": [
+      {
+        "path": "x",
+        "value": 1
+      }
+    ]
+  },
+  "expect": {
+    "problems": [
+      "data[0] path \"x\": \"x\" is not a JSON Pointer (it must start with / and use ~0 or ~1 only).",
+      "components[0] id \"f\" prop \"title\": \"form/title\" is not a JSON Pointer (it must start with / and use ~0 or ~1 only).",
+      "components[1] id \"i\" prop \"value\": \"/a~2b\" is not a JSON Pointer (it must start with / and use ~0 or ~1 only).",
+      "components[2] id \"b\" prop \"on_press.with[0]\": expected a JSON Pointer like \"/form/phone\"."
+    ]
+  }
+}

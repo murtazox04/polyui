@@ -1,0 +1,73 @@
+{
+  "description": "A future version shows the fallback text and reports unsupported_version; bad JSON reports bad_message; unknown t is ignored.",
+  "hello": {
+    "v": 1,
+    "t": "hello",
+    "client": {
+      "name": "conformance",
+      "version": "1"
+    },
+    "catalogs": [
+      "core@1",
+      "chart@1"
+    ],
+    "modalities": [
+      "screen",
+      "voice"
+    ],
+    "features": [
+      "sync"
+    ],
+    "locale": "en"
+  },
+  "steps": [
+    {
+      "receive": {
+        "v": 2,
+        "t": "ui.open",
+        "surface": "s1",
+        "fallback": "Your bills: Gas 29 322 so'm."
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": [],
+        "fallback": "Your bills: Gas 29 322 so'm.",
+        "send": [
+          {
+            "v": 1,
+            "t": "ui.error",
+            "surface": "s1",
+            "reason": "unsupported_version",
+            "detail": "version 2 is not supported"
+          }
+        ]
+      }
+    },
+    {
+      "receive_text": "{\"v\":1,\"t\":\"ui.open\"",
+      "expect": {
+        "surface": "",
+        "ops": [],
+        "send": [
+          {
+            "v": 1,
+            "t": "ui.error",
+            "reason": "bad_message",
+            "detail": "invalid JSON: EOF while parsing an object at line 1 column 20"
+          }
+        ]
+      }
+    },
+    {
+      "receive": {
+        "v": 1,
+        "t": "ui.dance",
+        "surface": "s1"
+      },
+      "expect": {
+        "surface": "s1",
+        "ops": []
+      }
+    }
+  ]
+}

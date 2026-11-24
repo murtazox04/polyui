@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self' ws: wss:; require-trusted-types-for 'script'; trusted-types 'none'" />
+    <title>PolyUI chat</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./polyui.css" />
+    <link rel="stylesheet" href="./chat.css" />
+    <script type="module" src="./chat.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="bar">
+        <p class="brand">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2.5" /><rect x="13" y="3" width="8" height="8" rx="4" /><rect x="3" y="13" width="8" height="8" rx="4" /><rect x="13" y="13" width="8" height="8" rx="2.5" /></svg>
+          PolyUI
+        </p>
+        <p class="status" id="status" data-state="connecting" role="status" aria-live="polite">Connecting</p>
+      </header>
+
+      <main class="thread" id="thread" aria-live="polite" aria-relevant="additions">
+        <section class="welcome" id="welcome">
+          <h1>Ask about the household bills.</h1>
+          <p>Answers can come back as cards, charts and buttons you can tap or answer by voice.</p>
+          <div class="suggestions" id="suggestions">
+            <button type="button" class="suggestion">What do we owe this month?</button>
+            <button type="button" class="suggestion">Chart our electricity use</button>
+            <button type="button" class="suggestion">Compare internet tariffs</button>
+          </div>
+        </section>
+      </main>
+
+      <form class="composer" id="composer" autocomplete="off">
+        <label class="visually-hidden" for="prompt">Message</label>
+        <div class="field">
+          <textarea id="prompt" rows="1" placeholder="Message the assistant" enterkeyhint="send"></textarea>
+          <button type="button" class="icon" id="speaker" aria-pressed="false" aria-label="Read answers aloud" title="Read answers aloud">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" /><path class="wave" d="M15.5 9a4 4 0 0 1 0 6" /><path class="wave" d="M18 6.5a7.5 7.5 0 0 1 0 11" /></svg>
+          </button>
+          <button type="button" class="icon" id="mic" aria-pressed="false" aria-label="Speak" title="Speak">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" /><path d="M12 18v3" /></svg>
+          </button>
+          <button type="submit" class="send" id="send" aria-label="Send" title="Send">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="M6 11l6-6 6 6" /></svg>
+          </button>
+        </div>
+        <p class="hint" id="hint"></p>
+      </form>
+    </div>
+  </body>
+</html>
