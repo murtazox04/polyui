@@ -50,8 +50,13 @@ data class PolyuiHello(
 class PolyuiCore(
     helloJson: String,
     val allowHttp: Boolean = false,
+    catalogsJson: String? = null,
 ) : AutoCloseable {
-    constructor(hello: PolyuiHello = PolyuiHello(), allowHttp: Boolean = false) : this(hello.jsonText(), allowHttp)
+    constructor(
+        hello: PolyuiHello = PolyuiHello(),
+        allowHttp: Boolean = false,
+        catalogs: List<JsonObject> = emptyList(),
+    ) : this(hello.jsonText(), allowHttp, catalogs.takeIf { it.isNotEmpty() }?.let { JsonArray(it).toString() })
 
     val hello: String = helloJson
     private val lock = Any()
@@ -59,7 +64,17 @@ class PolyuiCore(
 
     init {
         val slot = arrayOfNulls<ByteArray>(1)
-        val created = PolyuiNative.clientNew(bytes(helloJson, "client_new", "the hello"), allowHttp, slot)
+        val created =
+            if (catalogsJson == null) {
+                PolyuiNative.clientNew(bytes(helloJson, "client_new", "the hello"), allowHttp, slot)
+            } else {
+                PolyuiNative.clientNewWithCatalogs(
+                    bytes(helloJson, "client_new_with_catalogs", "the hello"),
+                    bytes(catalogsJson, "client_new_with_catalogs", "the catalog list"),
+                    allowHttp,
+                    slot,
+                )
+            }
         if (created == 0L) {
             throw PolyuiException(slot.message() ?: "PolyUI could not start a client")
         }

@@ -32,7 +32,7 @@ cd android
 ./gradlew :example:installDebug
 ```
 
-Gradle runs `scripts/build-rust.sh android` before the CMake step. The script adds the Rust targets it needs (`aarch64-linux-android`, `armv7-linux-androideabi`, `x86_64-linux-android`), runs `cargo ndk --platform 26` with the `lite` feature (the core's `client-lite` build), and leaves `libpolyui_ffi.a` in the workspace `target/` folder. CMake then compiles `polyui_jni.c` and links the static library into one `libpolyui_jni.so` per ABI, with `--gc-sections` and `--exclude-libs,ALL`, so only the eight JNI entry points are exported. Set `POLYUI_FFI_FEATURES=` (empty) to build the core with default features instead.
+Gradle runs `scripts/build-rust.sh android` before the CMake step. The script adds the Rust targets it needs (`aarch64-linux-android`, `armv7-linux-androideabi`, `x86_64-linux-android`), runs `cargo ndk --platform 26` with the `lite` feature (the core's `client-lite` build), and leaves `libpolyui_ffi.a` in the workspace `target/` folder. CMake then compiles `polyui_jni.c` and links the static library into one `libpolyui_jni.so` per ABI, with `--gc-sections` and `--exclude-libs,ALL`, so only the nine JNI entry points are exported. Set `POLYUI_FFI_FEATURES=` (empty) to build the core with default features instead.
 
 The compile SDK is 37.2 because Compose UI 1.13 (from the 2026.11.01 BOM) refuses anything older. The minimum SDK is 26. Versions in use: AGP 9.5.2 with its built-in Kotlin, Kotlin 2.4.21 for the Compose compiler plugin, Gradle 9.9.2, kotlinx.serialization 1.13.0, activity-compose 1.13.0.
 
@@ -119,6 +119,20 @@ CompositionLocalProvider(LocalPolyuiViews provides views) {
 
 The context gives the node (props, `a11y`, value, children), `fire`, `setValue`, and `Child(id)` and `Children()` to draw nested components.
 
+For an extension type the core must know its catalog, or the node arrives as `Text` and the composable never runs. Pass the catalogs to `PolyuiSession` (or `PolyuiCore`) and declare them in the hello. The session then goes through `clientNewWithCatalogs` in the JNI shim and `polyui_client_new_with_catalogs` in the C ABI:
+
+```kotlin
+val acme = Json.parseToJsonElement(
+    """{"id":"acme","version":1,"types":{"Map":{"description":"A map with pins.","role":"img","props":{"title":{"kind":"string"}},"alt":"{title}"}}}""",
+).jsonObject
+val session = PolyuiSession(
+    PolyuiHello(catalogs = listOf("core@1", "chart@1", "acme@1")),
+    catalogs = listOf(acme),
+) { text -> socket.send(text) }
+```
+
+A catalog the core rejects throws a `PolyuiException` that names it, for example `an extension catalog was rejected: [0].id: "core" is reserved`. See [the iOS page](ios.md#extension-catalogs) for the rules.
+
 ### Voice
 
 `session.say(surface)` returns the core's utterances and `session.matchVoice(surface, text)` applies a spoken answer. `PolyuiSpeaker` speaks the utterances with `TextToSpeech`, sends a local `highlight` for each one as it starts, and clears it at the end. Speech recognition is not included; pass your recognizer's text to `matchVoice`.
@@ -136,10 +150,10 @@ cd android
 ./gradlew :polyui:connectedDebugAndroidTest
 ```
 
-- The JVM tests build the core and the JNI shim for the host (`scripts/build-rust.sh host`) and load that library, so they run the real Rust code without an emulator. They replay every `tests/conformance/client/*.json` fixture through the JNI bridge, compare each result with the expectation and check that every batch decodes with no unknown op. Other tests cover errors as exceptions, `null` results, text outside the Basic Multilingual Plane, NUL characters, closed clients, the surface model's identity rules, the URL check and chart hit testing. On this machine: 36 tests, 0 failures.
-- The device tests replay the same fixtures through the ARM library on an emulator, then drive the Compose renderer: every core type draws, picking an option writes the data model, the input keeps focus and text while the server patches it, a tap on a bar sends its row, the confirm sheet waits before it arms, confirming sends the nonce, cancelling sends nothing, and a custom composable replaces a built-in type. On an API 35 arm64 emulator: 10 tests, 0 failures.
+- The JVM tests build the core and the JNI shim for the host (`scripts/build-rust.sh host`) and load that library, so they run the real Rust code without an emulator. They replay every `tests/conformance/client/*.json` fixture through the JNI bridge, compare each result with the expectation and check that every batch decodes with no unknown op. Other tests cover errors as exceptions, `null` results, text outside the Basic Multilingual Plane, NUL characters, closed clients, the surface model's identity rules, the URL check and chart hit testing. `ExtensionCatalogTest` checks that an `acme:Badge2` component is `Text` without its catalog and keeps its type and props with it, and the error for a rejected catalog. On this machine: 39 tests, 0 failures.
+- The device tests replay the same fixtures through the ARM library on an emulator, then drive the Compose renderer: every core type draws, picking an option writes the data model, the input keeps focus and text while the server patches it, a tap on a bar sends its row, the confirm sheet waits before it arms, confirming sends the nonce, cancelling sends nothing, a custom composable replaces a built-in type, and an `acme:Badge2` from an extension catalog draws through a host composable. On an API 35 emulator: `SurfaceUiTest` passes all 10 of its tests. The conformance replay on the device was not run again after the extension catalog change.
 
-Kotlin sources are formatted with ktlint 1.8.0 (`ktlint_official` style, see `android/.editorconfig`) and it reports nothing.
+Kotlin sources are formatted with ktlint 1.8.0 (`ktlint_official` style, see `android/.editorconfig`). The extension catalog changes have not been checked with ktlint yet.
 
 ## The example app
 

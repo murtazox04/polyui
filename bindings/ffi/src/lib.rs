@@ -8,7 +8,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
-use polyui_core::Client;
+use polyui_core::{CatalogSet, Client};
 
 pub struct PolyuiClient {
     core: Client,
@@ -120,6 +120,19 @@ unsafe fn with_client(
     }
 }
 
+fn start_client(
+    hello: &str,
+    catalogs: CatalogSet,
+    allow_http: bool,
+) -> Result<*mut PolyuiClient, String> {
+    let core = Client::with_catalogs(hello, catalogs)
+        .map_err(|error| format!("PolyUI could not start a client from this hello: {error}"))?;
+    Ok(Box::into_raw(Box::new(PolyuiClient {
+        core: core.with_allow_http(allow_http),
+        busy: false,
+    })))
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn polyui_client_new(
     hello_json: *const c_char,
@@ -129,13 +142,30 @@ pub unsafe extern "C" fn polyui_client_new(
     unsafe {
         guarded(error_out, ptr::null_mut(), || {
             let hello = text_arg(hello_json, "client_new", "the hello")?;
-            let core = Client::new(hello).map_err(|error| {
-                format!("PolyUI could not start a client from this hello: {error}")
-            })?;
-            Ok(Box::into_raw(Box::new(PolyuiClient {
-                core: core.with_allow_http(allow_http),
-                busy: false,
-            })))
+            start_client(hello, CatalogSet::builtin().with_embed(), allow_http)
+        })
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn polyui_client_new_with_catalogs(
+    hello_json: *const c_char,
+    catalogs_json: *const c_char,
+    allow_http: bool,
+    error_out: *mut *mut c_char,
+) -> *mut PolyuiClient {
+    const CALL: &str = "client_new_with_catalogs";
+    unsafe {
+        guarded(error_out, ptr::null_mut(), || {
+            let hello = text_arg(hello_json, CALL, "the hello")?;
+            let extensions = text_arg(catalogs_json, CALL, "the catalog list")?;
+            let catalogs = CatalogSet::builtin()
+                .with_embed()
+                .with_extensions_json(extensions)
+                .map_err(|error| {
+                    format!("PolyUI {CALL}: an extension catalog was rejected: {error}")
+                })?;
+            start_client(hello, catalogs, allow_http)
         })
     }
 }

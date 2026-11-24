@@ -1,4 +1,3 @@
-#[cfg(not(feature = "client-lite"))]
 use crate::Map;
 use crate::Value;
 use std::fmt;
@@ -94,7 +93,6 @@ pub struct PropSpec {
 }
 
 impl PropSpec {
-    #[cfg(not(feature = "client-lite"))]
     pub fn from_value(value: &Value) -> Result<Self, CatalogError> {
         parse_prop(value, "")
     }
@@ -170,14 +168,12 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    #[cfg(not(feature = "client-lite"))]
     pub fn from_json(text: &str) -> Result<Self, CatalogError> {
         let value = crate::codec::read(text)
             .map_err(|error| CatalogError::new("", format!("invalid JSON: {error}")))?;
         Self::from_value(&value)
     }
 
-    #[cfg(not(feature = "client-lite"))]
     pub fn from_value(value: &Value) -> Result<Self, CatalogError> {
         let map = as_object(value, "")?;
         reject_unknown(map, "", &["id", "version", "types"])?;
@@ -224,14 +220,12 @@ impl Catalog {
     }
 }
 
-#[cfg(not(feature = "client-lite"))]
 fn as_object<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>, CatalogError> {
     value
         .as_object()
         .ok_or_else(|| CatalogError::new(path, "must be an object"))
 }
 
-#[cfg(not(feature = "client-lite"))]
 fn reject_unknown(
     map: &Map<String, Value>,
     path: &str,
@@ -243,7 +237,6 @@ fn reject_unknown(
     }
 }
 
-#[cfg(not(feature = "client-lite"))]
 fn join_path(base: &str, key: &str) -> String {
     if base.is_empty() {
         key.to_string()
@@ -252,13 +245,11 @@ fn join_path(base: &str, key: &str) -> String {
     }
 }
 
-#[cfg(not(feature = "client-lite"))]
 pub(crate) fn is_type_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_uppercase()) && chars.all(|c| c.is_ascii_alphanumeric())
 }
 
-#[cfg(not(feature = "client-lite"))]
 fn is_qualified_type_name(name: &str) -> bool {
     match name.split_once(':') {
         Some((namespace, local)) => {
@@ -272,14 +263,12 @@ fn is_qualified_type_name(name: &str) -> bool {
     }
 }
 
-#[cfg(not(feature = "client-lite"))]
 fn is_prop_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-#[cfg(not(feature = "client-lite"))]
 fn parse_type(catalog_id: &str, name: &str, value: &Value) -> Result<TypeDef, CatalogError> {
     let path = format!("types.{name}");
     if !is_type_name(name) {
@@ -365,7 +354,6 @@ fn parse_type(catalog_id: &str, name: &str, value: &Value) -> Result<TypeDef, Ca
     })
 }
 
-#[cfg(not(feature = "client-lite"))]
 fn parse_prop(value: &Value, path: &str) -> Result<PropSpec, CatalogError> {
     let map = as_object(value, path)?;
     let kind_name = map
@@ -534,7 +522,7 @@ fn parse_prop(value: &Value, path: &str) -> Result<PropSpec, CatalogError> {
         description,
     };
     if let Some(default) = &spec.default
-        && let Err(message) = crate::validate::check_literal(&spec, default)
+        && let Err(message) = default_fits(&spec, default)
     {
         return Err(CatalogError::new(
             &join_path(path, "default"),
@@ -545,6 +533,19 @@ fn parse_prop(value: &Value, path: &str) -> Result<PropSpec, CatalogError> {
 }
 
 #[cfg(not(feature = "client-lite"))]
+fn default_fits(spec: &PropSpec, default: &Value) -> Result<(), String> {
+    crate::validate::check_literal(spec, default)
+}
+
+#[cfg(feature = "client-lite")]
+fn default_fits(spec: &PropSpec, default: &Value) -> Result<(), String> {
+    if crate::fits::fits(spec, default, true) {
+        Ok(())
+    } else {
+        Err("the value is not allowed for this kind".to_string())
+    }
+}
+
 fn string_list(value: Option<&Value>, path: &str) -> Result<Vec<String>, CatalogError> {
     let items = value
         .and_then(Value::as_array)
@@ -565,7 +566,19 @@ fn string_list(value: Option<&Value>, path: &str) -> Result<Vec<String>, Catalog
     Ok(out)
 }
 
+#[cfg(any(not(feature = "client-lite"), feature = "catalog-checks"))]
+fn extension(value: &Value) -> Result<Catalog, CatalogError> {
+    Catalog::from_value(value)
+}
+
+#[cfg(all(feature = "client-lite", not(feature = "catalog-checks")))]
+fn extension(value: &Value) -> Result<Catalog, CatalogError> {
+    builtin::extension(value)
+}
+
 mod builtin {
+    #[cfg(all(feature = "client-lite", not(feature = "catalog-checks")))]
+    use super::CatalogError;
     use super::{Catalog, ChildRule, PropKind, PropSpec, TypeDef};
     use crate::{Map, Value};
 
@@ -657,7 +670,33 @@ mod builtin {
     }
 
     pub(super) fn catalog(json: &str) -> Option<Catalog> {
-        let value = crate::codec::read(json).ok()?;
+        from_value(&crate::codec::read(json).ok()?)
+    }
+
+    #[cfg(all(feature = "client-lite", not(feature = "catalog-checks")))]
+    pub(super) fn extension(value: &Value) -> Result<Catalog, CatalogError> {
+        let catalog = from_value(value)
+            .ok_or_else(|| CatalogError::new("", "needs a string id, a version and types"))?;
+        let declared = value.get("types").and_then(Value::as_object);
+        for (name, definition) in declared.into_iter().flatten() {
+            let props = definition
+                .get("props")
+                .and_then(Value::as_object)
+                .map_or(0, Map::len);
+            let read = catalog
+                .get(name)
+                .ok_or_else(|| CatalogError::new(&format!("types.{name}"), "must be an object"))?;
+            if read.props.len() != props {
+                return Err(CatalogError::new(
+                    &format!("types.{name}.props"),
+                    "has a prop with an unknown kind",
+                ));
+            }
+        }
+        Ok(catalog)
+    }
+
+    fn from_value(value: &Value) -> Option<Catalog> {
         let id = value.get("id")?.as_str()?;
         let types = value
             .get("types")?
@@ -741,6 +780,29 @@ impl CatalogSet {
         }
         self.catalogs.push(catalog);
         Ok(self)
+    }
+
+    pub fn with_extensions_json(self, text: &str) -> Result<Self, CatalogError> {
+        let value = crate::codec::read(text)
+            .map_err(|error| CatalogError::new("", format!("invalid JSON: {error}")))?;
+        let items = value
+            .as_array()
+            .ok_or_else(|| CatalogError::new("", "must be a list of catalogs"))?;
+        items
+            .iter()
+            .enumerate()
+            .try_fold(self, |set, (index, item)| {
+                extension(item)
+                    .and_then(|catalog| set.with(catalog))
+                    .map_err(|error| {
+                        let path = if error.path.is_empty() {
+                            format!("[{index}]")
+                        } else {
+                            format!("[{index}].{}", error.path)
+                        };
+                        CatalogError::new(&path, error.message)
+                    })
+            })
     }
 
     pub fn catalogs(&self) -> &[Catalog] {
@@ -905,6 +967,32 @@ mod tests {
         let reserved =
             Catalog::from_value(&json!({ "id": "core", "version": 1, "types": {} })).unwrap();
         assert!(set.with(reserved).is_err());
+    }
+
+    #[test]
+    fn extension_lists_are_read_and_checked() {
+        let acme = r#"[{ "id": "acme", "version": 1, "types": { "Badge2": { "description": "x", "role": "status", "props": { "text": { "kind": "string", "required": true } } } } }]"#;
+        let set = CatalogSet::builtin().with_extensions_json(acme).unwrap();
+        assert_eq!(set.get("acme:Badge2").unwrap().role, "status");
+        let failures = [
+            ("{", ""),
+            ("{}", ""),
+            (
+                r#"[{ "id": "acme", "version": 1, "types": { "badge": {} } }]"#,
+                "[0].types.badge",
+            ),
+            (r#"[{ "id": "core", "version": 1, "types": {} }]"#, "[0].id"),
+            (
+                r#"[{ "id": "acme", "version": 1, "types": {} }, { "id": "acme", "version": 1, "types": {} }]"#,
+                "[1].id",
+            ),
+        ];
+        for (input, path) in failures {
+            let error = CatalogSet::builtin()
+                .with_extensions_json(input)
+                .unwrap_err();
+            assert_eq!(error.path, path, "{input}: {error}");
+        }
     }
 
     #[test]

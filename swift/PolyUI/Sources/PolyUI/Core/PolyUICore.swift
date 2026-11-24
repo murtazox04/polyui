@@ -78,9 +78,15 @@ public final class PolyUICore {
     private let native: NativeClient
     public let hello: String
 
-    public init(helloJSON: String, allowHTTP: Bool = false) throws {
+    public init(helloJSON: String, catalogsJSON: String? = nil, allowHTTP: Bool = false) throws {
         var error: UnsafeMutablePointer<CChar>?
-        let handle = helloJSON.withCString { polyui_client_new($0, allowHTTP, &error) }
+        let handle = helloJSON.withCString { hello in
+            if let catalogsJSON {
+                catalogsJSON.withCString { polyui_client_new_with_catalogs(hello, $0, allowHTTP, &error) }
+            } else {
+                polyui_client_new(hello, allowHTTP, &error)
+            }
+        }
         guard let handle else {
             throw PolyUIError.core(Self.consume(error) ?? "PolyUI could not start a client")
         }
@@ -88,8 +94,12 @@ public final class PolyUICore {
         hello = helloJSON
     }
 
-    public convenience init(hello: PolyUIHello = PolyUIHello(), allowHTTP: Bool = false) throws {
-        try self.init(helloJSON: try hello.jsonText(), allowHTTP: allowHTTP)
+    public convenience init(hello: PolyUIHello = PolyUIHello(), catalogs: [JSONValue] = [], allowHTTP: Bool = false) throws {
+        try self.init(
+            helloJSON: try hello.jsonText(),
+            catalogsJSON: catalogs.isEmpty ? nil : try JSONValue.array(catalogs).jsonText(),
+            allowHTTP: allowHTTP
+        )
     }
 
     public func receiveJSON(_ message: String) throws -> String {

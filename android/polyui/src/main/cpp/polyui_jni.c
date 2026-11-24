@@ -120,6 +120,27 @@ JNIEXPORT jlong JNICALL POLYUI_JNI(clientNew)(JNIEnv *env, jclass type, jbyteArr
     return (jlong)(intptr_t)client;
 }
 
+JNIEXPORT jlong JNICALL POLYUI_JNI(clientNewWithCatalogs)(JNIEnv *env, jclass type, jbyteArray hello,
+                                                           jbyteArray catalogs, jboolean allow_http,
+                                                           jobjectArray slot) {
+    (void)type;
+    jbyteArray inputs[] = {hello, catalogs};
+    char *texts[2];
+    if (!copy_all(env, inputs, texts, 2)) {
+        return 0;
+    }
+    char *error = NULL;
+    PolyuiClient *client =
+        polyui_client_new_with_catalogs(texts[0], texts[1], allow_http == JNI_TRUE, &error);
+    free_all(texts, 2);
+    if (client == NULL) {
+        store_error(env, slot, error);
+        return 0;
+    }
+    polyui_string_free(error);
+    return (jlong)(intptr_t)client;
+}
+
 JNIEXPORT jbyteArray JNICALL POLYUI_JNI(receive)(JNIEnv *env, jclass type, jlong handle,
                                                   jbyteArray message, jobjectArray slot) {
     (void)type;

@@ -18,8 +18,9 @@ class PolyuiSession(
     constructor(
         hello: PolyuiHello = PolyuiHello(),
         allowHttp: Boolean = false,
+        catalogs: List<JsonObject> = emptyList(),
         send: (String) -> Unit = {},
-    ) : this(PolyuiCore(hello, allowHttp), send)
+    ) : this(PolyuiCore(hello, allowHttp, catalogs), send)
 
     val allowHttp: Boolean
         get() = core.allowHttp

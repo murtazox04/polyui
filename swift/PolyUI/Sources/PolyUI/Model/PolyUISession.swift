@@ -18,8 +18,13 @@ public final class PolyUISession {
         self.send = send
     }
 
-    public convenience init(hello: PolyUIHello = PolyUIHello(), allowHTTP: Bool = false, send: @escaping (String) -> Void = { _ in }) throws {
-        self.init(core: try PolyUICore(hello: hello, allowHTTP: allowHTTP), allowHTTP: allowHTTP, send: send)
+    public convenience init(
+        hello: PolyUIHello = PolyUIHello(),
+        catalogs: [JSONValue] = [],
+        allowHTTP: Bool = false,
+        send: @escaping (String) -> Void = { _ in }
+    ) throws {
+        self.init(core: try PolyUICore(hello: hello, catalogs: catalogs, allowHTTP: allowHTTP), allowHTTP: allowHTTP, send: send)
     }
 
     public func surface(_ id: String) -> PolyUISurfaceModel {

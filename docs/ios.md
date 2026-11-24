@@ -36,14 +36,15 @@ Measured on this machine with the release profile (fat LTO, one codegen unit), R
 | xcframework on disk, both slices | 5.4 MB | not measured |
 | added to a stripped arm64 iOS binary that calls all nine functions | 627 kB | 682 kB |
 
-The last row is the number that matters for an app: a minimal C program linked with `-dead_strip` against the library, minus the same program without it. The `lite` feature turns on the core's `client-lite` build, the same one the wasm package uses, and saves about 55 kB. Building with `opt-level = "z"` made the text segment smaller but the linked file larger, so the script keeps the release defaults. Set `POLYUI_FFI_FEATURES=` (empty) to build with default features instead.
+These numbers were measured before `polyui_client_new_with_catalogs` was added. That function pulls the core's catalog checker into the `lite` build, and the sizes have not been measured again since. The last row is the number that matters for an app: a minimal C program linked with `-dead_strip` against the library, minus the same program without it. The `lite` feature turns on the core's `client-lite` build, the same one the wasm package uses, and saves about 55 kB. Building with `opt-level = "z"` made the text segment smaller but the linked file larger, so the script keeps the release defaults. Set `POLYUI_FFI_FEATURES=` (empty) to build with default features instead.
 
 ## The C ABI
 
-The header is `bindings/ffi/include/polyui.h`. It mirrors the five calls of the wasm binding plus the two voice helpers. Every argument and every result is UTF-8 JSON text, so any language with a C FFI (Swift, Dart, Kotlin through JNI) can use it without generated bindings.
+The header is `bindings/ffi/include/polyui.h`. It mirrors the calls of the wasm binding plus the two voice helpers. Every argument and every result is UTF-8 JSON text, so any language with a C FFI (Swift, Dart, Kotlin through JNI) can use it without generated bindings.
 
 ```c
 PolyuiClient *polyui_client_new(const char *hello_json, bool allow_http, char **error_out);
+PolyuiClient *polyui_client_new_with_catalogs(const char *hello_json, const char *catalogs_json, bool allow_http, char **error_out);
 char *polyui_client_receive(PolyuiClient *client, const char *message_json, char **error_out);
 char *polyui_client_set_value(PolyuiClient *client, const char *surface, const char *path, const char *value_json, char **error_out);
 char *polyui_client_fire(PolyuiClient *client, const char *surface, const char *component, const char *prop, const char *detail_json, char **error_out);
@@ -61,6 +62,21 @@ What each call returns is described in [the renderer contract](../spec/renderer.
 - `set_value` and `fire` check that the value or detail is valid JSON and fail with an error if it is not. `receive` does not fail on a bad message: it returns a batch whose `send` list holds the `ui.error` to send back, because that is protocol behavior, not a programming error.
 - `allow_http` lets `Image` URLs use plain `http`. Leave it false outside development.
 
+### Extension catalogs
+
+`polyui_client_new` knows only the built-in catalogs (`core`, `chart`, `embed`). A component of any other type, such as `acme:Map`, reaches the renderer as a plain `Text` with its alt text, and the core reports `unknown_component` to the server. To render extension types, start the client with `polyui_client_new_with_catalogs` and pass your catalogs as a JSON array, each item in the same format as `spec/catalogs/core.json`:
+
+```c
+const char *catalogs =
+    "[{\"id\":\"acme\",\"version\":1,\"types\":{\"Badge2\":{\"description\":\"A status badge.\","
+    "\"role\":\"status\",\"props\":{\"text\":{\"kind\":\"string\",\"required\":true}},\"alt\":\"{text}\"}}}]";
+PolyuiClient *client = polyui_client_new_with_catalogs(hello, catalogs, false, &error);
+```
+
+- The hello must also declare each catalog (`"catalogs": ["core@1", "acme@1"]`). The core keeps only the catalogs the hello declares, so a catalog you pass but do not declare is dropped and its types still arrive as `Text`.
+- The core checks every catalog with the same rules the server uses (`Catalog::from_value`): ids, type and prop names, prop kinds, defaults that do not fit their prop. A reserved id (`core`, `chart`, `embed`) or the same id twice is also refused. On any problem the call returns null and the error names the catalog by its index, for example `PolyUI client_new_with_catalogs: an extension catalog was rejected: [0].types.badge: type names must be PascalCase`.
+- `"[]"` gives the same client as `polyui_client_new`.
+
 ### Ownership
 
 - Every non-null `char *` the library returns, including the one written to `*error_out`, belongs to the caller. Free it exactly once with `polyui_string_free`. Do not free it with `free()`; it was allocated by Rust.
@@ -76,7 +92,7 @@ Each call that can fail takes `char **error_out` as its last argument.
 - On failure it returns null and, if `error_out` is not null, sets `*error_out` to a message you must free.
 - `error_out` itself may be null if you do not want the message.
 
-Failures are: a null client or a null required argument, text that is not valid UTF-8, invalid JSON in a value or detail, a hello the core rejects, and a panic inside the core.
+Failures are: a null client or a null required argument, text that is not valid UTF-8, invalid JSON in a value or detail, a hello the core rejects, an extension catalog the core rejects, and a panic inside the core.
 
 ### Panics and threads
 
@@ -86,9 +102,9 @@ A client is not thread safe. Calls on one client must not overlap; serialize the
 
 ### How the ABI is tested
 
-- `cargo test -p polyui-ffi` and `cargo test -p polyui-ffi --features lite` replay every `tests/conformance/client/*.json` fixture through the C functions and check null pointers, invalid UTF-8, bad JSON, the error slot, poisoning after a panic, deep and very large inputs, and clients on several threads.
+- `cargo test -p polyui-ffi` and `cargo test -p polyui-ffi --features lite` replay every `tests/conformance/client/*.json` fixture through the C functions and check null pointers, invalid UTF-8, bad JSON, the error slot, poisoning after a panic, deep and very large inputs, and clients on several threads. They also check that an `acme:Badge2` component keeps its type and props only when its catalog is passed, and that each kind of bad catalog gives its own error.
 - `cargo +nightly miri test -p polyui-ffi` runs the same tests under Miri, except the one with multi-megabyte inputs, which is too slow there. Miri reports no undefined behavior.
-- `bindings/ffi/tests/c/run.sh` builds a C program with clang that calls every function, once with AddressSanitizer and UndefinedBehaviorSanitizer and once under macOS `leaks`, and checks that the header also compiles as C++.
+- `bindings/ffi/tests/c/run.sh` builds a C program with clang that calls every function, including `polyui_client_new_with_catalogs`, once with AddressSanitizer and UndefinedBehaviorSanitizer and once under macOS `leaks`, and checks that the header also compiles as C++.
 
 ## The Swift package
 
@@ -157,6 +173,21 @@ PolyUISurfaceView(session: session, surface: "s1")
 ```
 
 The context gives the node (props, `a11y`, value, children), `fire`, `setValue`, and `children` to draw nested components.
+
+For an extension type the core must know its catalog, or the node arrives as `Text` and the custom view never runs. Pass the catalogs when you make the session (or `PolyUICore`), and declare them in the hello:
+
+```swift
+let acme: JSONValue = [
+    "id": "acme", "version": 1,
+    "types": ["Map": ["description": "A map with pins.", "role": "img", "props": ["title": ["kind": "string"]], "alt": "{title}"]],
+]
+let session = try PolyUISession(
+    hello: PolyUIHello(catalogs: ["core@1", "chart@1", "acme@1"]),
+    catalogs: [acme]
+) { text in socket.send(text) }
+```
+
+A catalog the core rejects throws `PolyUIError.core` with the reason. `ExtensionCatalogTests` renders an `acme:Badge2` this way through a registered view.
 
 ### Voice
 

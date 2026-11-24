@@ -14,6 +14,8 @@
 - [Embedding MCP Apps](docs/embed.md)
 - [Platforms](docs/platforms.md)
 - [iOS](docs/ios.md)
+- [Android](docs/android.md)
+- [Flutter](docs/flutter.md)
 
 # Reference
 

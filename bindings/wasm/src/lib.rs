@@ -1,6 +1,6 @@
-use polyui_core::Client as Core;
 #[cfg(target_family = "wasm")]
 use polyui_core::json_error;
+use polyui_core::{CatalogSet, Client as Core};
 use wasm_bindgen::prelude::*;
 
 #[cfg(not(target_family = "wasm"))]
@@ -36,7 +36,24 @@ pub struct Client {
 impl Client {
     #[wasm_bindgen(constructor)]
     pub fn new(hello_json: &str) -> Result<Client, JsError> {
-        Core::new(hello_json)
+        Self::start(hello_json, CatalogSet::builtin().with_embed())
+    }
+
+    #[wasm_bindgen(js_name = withCatalogs)]
+    pub fn with_catalogs(hello_json: &str, catalogs_json: &str) -> Result<Client, JsError> {
+        let catalogs = CatalogSet::builtin()
+            .with_embed()
+            .with_extensions_json(catalogs_json)
+            .map_err(|error| {
+                JsError::new(&format!(
+                    "PolyUI withCatalogs: an extension catalog was rejected: {error}"
+                ))
+            })?;
+        Self::start(hello_json, catalogs)
+    }
+
+    fn start(hello_json: &str, catalogs: CatalogSet) -> Result<Client, JsError> {
+        Core::with_catalogs(hello_json, catalogs)
             .map(|core| Client { core })
             .map_err(|error| {
                 JsError::new(&format!(

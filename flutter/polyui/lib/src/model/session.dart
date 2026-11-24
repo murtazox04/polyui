@@ -13,10 +13,11 @@ class PolyuiSession extends ChangeNotifier {
 
   factory PolyuiSession.start({
     PolyuiHello hello = const PolyuiHello(),
+    List<Map<String, Object?>> catalogs = const [],
     bool allowHttp = false,
     PolyuiSend? send,
   }) => PolyuiSession(
-    PolyuiCore.fromHello(hello, allowHttp: allowHttp),
+    PolyuiCore.fromHello(hello, allowHttp: allowHttp, catalogs: catalogs),
     send: send,
   );
 

@@ -20,6 +20,14 @@ internal object PolyuiNative {
     ): Long
 
     @JvmStatic
+    external fun clientNewWithCatalogs(
+        hello: ByteArray,
+        catalogs: ByteArray,
+        allowHttp: Boolean,
+        error: Array<ByteArray?>,
+    ): Long
+
+    @JvmStatic
     external fun receive(
         client: Long,
         message: ByteArray,

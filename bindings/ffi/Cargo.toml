@@ -15,7 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 doctest = false
 
 [features]
-lite = ["polyui-core/client-lite"]
+lite = ["polyui-core/client-lite", "polyui-core/catalog-checks"]
 
 [dependencies]
 polyui-core = { path = "../../crates/polyui-core", default-features = false }

@@ -30,6 +30,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -191,6 +192,22 @@ class SurfaceUiTest {
     }
 
     @Test
+    fun extensionCatalogTypesDrawThroughAHostComposable() {
+        val acme = Json.parseToJsonElement(ACME_CATALOG).jsonObject
+        val hello = PolyuiHello(catalogs = listOf("core@1", "acme@1"), locale = "en")
+        val extended = PolyuiSession(hello, catalogs = listOf(acme))
+        val views = PolyuiViewRegistry().with("acme:Badge2") { context -> Text("acme ${context.node.string("text")}") }
+        rule.setContent {
+            CompositionLocalProvider(LocalPolyuiViews provides views, LocalPolyuiReducedMotion provides true) {
+                PolyuiSurface(extended, "s1")
+            }
+        }
+        rule.runOnIdle { extended.receive(ACME_OPEN) }
+        rule.onNodeWithText("acme Paid").assertExists()
+        extended.close()
+    }
+
+    @Test
     fun highlightMarksOneNode() {
         show(EVERY_TYPE)
         rule.runOnIdle { session.highlight("s1", "due") }
@@ -201,6 +218,11 @@ class SurfaceUiTest {
     private fun hasParentTag(id: String) = hasAnyAncestor(hasTestTag(PolyuiTestTags.component(id)))
 
     private companion object {
+        const val ACME_CATALOG =
+            """{"id":"acme","version":1,"types":{"Badge2":{"description":"A status badge.","role":"status","props":{"text":{"kind":"string","required":true}},"alt":"{text}"}}}"""
+        const val ACME_OPEN =
+            """{"v":1,"t":"ui.open","surface":"s1","seq":1,"root":"badge","components":[{"id":"badge","type":"acme:Badge2","props":{"text":"Paid"}}],"data":{}}"""
+
         val EVERY_TYPE =
             """
             {"v":1,"t":"ui.open","surface":"s1","seq":1,"root":"card","components":[

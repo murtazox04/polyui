@@ -140,6 +140,46 @@ PolyuiSurface(
 
 The `PolyuiComponentContext` gives the node (props, `a11y`, value, children), `fire`, `setValue`, `child(id)` and `children` for nested components.
 
+### Extension types
+
+A builder for an extension type such as `acme:Map` only runs if the core knows that type. Pass the catalogs to `PolyuiSession.start` (or `PolyuiCore`) and declare them in the hello. The session then uses `polyui_client_new_with_catalogs` from the C ABI:
+
+```dart
+const acme = <String, Object?>{
+  'id': 'acme',
+  'version': 1,
+  'types': {
+    'Map': {
+      'description': 'A map with pins.',
+      'role': 'img',
+      'props': {'title': {'kind': 'string'}},
+      'alt': '{title}',
+    },
+  },
+};
+
+final session = PolyuiSession.start(
+  hello: const PolyuiHello(catalogs: ['core@1', 'chart@1', 'acme@1']),
+  catalogs: const [acme],
+  send: socket.add,
+);
+```
+
+```dart
+PolyuiSurface(
+  session: session,
+  surface: 's1',
+  builders: {
+    'acme:Map': (context, component) => MapCard(
+      title: component.node.string('title'),
+      onPin: (pin) => component.fire('on_select', detail: {'pin': pin}),
+    ),
+  },
+)
+```
+
+Without the catalog, or without `acme@1` in the hello, the component arrives as `Text` with its alt text and the core sends `unknown_component`. A catalog the core rejects (bad names, unknown prop kinds, a default that does not fit, a reserved or repeated id) throws a `PolyuiException` that names it, for example `an extension catalog was rejected: [0].id: "core" is reserved`. See [the iOS page](ios.md#extension-catalogs) for the C side.
+
 ## Tests
 
 ```sh
@@ -154,9 +194,10 @@ The first `flutter test` runs the build hook for the host and compiles the core,
 
 - `test/conformance_test.dart` replays every `tests/conformance/client/*.json` fixture through the real Rust core on the host, compares each raw result with the fixture, then decodes it into the Dart types and compares again. All 15 fixtures pass.
 - `test/components_test.dart` draws each core type and checks text, colors, layout at two widths and at 2.5x text, semantics, the `$bind` echo, missing required props, patches that change a type, close, highlight, reduced motion, theming and custom builders.
+- `test/extension_catalog_test.dart` shows that an `acme:Badge2` component falls back to `Text` without its catalog, and with it reaches a custom builder with its props and no `unknown_component` error. It also checks the error for a rejected catalog.
 - `test/interaction_test.dart` checks that typing keeps focus and caret through the core's echo, a server patch of the same input, a server value change while focused, and a late echo; chart taps on the bills scene (a real `polyui-chart` scene) and the semantics tap on a hit; the dashboard grid at two widths; and the confirm sheet: opened outside the surface, disabled for 400 ms, the nonce sent on confirm, cancel, expiry, removal on close, and that `PolyuiTheme` does not reach it.
 
-On this machine `flutter test` passes all 51 tests, and `dart analyze` reports no issues for the package and the example.
+On this machine `flutter test` passes all 54 tests, and `flutter analyze` reports no issues.
 
 ## The example app
 
@@ -181,7 +222,6 @@ The screenshots were taken on an iPhone 17 simulator running iOS 27.0, with `sel
 ## What is not done yet
 
 - Android has not been built or run. The hook's cargo-ndk path and the APK layout above are untested.
-- Extension catalogs cannot reach a Flutter app. The C ABI only exposes `Client::new` with the built-in catalogs, so a type like `acme:Map` arrives as `Text` with its alt and a `ui.error`, and a custom builder for it never runs. Builders do work for built-in types. Fixing this needs a new C function that takes extra catalogs, for example `polyui_client_new_with_catalogs`.
 - No web content for `embed:Embed`. It shows its title.
 - No speech output or recognition. `session.say` and `session.matchVoice` return the core's results; speaking them is up to the app.
 - The example has no live connection to `polyui serve`, only the replay.

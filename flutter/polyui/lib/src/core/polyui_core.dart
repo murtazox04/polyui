@@ -56,14 +56,18 @@ typedef NativeCall =
     );
 
 final class PolyuiCore implements Finalizable {
-  PolyuiCore(this.hello, {this.allowHttp = false}) {
+  PolyuiCore(this.hello, {this.allowHttp = false, this.catalogs = const []}) {
     final created = using((arena) {
       final error = arena<Pointer<Utf8>>()..value = nullptr;
-      final client = polyuiClientNew(
-        nativeText(hello, arena, 'the hello'),
-        allowHttp,
-        error,
-      );
+      final helloText = nativeText(hello, arena, 'the hello');
+      final client = catalogs.isEmpty
+          ? polyuiClientNew(helloText, allowHttp, error)
+          : polyuiClientNewWithCatalogs(
+              helloText,
+              nativeText(jsonEncode(catalogs), arena, 'the catalog list'),
+              allowHttp,
+              error,
+            );
       if (client == nullptr) {
         throw PolyuiException(
           takeText(error.value) ?? 'PolyUI could not start a client',
@@ -76,8 +80,11 @@ final class PolyuiCore implements Finalizable {
     finalizer.attach(this, created.cast(), detach: this);
   }
 
-  PolyuiCore.fromHello(PolyuiHello hello, {bool allowHttp = false})
-    : this(hello.jsonText(), allowHttp: allowHttp);
+  PolyuiCore.fromHello(
+    PolyuiHello hello, {
+    bool allowHttp = false,
+    List<Map<String, Object?>> catalogs = const [],
+  }) : this(hello.jsonText(), allowHttp: allowHttp, catalogs: catalogs);
 
   static final NativeFinalizer finalizer = NativeFinalizer(
     Native.addressOf<
@@ -88,6 +95,7 @@ final class PolyuiCore implements Finalizable {
 
   final String hello;
   final bool allowHttp;
+  final List<Map<String, Object?>> catalogs;
 
   @internal
   late Pointer<PolyuiClientHandle> handle;

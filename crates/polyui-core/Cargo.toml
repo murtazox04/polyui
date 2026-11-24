@@ -13,6 +13,7 @@ stream = []
 tools = []
 embed = ["dep:base64"]
 client-lite = ["dep:zmij"]
+catalog-checks = []
 
 [dependencies]
 serde = { workspace = true }

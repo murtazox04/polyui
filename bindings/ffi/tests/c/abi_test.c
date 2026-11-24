@@ -30,6 +30,19 @@ static const char *open_message =
     "{\"id\":\"pay\",\"type\":\"Button\",\"props\":{\"label\":\"Pay\",\"tone\":\"primary\","
     "\"on_press\":{\"action_id\":\"act_pay\",\"confirm\":true,\"with\":[\"/phone\"]}}}],\"data\":{}}";
 
+static const char *acme_hello =
+    "{\"v\":1,\"t\":\"hello\",\"client\":{\"name\":\"c-test\",\"version\":\"1\"},"
+    "\"catalogs\":[\"core@1\",\"acme@1\"],\"modalities\":[\"screen\"],\"locale\":\"en\"}";
+
+static const char *acme_catalogs =
+    "[{\"id\":\"acme\",\"version\":1,\"types\":{\"Badge2\":{\"description\":\"A status badge.\","
+    "\"role\":\"status\",\"props\":{\"text\":{\"kind\":\"string\",\"required\":true}},"
+    "\"alt\":\"{text}\"}}}]";
+
+static const char *acme_open =
+    "{\"v\":1,\"t\":\"ui.open\",\"surface\":\"s2\",\"seq\":1,\"root\":\"b\",\"components\":["
+    "{\"id\":\"b\",\"type\":\"acme:Badge2\",\"props\":{\"text\":\"Paid\"}}],\"data\":{}}";
+
 static const char *confirm_message =
     "{\"v\":1,\"t\":\"ui.confirm\",\"surface\":\"s1\",\"action_id\":\"act_pay\",\"nonce\":\"n_1\","
     "\"title\":\"Pay\",\"expires_ms\":60000}";
@@ -109,6 +122,26 @@ int main(void) {
     check(bad_text == NULL, "invalid UTF-8 gives no result");
     check(contains(error, "not valid UTF-8"), "invalid UTF-8 is named");
     polyui_string_free(error);
+
+    PolyuiClient *plain = polyui_client_new(acme_hello, false, &error);
+    char *as_text = polyui_client_receive(plain, acme_open, &error);
+    check(contains(as_text, "\"type\":\"Text\""), "without its catalog an extension type falls back to Text");
+    polyui_string_free(as_text);
+    polyui_client_free(plain);
+
+    PolyuiClient *extended = polyui_client_new_with_catalogs(acme_hello, acme_catalogs, false, &error);
+    check(extended != NULL && error == NULL, "client_new_with_catalogs succeeds");
+    char *as_badge = polyui_client_receive(extended, acme_open, &error);
+    check(contains(as_badge, "\"type\":\"acme:Badge2\""), "with its catalog an extension type keeps its type");
+    check(contains(as_badge, "\"text\":\"Paid\""), "with its catalog an extension type keeps its props");
+    polyui_string_free(as_badge);
+    polyui_client_free(extended);
+
+    PolyuiClient *rejected = polyui_client_new_with_catalogs(acme_hello, "[{\"id\":\"core\",\"version\":1,\"types\":{}}]", false, &error);
+    check(rejected == NULL, "a reserved catalog id gives no client");
+    check(contains(error, "an extension catalog was rejected: [0].id"), "a reserved catalog id is named");
+    polyui_string_free(error);
+    error = NULL;
 
     polyui_string_free(NULL);
     polyui_client_free(client);

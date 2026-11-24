@@ -11,6 +11,9 @@ typedef struct PolyuiClient PolyuiClient;
 
 PolyuiClient *polyui_client_new(const char *hello_json, bool allow_http, char **error_out);
 
+PolyuiClient *polyui_client_new_with_catalogs(const char *hello_json, const char *catalogs_json,
+                                              bool allow_http, char **error_out);
+
 char *polyui_client_receive(PolyuiClient *client, const char *message_json, char **error_out);
 
 char *polyui_client_set_value(PolyuiClient *client, const char *surface, const char *path,

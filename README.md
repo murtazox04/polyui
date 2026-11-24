@@ -14,7 +14,7 @@ The demo above is the chat example replaying a canned turn in the browser with t
 - **Friendly to small models.** Components are a flat list with ids, not a nested tree, so there are no brackets to lose track of. Tool schemas are closed objects. When a call is wrong the model gets a numbered list of problems with the component id and prop, and tries again. For local models there is a grammar that blocks most mistakes while the model writes (see [Local models](docs/decode.md); not yet run against a real local model).
 - **Security first.** The model never writes markup, script, CSS or URLs that run. Private values such as account numbers are filled in on the server through `$ref` and never enter the model's context. Buttons carry sealed handles, so neither the model nor the client can change what an action does, and risky actions get a confirm sheet whose text the host writes. Each rule has named tests ([Security](docs/security.md)).
 - **Dashboards from your own data.** The model writes read-only SQL over your CSV and Parquet files, and the numbers on screen come from the query, not from the model ([Dashboards](docs/dashboards.md)).
-- **One Rust core everywhere.** Protocol types, catalog checks, bindings, `alt` and `say` text, URL rules and voice matching live in one crate. It runs as wasm in the browser and as a native module in Python and Node; a C interface for iOS is in progress. Renderers only draw.
+- **One Rust core everywhere.** Protocol types, catalog checks, bindings, `alt` and `say` text, URL rules and voice matching live in one crate. It runs as wasm in the browser, as a native module in Python and Node, and through one C interface in the iOS, Android and Flutter apps. Renderers only draw.
 
 ## How it works
 
@@ -25,7 +25,7 @@ flowchart LR
     S -- numbered problems, retry --> M
     S -- resolve refs, compile charts, seal actions --> S
     S -- ui.open, ui.patch, ui.data --> C[Client core, Rust]
-    C -- render ops --> R[Renderer: web, iOS, voice]
+    C -- render ops --> R[Renderer: web, iOS, Android, Flutter, voice]
     R -- tap or voice match --> C
     C -- ui.action with a handle --> S
     S -- confirm text from the host --> R
@@ -71,7 +71,7 @@ cargo run -p polyui -- validate surface.json
 
 ## Components
 
-Three catalogs ship with PolyUI. `core` and `chart` are on by default; `embed` only when the host turns it on. Hosts can add their own catalogs under a namespace such as `acme:InvoiceCard`.
+Three catalogs ship with PolyUI. `core` and `chart` are on by default; `embed` only when the host turns it on. Hosts can add their own catalogs under a namespace such as `acme:InvoiceCard`, and draw those types with their own view on every platform ([Platforms](docs/platforms.md#extension-catalogs)).
 
 | Component | What it is | Main props |
 |---|---|---|
@@ -97,8 +97,8 @@ Every prop, limit and default is in [The catalogs](docs/catalogs.md). Charts are
 
 | What | Result | Where it comes from |
 |---|---|---|
-| Wasm client core | 58 967 bytes brotli (168 024 raw), budget 61 440 | `bindings/wasm/build.mjs`, checked in CI |
-| Web renderer `polyui.js` | 10 922 bytes brotli, budget 12 288; CSS 3 613 bytes | `js/polyui-web/scripts/size.mjs` |
+| Wasm client core | 60 337 bytes brotli (171 756 raw), budget 61 440 | `bindings/wasm/build.mjs`, checked in CI |
+| Web renderer `polyui.js` | 10 986 bytes brotli, budget 12 288; CSS 3 613 bytes | `js/polyui-web/scripts/size.mjs` |
 | `show_ui` valid on the first try | 28 of 28 turns with tool calls, 24 of 24 with inline JSON, in English, Uzbek (Latin and Cyrillic) and Russian | [Benchmark](docs/benchmark.md), `claude-haiku-5-5`, 32 prompts, one run |
 | Mean time to first `ui.open` | 5.1 s with tool calls, 6.4 s with inline JSON | same run |
 | Cost of the 32 prompt run | $0.10 with tool calls, $0.06 inline | same run |
@@ -124,6 +124,8 @@ The same pages are on the [documentation site](https://murtazox04.github.io/poly
 | [Embedding MCP Apps](docs/embed.md) | | |
 | [Platforms](docs/platforms.md) | | |
 | [iOS](docs/ios.md) | | |
+| [Android](docs/android.md) | | |
+| [Flutter](docs/flutter.md) | | |
 
 ## Platforms
 
@@ -132,15 +134,16 @@ The same pages are on the [documentation site](https://murtazox04.github.io/poly
 | Rust server (`polyui-server`, the `polyui` command) | Done |
 | Web: wasm core and the `polyui-web` renderer | Done |
 | Python (PyO3) and Node (napi-rs) bindings | Done |
-| iOS: C interface over the core and a SwiftUI renderer | In progress |
-| Android (Compose) | Planned |
-| Flutter | Planned |
+| iOS: C interface over the core and a SwiftUI renderer | Done, tested on a simulator |
+| Flutter | Done on iOS, run on a simulator; the Android build of the Flutter package has not been run |
+| Android: JNI shim and a Compose renderer | Done, tested on an API 35 emulator |
 
-Screenshots from the iOS example app, which is still in progress ([iOS](docs/ios.md)):
+The same bills turn in the iOS, Flutter and Android example apps, each drawn by its own renderer from the same core. More screenshots are in `docs/images` (`ios-*.png`, `flutter-*.png`, `android-*.png`) and on the [Platforms](docs/platforms.md) page.
 
 <p>
-<img src="docs/images/ios-light.png" width="260" alt="The iOS example app in light mode, with the July bar selected">
-<img src="docs/images/ios-dark.png" width="260" alt="The iOS example app in dark mode after paying">
+<img src="docs/images/ios-light.png" width="200" alt="The iOS example app in light mode, with the July bar selected">
+<img src="docs/images/flutter-light.png" width="200" alt="The Flutter example app in light mode, with the July bar selected">
+<img src="docs/images/android-light.png" width="200" alt="The Android example app in light mode, with the July bar selected">
 </p>
 
 ## License

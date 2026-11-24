@@ -6,10 +6,12 @@ import 'package:polyui/polyui.dart';
 class Harness {
   Harness({
     List<String> catalogs = const ['core@1', 'chart@1', 'embed@1'],
+    List<Map<String, Object?>> extensions = const [],
     bool allowHttp = false,
   }) {
     session = PolyuiSession.start(
       hello: PolyuiHello(catalogs: catalogs, locale: 'en'),
+      catalogs: extensions,
       allowHttp: allowHttp,
       send: sent.add,
     );

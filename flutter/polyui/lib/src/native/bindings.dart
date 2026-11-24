@@ -19,6 +19,21 @@ external Pointer<PolyuiClientHandle> polyuiClientNew(
 );
 
 @Native<
+  Pointer<PolyuiClientHandle> Function(
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    Bool,
+    ErrorSlot,
+  )
+>(symbol: 'polyui_client_new_with_catalogs')
+external Pointer<PolyuiClientHandle> polyuiClientNewWithCatalogs(
+  Pointer<Utf8> hello,
+  Pointer<Utf8> catalogs,
+  bool allowHttp,
+  ErrorSlot error,
+);
+
+@Native<
   Pointer<Utf8> Function(Pointer<PolyuiClientHandle>, Pointer<Utf8>, ErrorSlot)
 >(symbol: 'polyui_client_receive')
 external Pointer<Utf8> polyuiClientReceive(

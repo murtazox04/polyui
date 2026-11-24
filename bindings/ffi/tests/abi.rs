@@ -5,8 +5,8 @@ use std::ptr;
 
 use polyui_ffi::{
     PolyuiClient, polyui_client_confirm, polyui_client_fire, polyui_client_free,
-    polyui_client_match_voice, polyui_client_new, polyui_client_receive, polyui_client_say,
-    polyui_client_set_value, polyui_string_free,
+    polyui_client_match_voice, polyui_client_new, polyui_client_new_with_catalogs,
+    polyui_client_receive, polyui_client_say, polyui_client_set_value, polyui_string_free,
 };
 use serde_json::Value;
 
@@ -47,6 +47,19 @@ impl Session {
         let hello = c_text(hello);
         let mut error = ptr::null_mut();
         let client = unsafe { polyui_client_new(hello.as_ptr(), false, &mut error) };
+        if client.is_null() {
+            return Err(take(error).expect("a null client always has an error"));
+        }
+        assert!(error.is_null());
+        Ok(Self { client })
+    }
+
+    fn with_catalogs(hello: &str, catalogs: &str) -> Result<Self, String> {
+        let (hello, catalogs) = (c_text(hello), c_text(catalogs));
+        let mut error = ptr::null_mut();
+        let client = unsafe {
+            polyui_client_new_with_catalogs(hello.as_ptr(), catalogs.as_ptr(), false, &mut error)
+        };
         if client.is_null() {
             return Err(take(error).expect("a null client always has an error"));
         }
@@ -376,4 +389,108 @@ fn clients_are_independent_and_can_move_between_threads() {
             "{said}"
         );
     }
+}
+
+const ACME_HELLO: &str = r#"{"v":1,"t":"hello","client":{"name":"ffi-test","version":"1"},"catalogs":["core@1","acme@1"],"modalities":["screen"],"locale":"en"}"#;
+
+const ACME_CATALOGS: &str = r#"[{"id":"acme","version":1,"types":{"Badge2":{"description":"A status badge.","role":"status","props":{"text":{"kind":"string","required":true},"tone":{"kind":"enum","values":["good","bad"],"default":"good"}},"alt":"{text}","say":"{text}"}}}]"#;
+
+const ACME_OPEN: &str = r#"{"v":1,"t":"ui.open","surface":"s1","seq":1,"root":"card","components":[{"id":"card","type":"Card","props":{"title":"Bill"},"children":["badge"]},{"id":"badge","type":"acme:Badge2","props":{"text":"Paid"}}],"data":{}}"#;
+
+fn op_for(batch: &str, id: &str) -> Value {
+    let batch: Value = serde_json::from_str(batch).expect("batch is JSON");
+    batch["ops"]
+        .as_array()
+        .expect("ops")
+        .iter()
+        .find(|op| op["id"] == id)
+        .cloned()
+        .unwrap_or_else(|| panic!("no op for {id} in {batch}"))
+}
+
+#[test]
+fn extension_types_render_only_when_their_catalog_is_passed() {
+    let plain = Session::new(ACME_HELLO).expect("client");
+    let fallback = op_for(&plain.receive(ACME_OPEN).expect("batch"), "badge");
+    assert_eq!(fallback["type"], "Text", "{fallback}");
+
+    let extended = Session::with_catalogs(ACME_HELLO, ACME_CATALOGS).expect("client");
+    let batch = extended.receive(ACME_OPEN).expect("batch");
+    let badge = op_for(&batch, "badge");
+    assert_eq!(badge["type"], "acme:Badge2", "{badge}");
+    assert_eq!(badge["props"]["text"], "Paid", "{badge}");
+    assert_eq!(badge["props"]["tone"], "good", "{badge}");
+    assert!(!batch.contains("unknown_component"), "{batch}");
+    assert!(extended.say("s1").expect("utterances").contains("Paid"));
+}
+
+#[test]
+fn an_empty_extension_list_matches_client_new() {
+    let plain = Session::new(HELLO).expect("client");
+    let extended = Session::with_catalogs(HELLO, "[]").expect("client");
+    let message = r#"{"v":1,"t":"ui.open","surface":"s1","seq":1,"root":"t","components":[{"id":"t","type":"Text","props":{"text":"hi"}}],"data":{}}"#;
+    assert_eq!(plain.receive(message), extended.receive(message));
+}
+
+#[test]
+fn an_undeclared_extension_catalog_is_dropped_like_the_core_does() {
+    let session = Session::with_catalogs(HELLO, ACME_CATALOGS).expect("client");
+    let fallback = op_for(&session.receive(ACME_OPEN).expect("batch"), "badge");
+    assert_eq!(fallback["type"], "Text", "{fallback}");
+}
+
+#[test]
+fn bad_extension_catalogs_are_named() {
+    let prefix = "PolyUI client_new_with_catalogs: an extension catalog was rejected: ";
+    let cases = [
+        ("{nope", "invalid JSON"),
+        (r#"{"id":"acme"}"#, "must be a list of catalogs"),
+        (
+            r#"[{"id":"acme","version":1,"types":{"badge":{"description":"x","role":"status"}}}]"#,
+            "[0].types.badge: type names must be PascalCase",
+        ),
+        (
+            r#"[{"id":"chart","version":1,"types":{}}]"#,
+            r#"[0].id: "chart" is reserved"#,
+        ),
+        (
+            r#"[{"id":"acme","version":1,"types":{}},{"id":"acme","version":1,"types":{}}]"#,
+            r#"[1].id: catalog "acme" is already in the set"#,
+        ),
+        (
+            r#"[{"id":"acme","version":1,"types":{"Badge2":{"description":"x","role":"status","props":{"tone":{"kind":"enum","values":["good"],"default":"bad"}}}}}]"#,
+            "[0].types.Badge2.props.tone.default: default does not fit the prop",
+        ),
+    ];
+    for (catalogs, expected) in cases {
+        let error = Session::with_catalogs(ACME_HELLO, catalogs)
+            .err()
+            .unwrap_or_else(|| panic!("{catalogs} was accepted"));
+        assert!(error.starts_with(prefix), "{error}");
+        assert!(error.contains(expected), "{catalogs}: {error}");
+    }
+}
+
+#[test]
+fn a_bad_hello_is_still_reported_with_catalogs() {
+    let error = Session::with_catalogs("{\"v\":1}", ACME_CATALOGS)
+        .err()
+        .expect("hello is rejected");
+    assert!(
+        error.starts_with("PolyUI could not start a client from this hello"),
+        "{error}"
+    );
+}
+
+#[test]
+fn null_catalogs_are_reported() {
+    let hello = c_text(ACME_HELLO);
+    let mut error = ptr::null_mut();
+    let client =
+        unsafe { polyui_client_new_with_catalogs(hello.as_ptr(), ptr::null(), false, &mut error) };
+    assert!(client.is_null());
+    assert_eq!(
+        take(error).as_deref(),
+        Some("PolyUI client_new_with_catalogs: the catalog list is null")
+    );
 }
