@@ -10,6 +10,8 @@ use std::ptr;
 
 use polyui_core::{CatalogSet, Client};
 
+mod embed;
+
 pub struct PolyuiClient {
     core: Client,
     busy: bool,
@@ -272,6 +274,21 @@ pub unsafe extern "C" fn polyui_client_match_voice(
             let surface = text_arg(surface, "match_voice", "the surface")?;
             let spoken = text_arg(text, "match_voice", "the text")?;
             Ok(core.match_voice_json(surface, spoken))
+        })
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn polyui_embed_page(
+    props_json: *const c_char,
+    nonce: *const c_char,
+    error_out: *mut *mut c_char,
+) -> *mut c_char {
+    unsafe {
+        guarded(error_out, ptr::null_mut(), || {
+            let props = text_arg(props_json, "embed_page", "the props")?;
+            let nonce = text_arg(nonce, "embed_page", "the nonce")?;
+            embed::embed_page(props, nonce).map(owned)
         })
     }
 }
