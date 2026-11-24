@@ -316,3 +316,16 @@ If the user talks over the assistant (barge-in), the client stops speech and kee
 5. `$ref` values are resolved on the server, per user, and never enter the model's context.
 6. Actions run on the server, from handles, with server-built confirm text when the host marks them risky.
 7. Limits in section 5.2 are checked before full parsing.
+
+## 14. Chat extras used by the reference server
+
+These are not part of the UI protocol. The reference server and the example chat client use them so one connection can carry the whole conversation. Other hosts can use their own chat transport.
+
+| Direction | Message | Meaning |
+|---|---|---|
+| client to server | `{ "v": 1, "t": "user.say", "text": "..." }` | The user typed or said something to the agent. |
+| server to client | `{ "v": 1, "t": "agent.delta", "text": "..." }` | A piece of the agent's text answer, streamed. |
+| server to client | `{ "v": 1, "t": "agent.done" }` | The agent finished its turn. |
+| server to client | `{ "v": 1, "t": "agent.error", "message": "..." }` | The turn failed. The message is safe to show to the user. |
+
+The WebSocket endpoint is `/ws`. The client sends `hello` first and waits for `welcome`.
