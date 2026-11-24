@@ -1,19 +1,30 @@
 use polyui_core::Client as Core;
-use serde_json::Value;
+#[cfg(target_family = "wasm")]
+use polyui_core::json_error;
 use wasm_bindgen::prelude::*;
 
-fn nullable(text: Option<String>) -> JsValue {
-    text.map_or(JsValue::NULL, |text| JsValue::from_str(&text))
+#[cfg(not(target_family = "wasm"))]
+fn json_error(input: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(input)
+        .err()
+        .map(|error| error.to_string())
+}
+
+fn nullable(json: String) -> JsValue {
+    if json == "null" {
+        JsValue::NULL
+    } else {
+        JsValue::from_str(&json)
+    }
 }
 
 fn require_json(input: &str, call: &str, what: &str) -> Result<(), JsError> {
-    serde_json::from_str::<Value>(input)
-        .map(drop)
-        .map_err(|error| {
-            JsError::new(&format!(
-                "PolyUI {call}: {what} is not valid JSON ({error})"
-            ))
-        })
+    match json_error(input) {
+        Some(error) => Err(JsError::new(&format!(
+            "PolyUI {call}: {what} is not valid JSON ({error})"
+        ))),
+        None => Ok(()),
+    }
 }
 
 #[wasm_bindgen]
@@ -59,24 +70,19 @@ impl Client {
     ) -> Result<JsValue, JsError> {
         let detail = detail_json
             .as_deref()
-            .filter(|text| !text.trim().is_empty());
-        if let Some(text) = detail {
-            require_json(text, "fire", "the detail")?;
+            .filter(|text| !text.trim().is_empty())
+            .unwrap_or_default();
+        if !detail.is_empty() {
+            require_json(detail, "fire", "the detail")?;
         }
         Ok(nullable(
-            self.core
-                .fire(surface, component, prop, detail)
-                .map(|action| action.to_string()),
+            self.core.fire_json(surface, component, prop, detail),
         ))
     }
 
     #[wasm_bindgen(unchecked_return_type = "string | null")]
     pub fn confirm(&mut self, surface: &str, action_id: &str, nonce: &str) -> JsValue {
-        nullable(
-            self.core
-                .confirm(surface, action_id, nonce)
-                .map(|action| action.to_string()),
-        )
+        nullable(self.core.confirm_json(surface, action_id, nonce))
     }
 
     pub fn say(&self, surface: &str) -> String {
@@ -85,7 +91,7 @@ impl Client {
 
     #[wasm_bindgen(js_name = matchVoice, unchecked_return_type = "string | null")]
     pub fn match_voice(&mut self, surface: &str, text: &str) -> JsValue {
-        nullable(Some(self.core.match_voice_json(surface, text)).filter(|found| found != "null"))
+        nullable(self.core.match_voice_json(surface, text))
     }
 }
 

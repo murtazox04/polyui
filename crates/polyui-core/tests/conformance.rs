@@ -1,6 +1,11 @@
+use polyui_core::Client;
+#[cfg(not(feature = "client-lite"))]
 use polyui_core::validate::{ActionSpec, ActionTable, StaticRefs, Surface, Validator};
-use polyui_core::{Catalog, CatalogSet, Client, Component, Locale, PropSpec};
-use serde_json::{Value, json};
+#[cfg(not(feature = "client-lite"))]
+use polyui_core::{Catalog, CatalogSet, Component, Locale, PropSpec};
+use serde_json::Value;
+#[cfg(not(feature = "client-lite"))]
+use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -35,6 +40,7 @@ fn save(path: &Path, case: &Value) {
     fs::write(path, text).expect("fixture is writable");
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn strings(value: &Value) -> Vec<String> {
     value
         .as_array()
@@ -48,6 +54,7 @@ fn strings(value: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn surface_from(value: &Value) -> Surface {
     Surface {
         id: None,
@@ -58,6 +65,7 @@ fn surface_from(value: &Value) -> Surface {
     }
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn run_validate(case: &Value) -> Value {
     let mut catalogs = CatalogSet::builtin();
     if let Some(extension) = case.get("extension") {
@@ -119,49 +127,39 @@ fn run_validate(case: &Value) -> Value {
     }
 }
 
-fn run_client(case: &Value) -> Vec<Value> {
+fn run_client(case: &Value) -> Vec<String> {
     let mut client = Client::new(&case["hello"].to_string()).expect("hello is valid");
     let mut results = Vec::new();
     for step in case["steps"].as_array().cloned().unwrap_or_default() {
-        let text = |key: &str| step[key].as_str().unwrap_or_default().to_string();
+        let field = |call: &Value, key: &str| call[key].as_str().unwrap_or_default().to_string();
         let result = if let Some(message) = step.get("receive") {
-            client.receive(&message.to_string()).to_value()
+            client.receive_json(&message.to_string())
         } else if let Some(raw) = step.get("receive_text") {
-            client.receive(raw.as_str().unwrap_or_default()).to_value()
+            client.receive_json(raw.as_str().unwrap_or_default())
         } else if let Some(call) = step.get("set_value") {
-            client
-                .set_value(
-                    call["surface"].as_str().unwrap_or_default(),
-                    call["path"].as_str().unwrap_or_default(),
-                    &call["value"].to_string(),
-                )
-                .to_value()
+            client.set_value_json(
+                &field(call, "surface"),
+                &field(call, "path"),
+                &call["value"].to_string(),
+            )
         } else if let Some(call) = step.get("fire") {
-            let detail = call.get("detail").map(Value::to_string);
-            client
-                .fire(
-                    call["surface"].as_str().unwrap_or_default(),
-                    call["component"].as_str().unwrap_or_default(),
-                    call["prop"].as_str().unwrap_or_default(),
-                    detail.as_deref(),
-                )
-                .unwrap_or(Value::Null)
+            let detail = call.get("detail").map(Value::to_string).unwrap_or_default();
+            client.fire_json(
+                &field(call, "surface"),
+                &field(call, "component"),
+                &field(call, "prop"),
+                &detail,
+            )
         } else if let Some(call) = step.get("confirm") {
-            client
-                .confirm(
-                    call["surface"].as_str().unwrap_or_default(),
-                    call["action_id"].as_str().unwrap_or_default(),
-                    call["nonce"].as_str().unwrap_or_default(),
-                )
-                .unwrap_or(Value::Null)
-        } else if step.get("say").is_some() {
-            serde_json::to_value(client.say(&text("say"))).expect("utterances serialize")
+            client.confirm_json(
+                &field(call, "surface"),
+                &field(call, "action_id"),
+                &field(call, "nonce"),
+            )
+        } else if let Some(surface) = step.get("say") {
+            client.say_json(surface.as_str().unwrap_or_default())
         } else if let Some(call) = step.get("match_voice") {
-            serde_json::to_value(client.match_voice(
-                call["surface"].as_str().unwrap_or_default(),
-                call["text"].as_str().unwrap_or_default(),
-            ))
-            .expect("voice match serializes")
+            client.match_voice_json(&field(call, "surface"), &field(call, "text"))
         } else {
             panic!("unknown step {step}");
         };
@@ -170,6 +168,7 @@ fn run_client(case: &Value) -> Vec<Value> {
     results
 }
 
+#[cfg(not(feature = "client-lite"))]
 #[test]
 fn validate_fixtures() {
     let files = fixture_files("validate");
@@ -204,7 +203,7 @@ fn client_fixtures() {
         if blessing() {
             if let Some(steps) = case["steps"].as_array_mut() {
                 for (step, result) in steps.iter_mut().zip(actual) {
-                    step["expect"] = result;
+                    step["expect"] = serde_json::from_str(&result).expect("output is JSON");
                 }
             }
             save(&path, &case);
@@ -212,12 +211,13 @@ fn client_fixtures() {
         }
         let steps = case["steps"].as_array().cloned().unwrap_or_default();
         for (number, (step, result)) in steps.iter().zip(actual).enumerate() {
-            if step["expect"] != result {
+            let expected = step["expect"].to_string();
+            if expected != result {
                 failures.push(format!(
                     "{} step {}\n  expected: {}\n  actual:   {}",
                     path.display(),
                     number + 1,
-                    step["expect"],
+                    expected,
                     result
                 ));
             }

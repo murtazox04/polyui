@@ -34,7 +34,7 @@ run("cargo", ["build", "--profile", "wasm", "--target", "wasm32-unknown-unknown"
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 run("wasm-bindgen", ["--target", "web", "--out-dir", out, "--out-name", "polyui_core", built]);
-run("wasm-opt", ["-Oz", "--strip-debug", "--strip-producers", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue", wasm, "-o", wasm]);
+run("wasm-opt", ["-O1", "--strip-debug", "--strip-producers", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue", wasm, "-o", wasm]);
 const after = sizes(wasm);
 const glue = sizes(join(out, "polyui_core.js"));
 

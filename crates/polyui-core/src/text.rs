@@ -1,4 +1,4 @@
-use serde_json::{Map, Value};
+use crate::{Map, Value};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Locale {
@@ -458,7 +458,7 @@ pub fn as_sentence(text: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "client-lite")))]
 mod tests {
     use super::*;
     use serde_json::json;

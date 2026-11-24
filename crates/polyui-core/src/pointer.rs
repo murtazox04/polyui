@@ -1,4 +1,4 @@
-use serde_json::{Map, Value};
+use crate::{Map, Value};
 use std::fmt;
 
 pub const MAX_TOKENS: usize = 32;
@@ -237,7 +237,7 @@ pub fn merge_patch(target: &mut Value, patch: Value) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "client-lite")))]
 mod tests {
     use super::*;
     use serde_json::json;

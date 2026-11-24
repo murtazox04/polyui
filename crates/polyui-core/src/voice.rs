@@ -1,6 +1,6 @@
+use crate::Value;
 use crate::client::RenderBatch;
 use serde::Serialize;
-use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Utterance {

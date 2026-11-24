@@ -1,11 +1,12 @@
 use crate::client::{CHART_TYPE, MAX_SCENE_ITEMS, MAX_SCENE_STRING_CHARS, SCENE_PROP};
+use crate::codec;
 use crate::limits::{self, LimitError, Limits};
 use crate::protocol::{
     ActionResult, ActionStatus, ClientInfo, Close, Component, Confirm, DataOp, DataUpdate, Hello,
     Incoming, Message, Modality, Open, Patch, ProtocolError, Snapshot, Sync, VERSION, VoiceHint,
     Welcome,
 };
-use serde_json::{Map, Value};
+use crate::{Map, Value};
 
 type Decoded<T> = Result<T, String>;
 
@@ -365,6 +366,7 @@ fn scene_limits(limits: &Limits) -> Limits {
     }
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub(crate) fn check_outgoing(message: &Value, limits: &Limits) -> Result<(), LimitError> {
     let size = limits::json_size(message);
     if size > limits.max_message_bytes {
@@ -382,7 +384,7 @@ pub(crate) fn check_outgoing(message: &Value, limits: &Limits) -> Result<(), Lim
 
 fn read(input: &str, limits: &Limits) -> Result<Value, ProtocolError> {
     limits::prescan(input, limits)?;
-    serde_json::from_str(input).map_err(|error| ProtocolError::Json(error.to_string()))
+    codec::read(input).map_err(ProtocolError::Json)
 }
 
 pub(crate) fn from_server(input: &str, limits: &Limits) -> Result<Incoming, ProtocolError> {

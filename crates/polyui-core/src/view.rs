@@ -1,9 +1,9 @@
-use crate::catalog::{CatalogSet, PropKind, TypeDef};
+use crate::catalog::{PropKind, TypeDef};
+use crate::fits::fits;
 use crate::pointer;
 use crate::protocol::Component;
 use crate::text::{self, Locale};
-use crate::validate::fits;
-use serde_json::{Map, Value};
+use crate::{Map, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefMode {
@@ -223,11 +223,12 @@ pub(crate) fn build_tree(root: Option<&str>, components: &[Component]) -> Tree {
     tree
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub(crate) fn fallback_text(
     root: &str,
     components: &[Component],
     data: &Value,
-    catalogs: &CatalogSet,
+    catalogs: &crate::catalog::CatalogSet,
     locale: Locale,
 ) -> String {
     let tree = build_tree(Some(root), components);
@@ -264,7 +265,7 @@ pub(crate) fn fallback_text(
         .unwrap_or_default()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "client-lite")))]
 mod tests {
     use super::*;
     use serde_json::json;

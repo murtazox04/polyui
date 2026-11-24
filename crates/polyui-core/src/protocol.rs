@@ -1,6 +1,8 @@
-use crate::limits::{self, LimitError, Limits};
+use crate::limits::LimitError;
+#[cfg(not(feature = "client-lite"))]
+use crate::limits::{self, Limits};
+use crate::{Map, Value};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 use std::fmt;
 
 pub const VERSION: u64 = 1;
@@ -345,6 +347,7 @@ impl Message {
         }
     }
 
+    #[cfg(not(feature = "client-lite"))]
     pub fn from_value(value: Value) -> Result<Self, serde_json::Error> {
         let message_type = value
             .get("t")
@@ -359,6 +362,7 @@ impl Message {
         })
     }
 
+    #[cfg(not(feature = "client-lite"))]
     pub fn to_value(&self) -> Value {
         let mut out = Map::new();
         out.insert("v".to_string(), Value::from(VERSION));
@@ -368,6 +372,7 @@ impl Message {
         Value::Object(out)
     }
 
+    #[cfg(not(feature = "client-lite"))]
     pub fn to_json(&self) -> String {
         self.to_value().to_string()
     }
@@ -438,8 +443,10 @@ impl From<LimitError> for ProtocolError {
     }
 }
 
+#[cfg(not(feature = "client-lite"))]
 type Decoder = fn(&str, Value) -> Option<Result<Message, serde_json::Error>>;
 
+#[cfg(not(feature = "client-lite"))]
 fn decode_any(message_type: &str, value: Value) -> Option<Result<Message, serde_json::Error>> {
     Some(match message_type {
         "hello" => serde_json::from_value(value).map(Message::Hello),
@@ -459,6 +466,7 @@ fn decode_any(message_type: &str, value: Value) -> Option<Result<Message, serde_
     })
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn decode_from_server(
     message_type: &str,
     value: Value,
@@ -477,6 +485,7 @@ fn decode_from_server(
     })
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub fn envelope<T: Serialize>(message_type: &str, body: &T) -> Value {
     let mut out = Map::new();
     out.insert("v".to_string(), Value::from(VERSION));
@@ -487,6 +496,88 @@ pub fn envelope<T: Serialize>(message_type: &str, body: &T) -> Value {
     Value::Object(out)
 }
 
+#[cfg(any(test, feature = "client-lite"))]
+mod direct {
+    use super::{Action, ActionSource, ErrorReason, VERSION};
+    use crate::{Map, Value};
+
+    fn header(message_type: &str) -> Map<String, Value> {
+        let mut out = Map::new();
+        out.insert("v".to_string(), Value::from(VERSION));
+        out.insert("t".to_string(), Value::from(message_type));
+        out
+    }
+
+    fn reason_name(reason: ErrorReason) -> &'static str {
+        match reason {
+            ErrorReason::UnsupportedVersion => "unsupported_version",
+            ErrorReason::UnknownComponent => "unknown_component",
+            ErrorReason::RenderFailed => "render_failed",
+            ErrorReason::BadMessage => "bad_message",
+            ErrorReason::UnknownMessage => "unknown_message",
+        }
+    }
+
+    fn source_name(source: ActionSource) -> &'static str {
+        match source {
+            ActionSource::Tap => "tap",
+            ActionSource::Voice => "voice",
+            ActionSource::Keyboard => "keyboard",
+        }
+    }
+
+    pub(super) fn resync(surface: &str) -> Value {
+        let mut out = header("ui.resync");
+        out.insert("surface".to_string(), Value::from(surface));
+        Value::Object(out)
+    }
+
+    pub(super) fn error(
+        surface: Option<&str>,
+        reason: ErrorReason,
+        detail: Option<String>,
+    ) -> Value {
+        let mut out = header("ui.error");
+        if let Some(surface) = surface {
+            out.insert("surface".to_string(), Value::from(surface));
+        }
+        out.insert("reason".to_string(), Value::from(reason_name(reason)));
+        if let Some(detail) = detail {
+            out.insert("detail".to_string(), Value::String(detail));
+        }
+        Value::Object(out)
+    }
+
+    pub(super) fn action(action: &Action) -> Value {
+        let mut out = header("ui.action");
+        out.insert("surface".to_string(), Value::from(action.surface.as_str()));
+        out.insert(
+            "action_id".to_string(),
+            Value::from(action.action_id.as_str()),
+        );
+        if !action.values.is_empty() {
+            out.insert("values".to_string(), Value::Object(action.values.clone()));
+        }
+        if let Some(confirm) = &action.confirm {
+            out.insert("confirm".to_string(), Value::from(confirm.as_str()));
+        }
+        out.insert(
+            "source".to_string(),
+            Value::from(source_name(action.source)),
+        );
+        if let Some(detail) = &action.detail {
+            out.insert("detail".to_string(), Value::Object(detail.clone()));
+        }
+        Value::Object(out)
+    }
+}
+
+#[cfg(feature = "client-lite")]
+pub fn resync_value(surface: &str) -> Value {
+    direct::resync(surface)
+}
+
+#[cfg(not(feature = "client-lite"))]
 pub fn resync_value(surface: &str) -> Value {
     envelope(
         "ui.resync",
@@ -496,6 +587,12 @@ pub fn resync_value(surface: &str) -> Value {
     )
 }
 
+#[cfg(feature = "client-lite")]
+pub fn error_value(surface: Option<&str>, reason: ErrorReason, detail: Option<String>) -> Value {
+    direct::error(surface, reason, detail)
+}
+
+#[cfg(not(feature = "client-lite"))]
 pub fn error_value(surface: Option<&str>, reason: ErrorReason, detail: Option<String>) -> Value {
     envelope(
         "ui.error",
@@ -507,31 +604,43 @@ pub fn error_value(surface: Option<&str>, reason: ErrorReason, detail: Option<St
     )
 }
 
+#[cfg(feature = "client-lite")]
+pub fn action_value(action: &Action) -> Value {
+    direct::action(action)
+}
+
+#[cfg(not(feature = "client-lite"))]
 pub fn action_value(action: &Action) -> Value {
     envelope("ui.action", action)
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub fn check_for_client(message: &Value, limits: &Limits) -> Result<(), LimitError> {
     crate::decode::check_outgoing(message, limits)
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub fn parse(input: &str) -> Result<Incoming, ProtocolError> {
     parse_with(input, &Limits::default())
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub fn parse_with(input: &str, limits: &Limits) -> Result<Incoming, ProtocolError> {
     classify(read(input, limits)?, decode_any)
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub fn parse_from_server(input: &str, limits: &Limits) -> Result<Incoming, ProtocolError> {
     classify(read(input, limits)?, decode_from_server)
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub fn parse_value(value: Value, limits: &Limits) -> Result<Incoming, ProtocolError> {
     limits::check_value(&value, limits)?;
     classify(value, decode_any)
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub fn parse_hello(input: &str, limits: &Limits) -> Result<Hello, ProtocolError> {
     let value = read(input, limits)?;
     let invalid = |detail: String| ProtocolError::Invalid {
@@ -551,15 +660,18 @@ pub fn parse_hello(input: &str, limits: &Limits) -> Result<Hello, ProtocolError>
     Ok(hello)
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn read(input: &str, limits: &Limits) -> Result<Value, ProtocolError> {
     limits::prescan(input, limits)?;
     serde_json::from_str(input).map_err(|error| ProtocolError::Json(error.to_string()))
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn string_field(map: &Map<String, Value>, key: &str) -> Option<String> {
     map.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn classify(value: Value, decode: Decoder) -> Result<Incoming, ProtocolError> {
     let Value::Object(map) = value else {
         return Err(ProtocolError::NotAnObject);
@@ -587,10 +699,77 @@ fn classify(value: Value, decode: Decoder) -> Result<Incoming, ProtocolError> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "client-lite")))]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn direct_envelopes_match_the_serde_ones() {
+        assert_eq!(
+            direct::resync("s1").to_string(),
+            envelope(
+                "ui.resync",
+                &Resync {
+                    surface: "s1".into()
+                }
+            )
+            .to_string()
+        );
+        let reasons = [
+            ErrorReason::UnsupportedVersion,
+            ErrorReason::UnknownComponent,
+            ErrorReason::RenderFailed,
+            ErrorReason::BadMessage,
+            ErrorReason::UnknownMessage,
+        ];
+        for reason in reasons {
+            for surface in [None, Some("s1")] {
+                for detail in [None, Some("bad \"thing\"".to_string())] {
+                    let report = ErrorReport {
+                        surface: surface.map(str::to_string),
+                        reason,
+                        detail: detail.clone(),
+                    };
+                    assert_eq!(
+                        direct::error(surface, reason, detail).to_string(),
+                        envelope("ui.error", &report).to_string()
+                    );
+                }
+            }
+        }
+        let values = [
+            Map::new(),
+            json!({ "/b": 1, "/a": [true] })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+        ];
+        for values in values {
+            for confirm in [None, Some("n_1".to_string())] {
+                for source in [
+                    ActionSource::Tap,
+                    ActionSource::Voice,
+                    ActionSource::Keyboard,
+                ] {
+                    for detail in [None, json!({ "z": 1, "a": null }).as_object().cloned()] {
+                        let action = Action {
+                            surface: "s1".into(),
+                            action_id: "act".into(),
+                            values: values.clone(),
+                            confirm: confirm.clone(),
+                            source,
+                            detail,
+                        };
+                        assert_eq!(
+                            direct::action(&action).to_string(),
+                            envelope("ui.action", &action).to_string()
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn round_trips_every_example() {

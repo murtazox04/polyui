@@ -1,4 +1,6 @@
-use serde_json::{Map, Value};
+#[cfg(not(feature = "client-lite"))]
+use crate::Map;
+use crate::Value;
 use std::fmt;
 
 pub const CORE_JSON: &str = include_str!("../../../spec/catalogs/core.json");
@@ -90,6 +92,7 @@ pub struct PropSpec {
 }
 
 impl PropSpec {
+    #[cfg(not(feature = "client-lite"))]
     pub fn from_value(value: &Value) -> Result<Self, CatalogError> {
         parse_prop(value, "")
     }
@@ -165,12 +168,14 @@ pub struct Catalog {
 }
 
 impl Catalog {
+    #[cfg(not(feature = "client-lite"))]
     pub fn from_json(text: &str) -> Result<Self, CatalogError> {
-        let value: Value = serde_json::from_str(text)
+        let value = crate::codec::read(text)
             .map_err(|error| CatalogError::new("", format!("invalid JSON: {error}")))?;
         Self::from_value(&value)
     }
 
+    #[cfg(not(feature = "client-lite"))]
     pub fn from_value(value: &Value) -> Result<Self, CatalogError> {
         let map = as_object(value, "")?;
         reject_unknown(map, "", &["id", "version", "types"])?;
@@ -217,12 +222,14 @@ impl Catalog {
     }
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn as_object<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>, CatalogError> {
     value
         .as_object()
         .ok_or_else(|| CatalogError::new(path, "must be an object"))
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn reject_unknown(
     map: &Map<String, Value>,
     path: &str,
@@ -234,6 +241,7 @@ fn reject_unknown(
     }
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn join_path(base: &str, key: &str) -> String {
     if base.is_empty() {
         key.to_string()
@@ -242,11 +250,13 @@ fn join_path(base: &str, key: &str) -> String {
     }
 }
 
+#[cfg(not(feature = "client-lite"))]
 pub(crate) fn is_type_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_uppercase()) && chars.all(|c| c.is_ascii_alphanumeric())
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn is_qualified_type_name(name: &str) -> bool {
     match name.split_once(':') {
         Some((namespace, local)) => {
@@ -260,12 +270,14 @@ fn is_qualified_type_name(name: &str) -> bool {
     }
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn is_prop_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn parse_type(catalog_id: &str, name: &str, value: &Value) -> Result<TypeDef, CatalogError> {
     let path = format!("types.{name}");
     if !is_type_name(name) {
@@ -351,6 +363,7 @@ fn parse_type(catalog_id: &str, name: &str, value: &Value) -> Result<TypeDef, Ca
     })
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn parse_prop(value: &Value, path: &str) -> Result<PropSpec, CatalogError> {
     let map = as_object(value, path)?;
     let kind_name = map
@@ -529,6 +542,7 @@ fn parse_prop(value: &Value, path: &str) -> Result<PropSpec, CatalogError> {
     Ok(spec)
 }
 
+#[cfg(not(feature = "client-lite"))]
 fn string_list(value: Option<&Value>, path: &str) -> Result<Vec<String>, CatalogError> {
     let items = value
         .and_then(Value::as_array)
@@ -551,7 +565,7 @@ fn string_list(value: Option<&Value>, path: &str) -> Result<Vec<String>, Catalog
 
 mod builtin {
     use super::{Catalog, ChildRule, PropKind, PropSpec, TypeDef};
-    use serde_json::{Map, Value};
+    use crate::{Map, Value};
 
     fn text(map: &Map<String, Value>, key: &str) -> String {
         map.get(key)
@@ -641,7 +655,7 @@ mod builtin {
     }
 
     pub(super) fn catalog(json: &str) -> Option<Catalog> {
-        let value: Value = serde_json::from_str(json).ok()?;
+        let value = crate::codec::read(json).ok()?;
         let id = value.get("id")?.as_str()?;
         let types = value
             .get("types")?
@@ -786,7 +800,7 @@ fn declares(declared: &[String], catalog: &Catalog) -> bool {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "client-lite")))]
 mod tests {
     use super::*;
     use serde_json::json;

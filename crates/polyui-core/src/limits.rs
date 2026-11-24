@@ -1,5 +1,6 @@
-use serde_json::Value;
+use crate::Value;
 use std::fmt;
+#[cfg(not(feature = "client-lite"))]
 use std::io;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -333,8 +334,10 @@ pub(crate) fn check_key(key: &str, enclosing: usize, limits: &Limits) -> Result<
     Ok(())
 }
 
+#[cfg(not(feature = "client-lite"))]
 struct ByteCounter(usize);
 
+#[cfg(not(feature = "client-lite"))]
 impl io::Write for ByteCounter {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.0 += bytes.len();
@@ -346,6 +349,12 @@ impl io::Write for ByteCounter {
     }
 }
 
+#[cfg(feature = "client-lite")]
+pub fn json_size(value: &Value) -> usize {
+    crate::json::to_string(value).len()
+}
+
+#[cfg(not(feature = "client-lite"))]
 pub fn json_size(value: &Value) -> usize {
     let mut counter = ByteCounter(0);
     match serde_json::to_writer(&mut counter, value) {
@@ -362,7 +371,7 @@ pub fn json_depth(value: &Value) -> usize {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "client-lite")))]
 mod tests {
     use super::*;
     use serde_json::json;

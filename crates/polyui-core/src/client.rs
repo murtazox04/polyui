@@ -1,5 +1,8 @@
 use crate::catalog::{CatalogSet, PropKind, TypeDef};
+use crate::codec;
 use crate::decode;
+#[cfg(any(test, feature = "client-lite"))]
+use crate::json;
 use crate::limits::{self, Limits};
 use crate::pointer;
 use crate::protocol::{
@@ -9,8 +12,8 @@ use crate::protocol::{
 use crate::text::{self, Locale};
 use crate::view::{self, RefMode, TextKind};
 use crate::voice::{self, Ordinal, Utterance, VoiceMatch};
+use crate::{Map, Value};
 use serde::Serialize;
-use serde_json::{Map, Value};
 
 pub const MAX_DETAIL_BYTES: usize = 4096;
 pub const MAX_SCENE_ITEMS: usize = 20_000;
@@ -88,13 +91,148 @@ impl RenderBatch {
         }
     }
 
+    #[cfg(not(feature = "client-lite"))]
     pub fn to_value(&self) -> Value {
         serde_json::to_value(self).unwrap_or(Value::Null)
     }
 
+    #[cfg(feature = "client-lite")]
+    pub fn to_json(&self) -> String {
+        let mut out = String::new();
+        write_batch(&mut out, self);
+        out
+    }
+
+    #[cfg(not(feature = "client-lite"))]
     pub fn to_json(&self) -> String {
         self.to_value().to_string()
     }
+}
+
+#[cfg(any(test, feature = "client-lite"))]
+fn write_a11y(out: &mut String, a11y: &A11y) {
+    let mut object = json::Object::open(out);
+    object.string("role", &a11y.role);
+    object.string("label", &a11y.label);
+    object.close();
+}
+
+#[cfg(any(test, feature = "client-lite"))]
+fn write_node_fields(
+    object: &mut json::Object<'_>,
+    props: &Map<String, Value>,
+    value: Option<&Value>,
+    a11y: &A11y,
+) {
+    json::write_map(object.key("props"), props);
+    if let Some(value) = value {
+        object.value("value", value);
+    }
+    write_a11y(object.key("a11y"), a11y);
+}
+
+#[cfg(any(test, feature = "client-lite"))]
+fn write_op(out: &mut String, op: &RenderOp) {
+    let mut object = json::Object::open(out);
+    match op {
+        RenderOp::Create {
+            id,
+            type_name,
+            props,
+            value,
+            a11y,
+        } => {
+            object.string("op", "create");
+            object.string("id", id);
+            object.string("type", type_name);
+            write_node_fields(&mut object, props, value.as_ref(), a11y);
+        }
+        RenderOp::Update {
+            id,
+            props,
+            value,
+            a11y,
+        } => {
+            object.string("op", "update");
+            object.string("id", id);
+            write_node_fields(&mut object, props, value.as_ref(), a11y);
+        }
+        RenderOp::Children { id, children } => {
+            object.string("op", "children");
+            object.string("id", id);
+            json::write_items(object.key("children"), children, |out, child| {
+                json::write_str(out, child);
+            });
+        }
+        RenderOp::Remove { id } => {
+            object.string("op", "remove");
+            object.string("id", id);
+        }
+        RenderOp::Root { id } => {
+            object.string("op", "root");
+            object.string("id", id);
+        }
+        RenderOp::Confirm {
+            action_id,
+            nonce,
+            title,
+            body,
+            confirm_label,
+            expires_ms,
+        } => {
+            object.string("op", "confirm");
+            object.string("action_id", action_id);
+            object.string("nonce", nonce);
+            object.string("title", title);
+            if let Some(body) = body {
+                object.string("body", body);
+            }
+            if let Some(confirm_label) = confirm_label {
+                object.string("confirm_label", confirm_label);
+            }
+            if let Some(expires_ms) = expires_ms {
+                object.key("expires_ms").push_str(&expires_ms.to_string());
+            }
+        }
+        RenderOp::Highlight { id } => {
+            object.string("op", "highlight");
+            object.optional_string("id", id.as_deref());
+        }
+        RenderOp::Close => object.string("op", "close"),
+    }
+    object.close();
+}
+
+#[cfg(any(test, feature = "client-lite"))]
+fn write_batch(out: &mut String, batch: &RenderBatch) {
+    let mut object = json::Object::open(out);
+    object.string("surface", &batch.surface);
+    json::write_items(object.key("ops"), &batch.ops, write_op);
+    if let Some(fallback) = &batch.fallback {
+        object.string("fallback", fallback);
+    }
+    if !batch.send.is_empty() {
+        json::write_items(object.key("send"), &batch.send, json::write);
+    }
+    object.close();
+}
+
+#[cfg(any(test, feature = "client-lite"))]
+fn write_utterance(out: &mut String, utterance: &Utterance) {
+    let mut object = json::Object::open(out);
+    object.string("id", &utterance.id);
+    object.string("text", &utterance.text);
+    object.close();
+}
+
+#[cfg(any(test, feature = "client-lite"))]
+fn write_voice_match(out: &mut String, found: &VoiceMatch) {
+    let mut object = json::Object::open(out);
+    object.string("component", &found.component);
+    object.optional_string("option", found.option.as_deref());
+    write_batch(object.key("batch"), &found.batch);
+    object.value("action", found.action.as_ref().unwrap_or(&Value::Null));
+    object.close();
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -567,7 +705,10 @@ impl Client {
                 send: vec![protocol::error_value(
                     surface.as_deref(),
                     ErrorReason::UnsupportedVersion,
-                    Some(format!("version {version} is not supported")),
+                    Some(format!(
+                        "version {} is not supported",
+                        codec::write(&version)
+                    )),
                 )],
             },
             Ok(Incoming::UnknownType { surface, .. }) => {
@@ -907,7 +1048,7 @@ impl Client {
 
     fn parse_value(&self, value_json: &str) -> Option<Value> {
         limits::prescan(value_json, &self.limits).ok()?;
-        let value: Value = serde_json::from_str(value_json).ok()?;
+        let value = codec::read(value_json).ok()?;
         let too_long = value
             .as_str()
             .is_some_and(|text| text.chars().count() > self.limits.max_string_chars);
@@ -946,9 +1087,11 @@ impl Client {
         detail_json: &str,
     ) -> String {
         let detail = Some(detail_json).filter(|text| !text.trim().is_empty());
-        self.fire(surface, component, prop, detail)
-            .unwrap_or(Value::Null)
-            .to_string()
+        codec::write(
+            &self
+                .fire(surface, component, prop, detail)
+                .unwrap_or(Value::Null),
+        )
     }
 
     pub fn fire_from(
@@ -966,7 +1109,7 @@ impl Client {
                     return None;
                 }
                 limits::prescan(text, &self.limits).ok()?;
-                match serde_json::from_str::<Value>(text).ok()? {
+                match codec::read(text).ok()? {
                     Value::Object(map) => Some(map),
                     _ => return None,
                 }
@@ -1022,9 +1165,11 @@ impl Client {
     }
 
     pub fn confirm_json(&mut self, surface: &str, action_id: &str, nonce: &str) -> String {
-        self.confirm(surface, action_id, nonce)
-            .unwrap_or(Value::Null)
-            .to_string()
+        codec::write(
+            &self
+                .confirm(surface, action_id, nonce)
+                .unwrap_or(Value::Null),
+        )
     }
 
     fn confirm_from(
@@ -1066,6 +1211,14 @@ impl Client {
             .collect()
     }
 
+    #[cfg(feature = "client-lite")]
+    pub fn say_json(&self, surface: &str) -> String {
+        let mut out = String::new();
+        json::write_items(&mut out, &self.say(surface), write_utterance);
+        out
+    }
+
+    #[cfg(not(feature = "client-lite"))]
     pub fn say_json(&self, surface: &str) -> String {
         serde_json::to_string(&self.say(surface)).unwrap_or_else(|_| "[]".into())
     }
@@ -1089,6 +1242,17 @@ impl Client {
         self.match_targets(surface, &words)
     }
 
+    #[cfg(feature = "client-lite")]
+    pub fn match_voice_json(&mut self, surface: &str, spoken: &str) -> String {
+        let mut out = String::new();
+        match self.match_voice(surface, spoken) {
+            Some(found) => write_voice_match(&mut out, &found),
+            None => out.push_str("null"),
+        }
+        out
+    }
+
+    #[cfg(not(feature = "client-lite"))]
     pub fn match_voice_json(&mut self, surface: &str, spoken: &str) -> String {
         self.match_voice(surface, spoken)
             .and_then(|found| serde_json::to_value(found).ok())
@@ -1264,7 +1428,7 @@ impl Client {
         let definition = self.catalogs.get(&component.type_name)?;
         definition
             .action_props()
-            .find(|name| component.props.get(*name).and_then(view::handle).is_some())
+            .find(|&name| component.props.get(name).and_then(view::handle).is_some())
             .map(str::to_string)
     }
 
@@ -1323,7 +1487,7 @@ enum Target {
     Component { component: String },
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "client-lite")))]
 mod tests {
     use super::*;
     use serde_json::json;
@@ -1386,6 +1550,177 @@ mod tests {
             ]
         );
         assert!(diff(&new, &new).is_empty());
+    }
+
+    fn client_fixtures() -> Vec<Value> {
+        let directory =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/conformance/client");
+        let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(directory)
+            .unwrap_or_else(|error| panic!("{error}"))
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+            .collect();
+        paths.sort();
+        paths
+            .iter()
+            .map(|path| {
+                let text = std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{error}"));
+                serde_json::from_str(&text).unwrap_or_else(|error| panic!("{error}"))
+            })
+            .collect()
+    }
+
+    fn lite_batch(batch: &RenderBatch) -> String {
+        let mut out = String::new();
+        write_batch(&mut out, batch);
+        out
+    }
+
+    fn assert_batch(batch: &RenderBatch) {
+        assert_eq!(lite_batch(batch), batch.to_value().to_string());
+    }
+
+    fn assert_action(action: Option<Value>) {
+        let action = action.unwrap_or(Value::Null);
+        assert_eq!(json::to_string(&action), action.to_string());
+    }
+
+    #[test]
+    fn lite_writers_match_serde_on_every_client_fixture() {
+        let cases = client_fixtures();
+        assert!(cases.len() >= 10, "expected the client fixtures");
+        let mut checked = 0;
+        for case in cases {
+            let mut client =
+                Client::new(&case["hello"].to_string()).unwrap_or_else(|error| panic!("{error}"));
+            for step in case["steps"].as_array().cloned().unwrap_or_default() {
+                let field =
+                    |call: &Value, key: &str| call[key].as_str().unwrap_or_default().to_string();
+                if let Some(message) = step.get("receive") {
+                    assert_batch(&client.receive(&message.to_string()));
+                } else if let Some(raw) = step.get("receive_text") {
+                    assert_batch(&client.receive(raw.as_str().unwrap_or_default()));
+                } else if let Some(call) = step.get("set_value") {
+                    assert_batch(&client.set_value(
+                        &field(call, "surface"),
+                        &field(call, "path"),
+                        &call["value"].to_string(),
+                    ));
+                } else if let Some(call) = step.get("fire") {
+                    let detail = call.get("detail").map(Value::to_string);
+                    assert_action(client.fire(
+                        &field(call, "surface"),
+                        &field(call, "component"),
+                        &field(call, "prop"),
+                        detail.as_deref(),
+                    ));
+                } else if let Some(call) = step.get("confirm") {
+                    assert_action(client.confirm(
+                        &field(call, "surface"),
+                        &field(call, "action_id"),
+                        &field(call, "nonce"),
+                    ));
+                } else if let Some(surface) = step.get("say") {
+                    let utterances = client.say(surface.as_str().unwrap_or_default());
+                    let mut out = String::new();
+                    json::write_items(&mut out, &utterances, write_utterance);
+                    assert_eq!(
+                        out,
+                        serde_json::to_string(&utterances)
+                            .unwrap_or_else(|error| panic!("{error}"))
+                    );
+                } else if let Some(call) = step.get("match_voice") {
+                    if let Some(found) =
+                        client.match_voice(&field(call, "surface"), &field(call, "text"))
+                    {
+                        let mut out = String::new();
+                        write_voice_match(&mut out, &found);
+                        let reference = serde_json::to_value(&found)
+                            .unwrap_or_else(|error| panic!("{error}"))
+                            .to_string();
+                        assert_eq!(out, reference);
+                    }
+                } else {
+                    panic!("unknown step {step}");
+                }
+                checked += 1;
+            }
+        }
+        assert!(
+            checked > 50,
+            "expected many fixture steps, checked {checked}"
+        );
+    }
+
+    #[test]
+    fn lite_batch_writer_escapes_and_orders_like_serde() {
+        let mut props = Map::new();
+        props.insert(
+            "z".into(),
+            json!("quote \" slash \\ newline \n tab \t bell \u{7} delete \u{7f}"),
+        );
+        props.insert(
+            "a".into(),
+            json!({ "nested": [1, -2, 2.5, 1e21, 0.000001, null, true] }),
+        );
+        let batch = RenderBatch {
+            surface: "s\u{e9}".into(),
+            ops: vec![
+                RenderOp::Create {
+                    id: "x".into(),
+                    type_name: "Text".into(),
+                    props: props.clone(),
+                    value: Some(json!(["v"])),
+                    a11y: A11y {
+                        role: "text".into(),
+                        label: "\u{1f600}".into(),
+                    },
+                },
+                RenderOp::Update {
+                    id: "x".into(),
+                    props,
+                    value: None,
+                    a11y: A11y {
+                        role: "text".into(),
+                        label: String::new(),
+                    },
+                },
+                RenderOp::Confirm {
+                    action_id: "a".into(),
+                    nonce: "n".into(),
+                    title: "t".into(),
+                    body: Some("b".into()),
+                    confirm_label: None,
+                    expires_ms: Some(u64::MAX),
+                },
+                RenderOp::Confirm {
+                    action_id: "a".into(),
+                    nonce: "n".into(),
+                    title: "t".into(),
+                    body: None,
+                    confirm_label: Some("ok".into()),
+                    expires_ms: None,
+                },
+                RenderOp::Highlight { id: None },
+                RenderOp::Highlight {
+                    id: Some("x".into()),
+                },
+                RenderOp::Children {
+                    id: "x".into(),
+                    children: vec![],
+                },
+                RenderOp::Root { id: "x".into() },
+                RenderOp::Remove { id: "x".into() },
+                RenderOp::Close,
+            ],
+            fallback: Some(String::new()),
+            send: vec![json!({ "v": 1 }), json!(null)],
+        };
+        assert_batch(&batch);
+        assert_batch(&RenderBatch::empty("s"));
     }
 
     #[test]
