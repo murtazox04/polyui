@@ -30,20 +30,28 @@ impl ApiKey {
     }
 
     pub fn from_env() -> Option<Self> {
-        std::env::var(KEY_VARIABLE).ok().and_then(Self::new)
+        Self::from_env_var(KEY_VARIABLE)
+    }
+
+    pub fn from_env_var(variable: &str) -> Option<Self> {
+        std::env::var(variable).ok().and_then(Self::new)
     }
 
     pub fn from_env_file(path: &Path) -> Result<Self, String> {
+        Self::from_env_file_var(path, KEY_VARIABLE)
+    }
+
+    pub fn from_env_file_var(path: &Path, variable: &str) -> Result<Self, String> {
         let text = std::fs::read_to_string(path)
             .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
         read_env_text(&text)
             .into_iter()
-            .find(|(name, _)| name == KEY_VARIABLE)
+            .find(|(name, _)| name == variable)
             .and_then(|(_, value)| Self::new(value))
-            .ok_or_else(|| format!("{} does not set {KEY_VARIABLE}", path.display()))
+            .ok_or_else(|| format!("{} does not set {variable}", path.display()))
     }
 
-    fn expose(&self) -> &str {
+    pub(crate) fn expose(&self) -> &str {
         &self.0
     }
 }

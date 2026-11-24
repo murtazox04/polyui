@@ -2762,6 +2762,7 @@ dependencies = [
  "clap",
  "futures-util",
  "polyui-core",
+ "polyui-decode",
  "polyui-server",
  "serde",
  "serde_json",

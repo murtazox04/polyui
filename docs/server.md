@@ -102,7 +102,31 @@ let app = polyui_server::router(Agent::new(host, provider), ServerConfig::defaul
 polyui_server::serve(tokio::net::TcpListener::bind("127.0.0.1:8787").await?, app).await?;
 ```
 
-The model sits behind the `ModelProvider` trait. `AnthropicProvider` streams from the Messages API with plain HTTP. `ScriptedProvider` replays canned replies for tests and records every request it gets.
+The model sits behind the `ModelProvider` trait. `AnthropicProvider` streams from the Messages API with plain HTTP. `OpenAiCompatProvider` talks to any server with an OpenAI style `POST /chat/completions` (see below). `ScriptedProvider` replays canned replies for tests and records every request it gets.
+
+### OpenAI-compatible servers
+
+`OpenAiCompatProvider` is for self-hosted models behind llama-server, vLLM or a gateway that speaks the OpenAI chat format. It sends one request per model call and does not stream, so the client sees the text and the UI only when the whole reply is in.
+
+```rust
+let provider = OpenAiCompatProvider::new("http://127.0.0.1:8080/v1", "gemma-3-12b")
+    .with_key(ApiKey::from_env_var("MY_GATEWAY_KEY").unwrap());
+```
+
+The session keeps its history in the Anthropic format either way, and the provider translates each request:
+
+| Session history | Sent to the server |
+|---|---|
+| system prompt | a first message with role `system` |
+| `tool_use` blocks in an assistant message | `tool_calls` with `type: "function"` and the input as a JSON string in `function.arguments` |
+| a `tool_result` block | a message with role `tool` and its `tool_call_id`; an error result starts with `Error: ` because the format has no `is_error` |
+| text in a user message after tool results | a `user` message after the `tool` messages |
+| thinking blocks | dropped |
+| tools | `{"type": "function", "function": {"name", "description", "parameters"}}` with `tool_choice: "auto"`; `strict` is not sent |
+
+On the way back, `finish_reason` `tool_calls` becomes `tool_use`, `length` becomes `max_tokens` and `content_filter` becomes `refusal`. Arguments that are not a JSON object reach the session as a parse error, as with the Anthropic provider. `prompt_tokens` and `completion_tokens` become input and output tokens. `with_response_format(json_schema_format(name, schema))` adds a `response_format` of type `json_schema` to every request, which the benchmark uses for its constrained setting.
+
+Errors: 429, or any body that mentions `concurrency_limited` or `rate_limit`, is retried up to four times after 1, 2 and 4 seconds. 502, 503 and 504 are retried once (`with_overloaded_attempts(1)` turns that off). Everything else fails the turn at once. The key goes only into the `Authorization: Bearer` header, and error texts never include the URL.
 
 ## Transports
 
@@ -141,6 +165,14 @@ polyui serve --env-file ~/.config/polyui/anthropic.env --static js/polyui-web/de
 ```
 
 Options: `--addr` (default `127.0.0.1:8787`), `--model` (default `claude-haiku-5-5`), `--static DIR`, `--host bills|shop`, `--data DIR`, `--embed-origin URL`, `--embed-sandbox DIR`. Without `--env-file` the key is read from `ANTHROPIC_API_KEY`. The key is never printed or logged.
+
+To use a self-hosted model instead, pass `--provider openai-compat` with the base URL and the model, and name the variable that holds the key:
+
+```sh
+polyui serve --provider openai-compat --base-url http://127.0.0.1:8080/v1 --model gemma-3-12b --api-key-env MY_GATEWAY_KEY --static js/polyui-web/demo
+```
+
+`--api-key-env` defaults to `OPENAI_API_KEY`. The variable is read from `--env-file` when one is given and from the environment otherwise; if it is not set, the requests go without a key, which is what a local llama-server expects.
 
 `--embed-origin` turns on the MCP App demo. The bills host then offers the `embed` catalog and one app, an internet tariff calculator at `ui://bills/tariff`, and `/config.json` tells the chat page where the sandbox page lives. When the URL is `http` on `localhost`, `127.0.0.1` or `[::1]`, the command also serves `js/polyui-web/embed-sandbox` (or `--embed-sandbox DIR`) on that port, so the sandbox has an origin of its own:
 

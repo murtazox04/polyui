@@ -1,8 +1,10 @@
-use crate::meter::{Budget, Metered, Trace, lock};
+use crate::meter::{Budget, Metered, Pacer, Trace, lock};
 use crate::prompts::{Expect, Prompt};
 use crate::report::problem_kinds;
+use clap::ValueEnum;
 use futures_util::StreamExt;
 use polyui_core::protocol::{self, Hello};
+use polyui_decode::ToolGrammar;
 use polyui_server::bills::{BillsHost, HOUSEHOLD_USER};
 use polyui_server::session::UI_TOOLS;
 use polyui_server::{
@@ -18,18 +20,30 @@ use tokio::sync::mpsc::Receiver;
 pub const TURN_TIMEOUT: Duration = Duration::from_secs(240);
 const TEXT_KEPT: usize = 400;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum Variant {
     Tools,
+    Constrained,
     Inline,
 }
 
 impl Variant {
+    pub const ALL: [Self; 3] = [Self::Tools, Self::Constrained, Self::Inline];
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Tools => "tool calls",
+            Self::Constrained => "constrained JSON",
             Self::Inline => "inline JSON",
+        }
+    }
+
+    pub fn short(self) -> &'static str {
+        match self {
+            Self::Tools => "tools",
+            Self::Constrained => "constr",
+            Self::Inline => "inline",
         }
     }
 }
@@ -77,10 +91,23 @@ impl RunRecord {
 
 pub struct Bench {
     pub provider: Arc<dyn ModelProvider>,
+    pub constrained: Option<Arc<dyn ModelProvider>>,
     pub budget: Arc<Budget>,
+    pub pacer: Arc<Pacer>,
+    pub config: AgentConfig,
 }
 
-fn hello(locale: &str) -> Hello {
+impl Bench {
+    fn metered(&self, provider: Arc<dyn ModelProvider>) -> Arc<Metered> {
+        Arc::new(Metered::new(
+            provider,
+            self.budget.clone(),
+            self.pacer.clone(),
+        ))
+    }
+}
+
+pub fn hello(locale: &str) -> Hello {
     let text = json!({ "v": 1, "t": "hello", "client": { "name": "polyui-bench", "version": env!("CARGO_PKG_VERSION") }, "catalogs": ["core@1", "chart@1"], "modalities": ["screen"], "locale": locale })
         .to_string();
     protocol::parse_hello(&text, &Default::default()).expect("the benchmark hello is valid")
@@ -251,10 +278,10 @@ fn record(
 }
 
 pub async fn run_tools(bench: &Bench, prompt: &Prompt) -> RunRecord {
-    let metered = Arc::new(Metered::new(bench.provider.clone(), bench.budget.clone()));
+    let metered = bench.metered(bench.provider.clone());
     let trace = metered.trace();
     let host = Arc::new(BillsHost::new());
-    let agent = Agent::new(host.clone(), metered);
+    let agent = Agent::new(host.clone(), metered).with_config(bench.config);
     let user = User::new(HOUSEHOLD_USER);
     let (session, mut outgoing) = agent.open_session(hello(prompt.locale), user);
     let started = Instant::now();
@@ -361,7 +388,7 @@ async fn next_reply(provider: &Metered, request: ModelRequest) -> Result<Reply, 
 }
 
 pub async fn run_inline(bench: &Bench, prompt: &Prompt) -> RunRecord {
-    let metered = Arc::new(Metered::new(bench.provider.clone(), bench.budget.clone()));
+    let metered = bench.metered(bench.provider.clone());
     let trace = metered.trace();
     let host = Arc::new(BillsHost::new());
     let agent = Agent::new(host.clone(), metered.clone());
@@ -384,7 +411,7 @@ pub async fn run_inline(bench: &Bench, prompt: &Prompt) -> RunRecord {
         })
         .cloned()
         .collect();
-    let config = AgentConfig::default();
+    let config = bench.config;
     let started = Instant::now();
     let mut history =
         vec![json!({ "role": "user", "content": [{ "type": "text", "text": prompt.text }] })];
@@ -483,6 +510,174 @@ pub async fn run_inline(bench: &Bench, prompt: &Prompt) -> RunRecord {
     )
 }
 
+pub const NO_TOOL: &str = "none";
+
+fn branch(tool: &str, key: &str, schema: Value) -> Value {
+    json!({
+        "type": "object",
+        "properties": { "tool": { "const": tool }, key: schema },
+        "required": ["tool", key],
+        "additionalProperties": false
+    })
+}
+
+pub fn constrained_schema(tools: &[Value]) -> Result<Value, String> {
+    let grammar = ToolGrammar::from_tools(&Value::Array(tools.to_vec()))
+        .map_err(|error| error.to_string())?;
+    let mut branches: Vec<Value> = grammar
+        .tools()
+        .iter()
+        .map(|tool| branch(&tool.name, "input", tool.input_schema.clone()))
+        .collect();
+    branches.push(branch(NO_TOOL, "text", json!({ "type": "string" })));
+    Ok(json!({ "anyOf": branches }))
+}
+
+pub fn constrained_guide(tools: &[Value]) -> String {
+    let mut listed = String::new();
+    for tool in tools {
+        listed.push_str(&format!(
+            "\n- {}: {}\n  input schema: {}",
+            tool["name"].as_str().unwrap_or_default(),
+            tool["description"].as_str().unwrap_or_default(),
+            tool["input_schema"]
+        ));
+    }
+    format!(
+        "Important: in this client every reply you write is exactly one JSON object, and nothing else. To use a tool, reply {{\"tool\": \"<tool name>\", \"input\": <the tool input>}}. To answer in plain text without UI, reply {{\"tool\": \"none\", \"text\": \"<your answer>\"}}. The text of a none reply is shown to the user as it is. A tool result comes back in the next message; then reply again with one JSON object. If the next message lists problems, reply with the whole corrected call. Write object keys in the order the schemas list them. These are the tools:{listed}"
+    )
+}
+
+fn constrained_feedback(name: &str, outcome: &ToolOutcome) -> String {
+    if UI_TOOLS.contains(&name) && outcome.is_error {
+        format!(
+            "[{name} result] {}\nReply again with one JSON object with the whole corrected call.",
+            outcome.content
+        )
+    } else {
+        format!("[{name} result] {}", outcome.content)
+    }
+}
+
+pub async fn run_constrained(bench: &Bench, prompt: &Prompt) -> RunRecord {
+    let provider = bench
+        .constrained
+        .clone()
+        .unwrap_or_else(|| bench.provider.clone());
+    let metered = bench.metered(provider);
+    let trace = metered.trace();
+    let host = Arc::new(BillsHost::new());
+    let agent = Agent::new(host.clone(), metered.clone());
+    let (session, mut outgoing) =
+        agent.open_session(hello(prompt.locale), User::new(HOUSEHOLD_USER));
+    let system = format!(
+        "{}\n\n{}",
+        session.system_prompt(),
+        constrained_guide(session.tools())
+    );
+    let config = bench.config;
+    let started = Instant::now();
+    let mut history =
+        vec![json!({ "role": "user", "content": [{ "type": "text", "text": prompt.text }] })];
+    let mut attempts = Vec::new();
+    let mut said = String::new();
+    let mut first_open = None;
+    let mut failures = 0;
+    let mut ending = "done (call limit)".to_string();
+    for _ in 0..config.max_model_calls {
+        let request = ModelRequest {
+            system: system.clone(),
+            tools: Vec::new(),
+            messages: history.clone(),
+            max_tokens: config.max_tokens,
+        };
+        let reply = match next_reply(&metered, request).await {
+            Ok(reply) => reply,
+            Err(error) => {
+                ending = format!("error: {error}");
+                break;
+            }
+        };
+        if !reply.content.is_empty() {
+            history.push(json!({ "role": "assistant", "content": reply.content }));
+        }
+        if let Some(reason) = reply.cut_off {
+            ending = format!("error: cut off ({reason})");
+            break;
+        }
+        let parsed = serde_json::from_str::<Value>(reply.text.trim()).ok();
+        let name = parsed
+            .as_ref()
+            .and_then(|call| call["tool"].as_str())
+            .map(str::to_string);
+        let feedback = match (&parsed, name.as_deref()) {
+            (Some(call), Some(NO_TOOL)) => {
+                said.push_str(call["text"].as_str().unwrap_or_default());
+                ending = "done".into();
+                break;
+            }
+            (Some(call), Some(name)) => {
+                let outcome = session.call_tool(name, &call["input"]).await;
+                if UI_TOOLS.contains(&name) {
+                    attempts.push(Attempt {
+                        tool: name.to_string(),
+                        ok: !outcome.is_error,
+                        problems: if outcome.is_error {
+                            problem_kinds(&outcome.content)
+                        } else {
+                            Vec::new()
+                        },
+                    });
+                    if !outcome.is_error {
+                        if name == "show_ui" {
+                            first_open = Some(started.elapsed());
+                        }
+                        ending = "done".into();
+                        break;
+                    }
+                    failures += 1;
+                }
+                constrained_feedback(name, &outcome)
+            }
+            _ => {
+                attempts.push(Attempt {
+                    tool: "reply".into(),
+                    ok: false,
+                    problems: vec!["the reply is not one JSON object with a tool".to_string()],
+                });
+                failures += 1;
+                "[problem] The reply was not one JSON object with a \"tool\" key. Reply again with one JSON object.".to_string()
+            }
+        };
+        if failures > config.max_retries {
+            ending = "done".into();
+            break;
+        }
+        history.push(json!({ "role": "user", "content": [{ "type": "text", "text": feedback }] }));
+    }
+    let total = started.elapsed();
+    let opens = count_opens(&mut outgoing);
+    let trace = lock(&trace);
+    if trace.refused {
+        ending = "budget".into();
+    }
+    let outcome = Outcome {
+        ending,
+        text: said,
+        opens,
+        first_open,
+    };
+    record(
+        prompt,
+        Variant::Constrained,
+        attempts,
+        outcome,
+        trace.usage,
+        trace.requests.len(),
+        total,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -491,7 +686,10 @@ mod tests {
     fn bench(scripted: Arc<ScriptedProvider>) -> Bench {
         Bench {
             provider: scripted,
-            budget: Budget::new(20),
+            constrained: None,
+            budget: Budget::new(20, 0),
+            pacer: Pacer::new(Duration::ZERO),
+            config: AgentConfig::default(),
         }
     }
 
@@ -582,6 +780,62 @@ mod tests {
         assert!(requests[0].system.contains("```json"));
         let feedback = requests[1].messages.last().unwrap().to_string();
         assert!(feedback.contains("is not in the catalog"), "{feedback}");
+    }
+
+    #[tokio::test]
+    async fn constrained_runs_parse_the_json_call_and_retry_on_problems() {
+        let scripted = Arc::new(ScriptedProvider::new());
+        scripted.reply(ScriptedReply::new().text(
+            &json!({ "tool": "show_ui", "input": { "root": "x", "components": [{ "id": "x", "type": "Html" }] } }).to_string(),
+        ));
+        scripted.reply(
+            ScriptedReply::new().text(&json!({ "tool": "show_ui", "input": card() }).to_string()),
+        );
+        let record = run_constrained(&bench(scripted.clone()), &prompt()).await;
+        assert_eq!(record.variant, Variant::Constrained);
+        assert_eq!(record.ending, "done");
+        assert_eq!(record.first_valid(), Some(1));
+        assert!(record.opened);
+        assert_eq!(record.model_calls, 2);
+        let requests = scripted.requests();
+        assert!(requests[0].tools.is_empty());
+        assert!(requests[0].system.contains("\"tool\": \"none\""));
+        let feedback = requests[1].messages.last().unwrap().to_string();
+        assert!(feedback.contains("is not in the catalog"), "{feedback}");
+    }
+
+    #[tokio::test]
+    async fn constrained_runs_feed_host_tool_results_back_and_end_on_text() {
+        let scripted = Arc::new(ScriptedProvider::new());
+        scripted.reply(
+            ScriptedReply::new()
+                .text(&json!({ "tool": "get_usage", "input": { "service": "gas" } }).to_string()),
+        );
+        scripted.reply(
+            ScriptedReply::new()
+                .text(&json!({ "tool": "none", "text": "Gas use fell this spring." }).to_string()),
+        );
+        let record = run_constrained(&bench(scripted.clone()), &prompt()).await;
+        assert!(!record.made_ui_call());
+        assert_eq!(record.text, "Gas use fell this spring.");
+        assert_eq!(record.model_calls, 2);
+        let feedback = scripted.requests()[1].messages.last().unwrap().to_string();
+        assert!(feedback.contains("[get_usage result]"), "{feedback}");
+    }
+
+    #[test]
+    fn the_constrained_schema_is_a_union_of_closed_calls() {
+        let tools = vec![
+            json!({ "name": "close_ui", "description": "Close.", "input_schema": { "type": "object", "properties": { "surface": { "type": "string", "description": "id" } }, "required": ["surface"], "additionalProperties": false } }),
+        ];
+        let schema = constrained_schema(&tools).unwrap();
+        assert_eq!(
+            schema,
+            json!({ "anyOf": [
+                { "type": "object", "properties": { "tool": { "const": "close_ui" }, "input": { "type": "object", "properties": { "surface": { "type": "string" } }, "required": ["surface"], "additionalProperties": false } }, "required": ["tool", "input"], "additionalProperties": false },
+                { "type": "object", "properties": { "tool": { "const": "none" }, "text": { "type": "string" } }, "required": ["tool", "text"], "additionalProperties": false }
+            ] })
+        );
     }
 
     #[tokio::test]

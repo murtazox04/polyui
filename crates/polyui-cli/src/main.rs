@@ -3,7 +3,8 @@ use polyui_core::tools::{self, ToolOptions};
 use polyui_core::{ActionTable, CatalogSet, Locale, StaticRefs, Validator};
 use polyui_server::anthropic::{self, AnthropicProvider, ApiKey};
 use polyui_server::bills::{self, BillsHost};
-use polyui_server::{Agent, Host, ServerConfig, User};
+use polyui_server::openai::{self, OpenAiCompatProvider};
+use polyui_server::{Agent, Host, ModelProvider, ServerConfig, User};
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -19,6 +20,12 @@ use std::sync::Arc;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ProviderChoice {
+    Anthropic,
+    OpenaiCompat,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -39,11 +46,34 @@ enum Command {
         #[arg(
             long,
             value_name = "PATH",
-            help = "Dotenv style file that sets ANTHROPIC_API_KEY."
+            help = "Dotenv style file that sets the API key (ANTHROPIC_API_KEY, or the --api-key-env variable for openai-compat)."
         )]
         env_file: Option<PathBuf>,
-        #[arg(long, default_value = anthropic::DEFAULT_MODEL, help = "Anthropic model id.")]
-        model: String,
+        #[arg(
+            long,
+            help = "Model id. Defaults to claude-haiku-5-5 for anthropic; required for openai-compat."
+        )]
+        model: Option<String>,
+        #[arg(
+            long,
+            value_enum,
+            default_value = "anthropic",
+            help = "Model API: the Anthropic Messages API, or any OpenAI-compatible /chat/completions endpoint."
+        )]
+        provider: ProviderChoice,
+        #[arg(
+            long,
+            value_name = "URL",
+            help = "Base URL of the OpenAI-compatible API, for example http://127.0.0.1:8080/v1."
+        )]
+        base_url: Option<String>,
+        #[arg(
+            long,
+            value_name = "NAME",
+            default_value = openai::DEFAULT_KEY_VARIABLE,
+            help = "Environment variable (or --env-file entry) with the bearer key for openai-compat. Without it, requests go without a key."
+        )]
+        api_key_env: String,
         #[arg(long, value_enum, default_value = "bills", help = "Demo host to run.")]
         host: HostChoice,
         #[arg(
@@ -287,11 +317,66 @@ async fn sandbox_listener(
         .map_err(|error| format!("cannot listen on {sandbox} for the sandbox: {error}"))
 }
 
+struct ModelOptions {
+    provider: ProviderChoice,
+    env_file: Option<PathBuf>,
+    model: Option<String>,
+    base_url: Option<String>,
+    api_key_env: String,
+}
+
+fn anthropic_key(env_file: Option<&Path>) -> Result<ApiKey, String> {
+    match env_file {
+        Some(path) => ApiKey::from_env_file(path),
+        None => ApiKey::from_env()
+            .ok_or_else(|| format!("set {} or pass --env-file", anthropic::KEY_VARIABLE)),
+    }
+}
+
+fn compat_key(env_file: Option<&Path>, variable: &str) -> Result<Option<ApiKey>, String> {
+    match env_file {
+        Some(path) => ApiKey::from_env_file_var(path, variable).map(Some),
+        None => Ok(ApiKey::from_env_var(variable)),
+    }
+}
+
+fn model_provider(options: ModelOptions) -> Result<(Arc<dyn ModelProvider>, String), String> {
+    let ModelOptions {
+        provider,
+        env_file,
+        model,
+        base_url,
+        api_key_env,
+    } = options;
+    match provider {
+        ProviderChoice::Anthropic => {
+            if base_url.is_some() {
+                return Err("--base-url is only used with --provider openai-compat".into());
+            }
+            let model = model.unwrap_or_else(|| anthropic::DEFAULT_MODEL.to_string());
+            let key = anthropic_key(env_file.as_deref())?;
+            Ok((Arc::new(AnthropicProvider::new(key, model.clone())), model))
+        }
+        ProviderChoice::OpenaiCompat => {
+            let base_url = base_url.ok_or(
+                "--provider openai-compat needs --base-url, for example http://127.0.0.1:8080/v1",
+            )?;
+            let model = model.ok_or("--provider openai-compat needs --model")?;
+            let mut compat = OpenAiCompatProvider::new(&base_url, model.clone());
+            match compat_key(env_file.as_deref(), &api_key_env)? {
+                Some(key) => compat = compat.with_key(key),
+                None => eprintln!("{api_key_env} is not set; sending requests without a key"),
+            }
+            let label = format!("{model} at {}", compat.endpoint());
+            Ok((Arc::new(compat), label))
+        }
+    }
+}
+
 struct ServeOptions {
     addr: SocketAddr,
     static_dir: Option<PathBuf>,
-    env_file: Option<PathBuf>,
-    model: String,
+    model: ModelOptions,
     choice: HostChoice,
     data: PathBuf,
     embed_origin: Option<String>,
@@ -302,7 +387,6 @@ async fn serve(options: ServeOptions) -> ExitCode {
     let ServeOptions {
         addr,
         static_dir,
-        env_file,
         model,
         choice,
         data,
@@ -334,19 +418,13 @@ async fn serve(options: ServeOptions) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let key = match &env_file {
-        Some(path) => ApiKey::from_env_file(path),
-        None => ApiKey::from_env()
-            .ok_or_else(|| format!("set {} or pass --env-file", anthropic::KEY_VARIABLE)),
-    };
-    let key = match key {
-        Ok(key) => key,
+    let (provider, model) = match model_provider(model) {
+        Ok(chosen) => chosen,
         Err(message) => {
             eprintln!("{message}");
             return ExitCode::FAILURE;
         }
     };
-    let provider = Arc::new(AnthropicProvider::new(key, model.clone()));
     let agent = Agent::new(host, provider);
     let app = polyui_server::router(
         agent,
@@ -404,6 +482,9 @@ async fn main() -> ExitCode {
             static_dir,
             env_file,
             model,
+            provider,
+            base_url,
+            api_key_env,
             host,
             data,
             embed_origin,
@@ -412,8 +493,13 @@ async fn main() -> ExitCode {
             serve(ServeOptions {
                 addr,
                 static_dir,
-                env_file,
-                model,
+                model: ModelOptions {
+                    provider,
+                    env_file,
+                    model,
+                    base_url,
+                    api_key_env,
+                },
                 choice: host,
                 data,
                 embed_origin,
@@ -437,6 +523,45 @@ mod tests {
 
     fn app() -> SocketAddr {
         SocketAddr::from(([127, 0, 0, 1], 8787))
+    }
+
+    fn compat(base_url: Option<&str>, model: Option<&str>) -> ModelOptions {
+        ModelOptions {
+            provider: ProviderChoice::OpenaiCompat,
+            env_file: None,
+            model: model.map(str::to_string),
+            base_url: base_url.map(str::to_string),
+            api_key_env: "POLYUI_TEST_KEY_THAT_IS_NOT_SET".into(),
+        }
+    }
+
+    #[test]
+    fn openai_compat_needs_a_base_url_and_a_model() {
+        let missing_url = model_provider(compat(None, Some("m"))).err();
+        assert!(missing_url.is_some_and(|message| message.contains("--base-url")));
+        let missing_model = model_provider(compat(Some("http://127.0.0.1:8080/v1"), None)).err();
+        assert!(missing_model.is_some_and(|message| message.contains("--model")));
+        let chosen = model_provider(compat(Some("http://127.0.0.1:8080/v1/"), Some("gemma")));
+        assert_eq!(
+            chosen.map(|(_, label)| label).ok(),
+            Some("gemma at http://127.0.0.1:8080/v1/chat/completions".to_string())
+        );
+        let cli = Cli::try_parse_from([
+            "polyui",
+            "serve",
+            "--provider",
+            "openai-compat",
+            "--base-url",
+            "http://127.0.0.1:8080/v1",
+            "--model",
+            "gemma",
+            "--api-key-env",
+            "MY_KEY",
+        ]);
+        assert!(matches!(
+            cli.map(|cli| cli.command),
+            Ok(Command::Serve { provider: ProviderChoice::OpenaiCompat, ref api_key_env, .. }) if api_key_env == "MY_KEY"
+        ));
     }
 
     #[test]

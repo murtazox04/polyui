@@ -6,21 +6,24 @@ mod run;
 use clap::{Parser, ValueEnum};
 use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
-use meter::Budget;
+use meter::{Budget, Pacer};
 use polyui_server::anthropic::{self, AnthropicProvider, ApiKey};
+use polyui_server::bills::{BillsHost, HOUSEHOLD_USER};
+use polyui_server::openai::{self, OpenAiCompatProvider, json_schema_format};
+use polyui_server::{Agent, AgentConfig, ModelProvider, User};
 use prompts::Prompt;
-use report::{Prices, Report};
+use report::{Calls, Prices, Report};
 use run::{Bench, RunRecord, Variant};
+use serde_json::Value;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum Which {
-    Both,
-    Tools,
-    Inline,
+enum ProviderChoice {
+    Anthropic,
+    OpenaiCompat,
 }
 
 #[derive(Debug, Parser)]
@@ -29,15 +32,37 @@ enum Which {
     about = "Measures how often the model produces a valid show_ui on the first try and after retries."
 )]
 struct Args {
-    #[arg(long, default_value = anthropic::DEFAULT_MODEL)]
-    model: String,
+    #[arg(long, value_enum, default_value = "anthropic")]
+    provider: ProviderChoice,
     #[arg(
         long,
-        help = "File with ANTHROPIC_API_KEY=...; without it the key comes from the environment"
+        help = "Model id; defaults to claude-haiku-5-5 for anthropic and is required for openai-compat"
+    )]
+    model: Option<String>,
+    #[arg(
+        long,
+        help = "Base URL of the OpenAI-compatible API, for openai-compat"
+    )]
+    base_url: Option<String>,
+    #[arg(
+        long,
+        default_value = openai::DEFAULT_KEY_VARIABLE,
+        help = "Variable with the bearer key for openai-compat, read from the environment or --env-file"
+    )]
+    api_key_env: String,
+    #[arg(
+        long,
+        help = "Dotenv file with the API key; without it the key comes from the environment"
     )]
     env_file: Option<PathBuf>,
-    #[arg(long, value_enum, default_value = "both")]
-    variant: Which,
+    #[arg(
+        long,
+        value_enum,
+        value_delimiter = ',',
+        default_value = "tools,inline",
+        help = "Settings to run, comma separated: tools, constrained, inline"
+    )]
+    variant: Vec<Variant>,
     #[arg(long, help = "Run only the first N prompts")]
     limit: Option<usize>,
     #[arg(long, default_value_t = 4)]
@@ -48,6 +73,35 @@ struct Args {
         help = "Hard cap on model calls for the whole run"
     )]
     max_calls: usize,
+    #[arg(
+        long,
+        default_value_t = 16000,
+        help = "max_tokens for every model call"
+    )]
+    max_tokens: u32,
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Least time between the starts of two model calls, in milliseconds"
+    )]
+    min_gap_ms: u64,
+    #[arg(
+        long,
+        default_value_t = 3,
+        help = "Stop calling the model after this many provider errors in a row; 0 never stops"
+    )]
+    stop_after_errors: usize,
+    #[arg(
+        long,
+        default_value_t = 2,
+        help = "Tries per call when an openai-compat server answers 502, 503 or 504; 1 never retries"
+    )]
+    server_error_attempts: u32,
+    #[arg(
+        long,
+        help = "Sampling temperature for openai-compat; the server default without it"
+    )]
+    temperature: Option<f64>,
     #[arg(long, default_value = "bench/results")]
     out_dir: PathBuf,
     #[arg(
@@ -94,25 +148,108 @@ fn today() -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
-fn api_key(args: &Args) -> Result<ApiKey, String> {
+struct Providers {
+    plain: Arc<dyn ModelProvider>,
+    constrained: Option<Arc<dyn ModelProvider>>,
+    compat: Option<OpenAiCompatProvider>,
+    model: String,
+}
+
+fn anthropic_key(args: &Args) -> Result<ApiKey, String> {
     match &args.env_file {
         Some(path) => ApiKey::from_env_file(path),
         None => ApiKey::from_env().ok_or_else(|| format!("{} is not set", anthropic::KEY_VARIABLE)),
     }
 }
 
+fn compat_key(args: &Args) -> Result<Option<ApiKey>, String> {
+    match &args.env_file {
+        Some(path) => ApiKey::from_env_file_var(path, &args.api_key_env).map(Some),
+        None => Ok(ApiKey::from_env_var(&args.api_key_env)),
+    }
+}
+
+fn bills_tools() -> Vec<Value> {
+    let agent = Agent::new(
+        Arc::new(BillsHost::new()),
+        Arc::new(polyui_server::ScriptedProvider::new()),
+    );
+    let (session, _) = agent.open_session(run::hello("en"), User::new(HOUSEHOLD_USER));
+    session.tools().to_vec()
+}
+
+fn providers(args: &Args) -> Result<Providers, String> {
+    let wants_constrained = args.variant.contains(&Variant::Constrained);
+    match args.provider {
+        ProviderChoice::Anthropic => {
+            if wants_constrained {
+                return Err("the constrained setting needs --provider openai-compat".into());
+            }
+            let model = args
+                .model
+                .clone()
+                .unwrap_or_else(|| anthropic::DEFAULT_MODEL.to_string());
+            Ok(Providers {
+                plain: Arc::new(AnthropicProvider::new(anthropic_key(args)?, model.clone())),
+                constrained: None,
+                compat: None,
+                model,
+            })
+        }
+        ProviderChoice::OpenaiCompat => {
+            let base_url = args
+                .base_url
+                .as_deref()
+                .ok_or("--provider openai-compat needs --base-url")?;
+            let model = args
+                .model
+                .clone()
+                .ok_or("--provider openai-compat needs --model")?;
+            let mut compat = OpenAiCompatProvider::new(base_url, model.clone())
+                .with_overloaded_attempts(args.server_error_attempts);
+            if let Some(key) = compat_key(args)? {
+                compat = compat.with_key(key);
+            }
+            if let Some(temperature) = args.temperature {
+                compat = compat.with_temperature(temperature);
+            }
+            let constrained = if wants_constrained {
+                let schema = run::constrained_schema(&bills_tools())?;
+                eprintln!(
+                    "constrained reply schema: {} bytes",
+                    schema.to_string().len()
+                );
+                let format = json_schema_format("polyui_reply", schema);
+                Some(Arc::new(compat.clone().with_response_format(format)) as Arc<dyn ModelProvider>)
+            } else {
+                None
+            };
+            Ok(Providers {
+                plain: Arc::new(compat.clone()),
+                constrained,
+                compat: Some(compat),
+                model,
+            })
+        }
+    }
+}
+
 fn jobs<'a>(
     bench: &'a Bench,
     prompts: &'a [Prompt],
-    which: Which,
+    variants: &[Variant],
 ) -> Vec<BoxFuture<'a, RunRecord>> {
     let mut out: Vec<BoxFuture<'a, RunRecord>> = Vec::new();
-    for prompt in prompts {
-        if matches!(which, Which::Both | Which::Tools) {
-            out.push(Box::pin(run::run_tools(bench, prompt)));
-        }
-        if matches!(which, Which::Both | Which::Inline) {
-            out.push(Box::pin(run::run_inline(bench, prompt)));
+    for variant in Variant::ALL
+        .into_iter()
+        .filter(|variant| variants.contains(variant))
+    {
+        for prompt in prompts {
+            out.push(match variant {
+                Variant::Tools => Box::pin(run::run_tools(bench, prompt)),
+                Variant::Constrained => Box::pin(run::run_constrained(bench, prompt)),
+                Variant::Inline => Box::pin(run::run_inline(bench, prompt)),
+            });
         }
     }
     out
@@ -127,10 +264,7 @@ fn progress(record: &RunRecord) {
     eprintln!(
         "{:<22} {:<7} ui [{attempts}] opened {} calls {} {} ms, {}",
         record.prompt,
-        match record.variant {
-            Variant::Tools => "tools",
-            Variant::Inline => "inline",
-        },
+        record.variant.short(),
         record.opened,
         record.model_calls,
         record.ms_total,
@@ -152,14 +286,19 @@ async fn run(args: Args) -> Result<(), String> {
         }
         return Ok(());
     }
-    let key = api_key(&args)?;
-    let provider = Arc::new(AnthropicProvider::new(key, args.model.clone()));
+    let chosen = providers(&args)?;
     let bench = Bench {
-        provider,
-        budget: Budget::new(args.max_calls),
+        provider: chosen.plain.clone(),
+        constrained: chosen.constrained.clone(),
+        budget: Budget::new(args.max_calls, args.stop_after_errors),
+        pacer: Pacer::new(Duration::from_millis(args.min_gap_ms)),
+        config: AgentConfig {
+            max_tokens: args.max_tokens,
+            ..AgentConfig::default()
+        },
     };
     let mut records: Vec<RunRecord> =
-        futures_util::stream::iter(jobs(&bench, &prompts, args.variant))
+        futures_util::stream::iter(jobs(&bench, &prompts, &args.variant))
             .buffer_unordered(args.concurrency.max(1))
             .inspect(progress)
             .collect()
@@ -176,18 +315,29 @@ async fn run(args: Args) -> Result<(), String> {
         cache_write_factor: args.cache_write_factor,
         cache_read_factor: args.cache_read_factor,
     };
+    if bench.budget.stopped() {
+        eprintln!("polyui-bench: stopped calling the model after provider errors in a row");
+    }
+    let calls = Calls {
+        model_calls: bench.budget.used(),
+        provider_requests: chosen
+            .compat
+            .as_ref()
+            .map(OpenAiCompatProvider::requests_sent),
+        stopped_early: bench.budget.stopped(),
+    };
     let report = Report::build(
         date.clone(),
-        args.model.clone(),
+        chosen.model.clone(),
         prices,
         prompts.len(),
-        bench.budget.used(),
+        calls,
         records,
     );
     let stem = args
         .name
         .clone()
-        .unwrap_or_else(|| format!("{date}-{}", args.model));
+        .unwrap_or_else(|| format!("{date}-{}", chosen.model.replace('/', "-")));
     std::fs::create_dir_all(&args.out_dir).map_err(|error| error.to_string())?;
     let json_path = args.out_dir.join(format!("{stem}.json"));
     let markdown_path = args.out_dir.join(format!("{stem}.md"));

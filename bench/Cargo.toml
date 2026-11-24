@@ -16,8 +16,12 @@ path = "src/main.rs"
 [dependencies]
 polyui-core = { workspace = true }
 polyui-server = { workspace = true }
+polyui-decode = { path = "../crates/polyui-decode", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { version = "4.6.9", features = ["derive"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 futures-util = "0.3.34"
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }

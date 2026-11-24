@@ -170,9 +170,18 @@ pub struct Report {
     pub prices: Prices,
     pub prompts: usize,
     pub total_model_calls: usize,
+    pub provider_requests: Option<usize>,
+    pub stopped_early: bool,
     pub total_cost_usd: f64,
     pub variants: Vec<VariantReport>,
     pub runs: Vec<RunRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Calls {
+    pub model_calls: usize,
+    pub provider_requests: Option<usize>,
+    pub stopped_early: bool,
 }
 
 impl Report {
@@ -181,11 +190,11 @@ impl Report {
         model: String,
         prices: Prices,
         prompts: usize,
-        total_model_calls: usize,
+        calls: Calls,
         runs: Vec<RunRecord>,
     ) -> Self {
         let mut variants = Vec::new();
-        for variant in [Variant::Tools, Variant::Inline] {
+        for variant in Variant::ALL {
             let records: Vec<&RunRecord> =
                 runs.iter().filter(|run| run.variant == variant).collect();
             if records.is_empty() {
@@ -215,7 +224,9 @@ impl Report {
             model,
             prices,
             prompts,
-            total_model_calls,
+            total_model_calls: calls.model_calls,
+            provider_requests: calls.provider_requests,
+            stopped_early: calls.stopped_early,
             total_cost_usd,
             variants,
             runs,
@@ -224,11 +235,18 @@ impl Report {
 
     pub fn markdown(&self) -> String {
         let mut out = String::new();
-        let _ = writeln!(
+        let _ = write!(
             out,
-            "Run on {} with `{}`: {} prompts, {} model calls, about ${:.4}.\n",
+            "Run on {} with `{}`: {} prompts, {} model calls, about ${:.4}.",
             self.date, self.model, self.prompts, self.total_model_calls, self.total_cost_usd
         );
+        if let Some(requests) = self.provider_requests {
+            let _ = write!(out, " {requests} HTTP requests including retries.");
+        }
+        if self.stopped_early {
+            out.push_str(" The run stopped early after provider errors in a row.");
+        }
+        out.push_str("\n\n");
         out.push_str("| Setting | Turns with a UI call | Valid on the first try | Valid after 1 retry | Valid after 2 retries | UI shown when expected | No UI when none expected | Mean time to ui.open | Model calls | Input tokens | Output tokens | Cost |\n");
         out.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|\n");
         for variant in &self.variants {

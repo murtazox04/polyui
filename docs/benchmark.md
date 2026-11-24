@@ -4,6 +4,8 @@ PolyUI only works if the model writes a `show_ui` call that passes validation. W
 
 The short version for the run on 2026-11-24 with `claude-haiku-5-5`: every UI the model attempted was valid on the first try, in all four languages, in both settings we compared. The two settings differed in speed, cost and in what the model chose to draw, not in validity.
 
+A small self-hosted model is where we expect the settings to differ. The first attempt with `ember:chat` (Gemma, about 12B) on the same day produced no numbers: the provider failed on the first request and we stopped, as agreed with its operator. See [Ember, first attempt](#ember-first-attempt-2026-11-24).
+
 ## What is measured
 
 The `polyui-bench` binary (crate `bench/`) sends 32 realistic requests to the real Anthropic API through `AnthropicProvider`, against the `bills` demo host (the Karimov household in Tashkent). Each request runs in a fresh session, so earlier answers and paid bills never leak into the next one.
@@ -56,6 +58,24 @@ Two differences are built into the comparison and you should keep them in mind w
 
 - The inline prompt carries only the `show_ui` schema, while the tool setting sends all three UI tool schemas. That is the main reason its input is smaller.
 - With tools, the model writes its text after it sees that the UI was shown, which takes a second model call. Inline, the text and the JSON come in one reply.
+
+### A third setting: constrained JSON
+
+For servers that accept `response_format` with a JSON Schema (llama-server, vLLM and most gateways in front of them), the benchmark has a third setting, `constrained`. There are no tools in the request. Every reply must be one JSON object, and the server's decoder only lets the model write objects that fit this schema:
+
+```json
+{ "anyOf": [
+  { "tool": "show_ui",   "input": <show_ui input schema> },
+  { "tool": "update_ui", "input": <update_ui input schema> },
+  { "tool": "close_ui",  "input": <close_ui input schema> },
+  { "tool": "get_usage", "input": <get_usage input schema> },
+  { "tool": "none",      "text": string }
+] }
+```
+
+Each branch is a closed object (`additionalProperties: false`, both keys required, `tool` as a `const`). The input schemas are the ones `polyui-decode` prepares for local decoders, so they keep `maxLength`, `minimum`, `maximum` and `maxItems` and drop only the annotations. For the bills host the whole schema is 34 902 bytes. The system prompt gets one more paragraph that explains the object and lists the tools with their schemas.
+
+The benchmark parses the reply, runs the named tool through the same session and validator, and sends problems back as a user message, with the same limit of two retries. A `get_usage` result goes back the same way and the model answers again. A valid UI call or a `none` reply ends the turn.
 
 ## The prompt set
 
@@ -110,6 +130,30 @@ xychart-beta
     line [5.5, 6.6, 7.2, 6.2]
 ```
 
+## Ember, first attempt, 2026-11-24
+
+Model `model/chat/ember` (`ember:chat`, Gemma, about 12B, self-hosted) behind an OpenAI-compatible gateway, through `OpenAiCompatProvider`. The gateway is shared with production traffic, so the run was sequential (`--concurrency 1`), at most one call every 2.6 s, with `max_tokens` 4096, a budget of 180 calls, and a rule to stop at once on repeated 5xx errors or timeouts. The plan was a 3 call smoke test on the first prompt (`en-bills`), then all 32 prompts in the three settings.
+
+The smoke test did not get a single model reply:
+
+| Setting | HTTP requests | Time | What came back |
+|---|---|---|---|
+| tool calls | 2 (one retry) | 130 s | HTTP 503 `model_call_failed`, `model_unavailable`: "peer closed connection without sending complete message body (incomplete chunked read)", both times |
+| constrained JSON | 4 (three retries, 1, 2 and 4 s apart) | 8.7 s | HTTP 429 `concurrency_limited`, "over 2" |
+| inline JSON | 0 | | not sent, the smoke budget of 3 model calls was used up |
+
+The 429 came while the benchmark had nothing else in flight. Our guess is that the gateway was still working on the two failed tool requests, but we did not verify that. Two 503s in a row is the stop condition, so we made no further calls: 6 HTTP requests in total, 0 tokens reported back.
+
+The requests are large for a 12B model, which may matter here. We measured the first request of each setting against a local mock server:
+
+| Setting | Request body | Of which tool or reply schemas |
+|---|---|---|
+| tool calls | 47.7 KB | 48.0 KB of tool definitions (show_ui and update_ui are about 23.6 KB each) |
+| constrained JSON | 89.8 KB | 47.7 KB system prompt with the schemas, 38.5 KB `response_format` |
+| inline JSON | 29.2 KB | 25.1 KB system prompt with the show_ui schema |
+
+So, for ember, every number in the results table is still unknown: first-try validity, validity after retries, UI when expected, latency, tokens and problem kinds. The hypothesis that tool calling plus constrained decoding beats inline JSON on a 12B model is not tested yet. The next step is to ask the operator why the 503 happened and whether requests of this size are expected to work, before spending any of the remaining budget. If the tool request is the problem, the inline setting (the smallest body) is the cheapest place to start.
+
 ## What the run tells us
 
 **Validity is not where the settings differ.** No attempt was rejected in either setting, so this run does not support the idea that tool calling produces more valid UI than inline JSON. With every rate at 100%, the benchmark cannot rank them on validity at all; a harder prompt set or a smaller model would be needed for that.
@@ -126,7 +170,7 @@ Limits of this run: one sample per prompt and setting, 32 prompts, one model, an
 
 ## Running it
 
-The key comes from an env file and is never printed.
+The key comes from an env file or the environment and is never printed.
 
 ```sh
 set -a; . ~/.config/polyui/anthropic.env; set +a
@@ -134,15 +178,33 @@ cargo run --release -p polyui-bench -- --limit 4 --max-calls 24 --out-dir /tmp/p
 cargo run --release -p polyui-bench -- --max-calls 160
 ```
 
+For an OpenAI-compatible server, such as ember, name the variable that holds the key and keep it gentle:
+
+```sh
+set -a; . ~/.config/polyui/ember.env; set +a
+cargo run --release -p polyui-bench -- --provider openai-compat \
+  --base-url "$EMBER_BASE_URL" --model "$EMBER_MODEL" --api-key-env EMBER_API_KEY \
+  --variant tools,constrained,inline --concurrency 1 --min-gap-ms 2600 \
+  --max-tokens 4096 --server-error-attempts 1 --stop-after-errors 2 \
+  --input-price 0 --output-price 0 --max-calls 3 --limit 1 --name ember-smoke
+```
+
 | Option | Default | Use |
 |---|---|---|
-| `--model` | `claude-haiku-5-5` | Any model id the Messages API accepts. |
-| `--variant` | `both` | `tools`, `inline` or `both`. |
+| `--provider` | `anthropic` | `anthropic` or `openai-compat`. |
+| `--model` | `claude-haiku-5-5` | Any model id the API accepts. Required for `openai-compat`. |
+| `--base-url`, `--api-key-env` | none, `OPENAI_API_KEY` | Where the OpenAI-compatible server is and which variable holds its key. |
+| `--variant` | `tools,inline` | Comma separated: `tools`, `constrained`, `inline`. `constrained` needs `openai-compat`. |
+| `--max-tokens` | 16000 | `max_tokens` for every call. |
+| `--min-gap-ms` | 0 | Least time between the starts of two model calls. |
+| `--stop-after-errors` | 3 | Stop calling the model after this many provider errors in a row. |
+| `--server-error-attempts` | 2 | Tries per call on 502, 503 or 504 with `openai-compat`. |
+| `--temperature` | server default | Only for `openai-compat`. |
 | `--limit` | all 32 | Run only the first N prompts. The first four cover four locales and four kinds of request. |
 | `--max-calls` | 160 | Hard cap on model calls for the whole run. Calls over the cap fail and the turn is marked `budget`. |
 | `--concurrency` | 4 | Turns in flight at once. |
-| `--env-file` | none | Read `ANTHROPIC_API_KEY` from this file instead of the environment. |
+| `--env-file` | none | Read the key (`ANTHROPIC_API_KEY`, or the `--api-key-env` variable) from this file instead of the environment. |
 | `--input-price`, `--output-price` | 0.10, 0.50 | Dollars per million tokens. |
 | `--list` | off | Print the prompt set and exit, without calling the model. |
 
-Each run writes `<date>-<model>.json` and `<date>-<model>.md` to `--out-dir` (default `bench/results`). `cargo test -p polyui-bench` checks the scoring, the prompt set and the inline parser with scripted replies and never calls the network.
+Each run writes `<date>-<model>.json` and `<date>-<model>.md` to `--out-dir` (default `bench/results`), with `/` in the model id written as `-`. With `openai-compat` the report also counts HTTP requests including retries, and says so when the run stopped early. `cargo test -p polyui-bench` checks the scoring, the prompt set and the inline parser with scripted replies and never calls the network.
