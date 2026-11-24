@@ -149,7 +149,7 @@ What reaches the native side is a JSON string with `kind` set to `ready`, `heigh
 
 The native side still does the parts that need the person or the core: it fires `on_message` through the core `fire`, shows `open-link` URLs in its own confirm sheet before opening them outside the app and then calls `polyuiHost.answerLink`, and sizes the view from `height` after clamping it again. Props are put into the page's script as JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped, so a title like `</script>` cannot end the script.
 
-Load the page with a fixed `https` base URL such as `https://embed.polyui.invalid/` rather than as `about:blank` content. Desktop Chrome stopped with a failed check when the page came in as `about:blank` content, and Android's WebView is Chromium.
+Where the web view is Chromium, load the page with a fixed `https` base URL such as `https://embed.polyui.invalid/`, not as `about:blank` content: desktop Chrome stopped with a failed check when the page came in that way. Android and Flutter do this. iOS loads it with no base URL, and WebKit draws the inner frame fine that way.
 
 `bindings/ffi/tests/embed/check.mjs` loads the page in Chromium with a fake bridge and checks the sandbox attribute, that the tool input reaches the app, that the app's `fetch` is blocked by `connect-src`, the clamped height, the message and its one-per-second limit, the link round trip, that plain `http` links are refused, that the app cannot forge an event with the nonce and that it cannot reach `polyuiHost`. CI runs it next to the C test.
 

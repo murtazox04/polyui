@@ -142,11 +142,11 @@ The same pages are on the [documentation site](https://murtazox04.github.io/poly
 | Rust server (`polyui-server`, the `polyui` command) | Done |
 | Web: wasm core and the `polyui-web` renderer | Done |
 | Python (PyO3) and Node (napi-rs) bindings | Done |
-| iOS: C interface over the core and a SwiftUI renderer | Done, tested on a simulator |
-| Flutter | Done on iOS, run on a simulator; the Android build of the Flutter package has not been run |
-| Android: JNI shim and a Compose renderer | Done, tested on an API 35 emulator |
+| iOS: C interface over the core and a SwiftUI renderer | Done, tested on a simulator and on Mac Catalyst; MCP Apps, listening |
+| Flutter | Done, run on an iOS simulator and an Android emulator; MCP Apps, live mode, speech |
+| Android: JNI shim and a Compose renderer | Done, tested on an API 35 emulator; MCP Apps, live mode, listening, TalkBack walk |
 
-The same bills turn in the iOS, Flutter and Android example apps, each drawn by its own renderer from the same core. More screenshots are in `docs/images` (`ios-*.png`, `flutter-*.png`, `android-*.png`) and on the [Platforms](docs/platforms.md) page.
+The same bills turn in the iOS, Flutter and Android example apps, each drawn by its own renderer from the same core. MCP Apps now show inside native surfaces too, through one embed page the C interface builds ([Embedding MCP Apps](docs/embed.md#native-renderers)). More screenshots are in `docs/images` (`ios-*.png`, `flutter-*.png`, `android-*.png`) and on the [Platforms](docs/platforms.md) page.
 
 <p>
 <img src="docs/images/ios-light.png" width="200" alt="The iOS example app in light mode, with the July bar selected">
