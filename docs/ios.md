@@ -104,7 +104,7 @@ A client is not thread safe. Calls on one client must not overlap; serialize the
 
 - `cargo test -p polyui-ffi` and `cargo test -p polyui-ffi --features lite` replay every `tests/conformance/client/*.json` fixture through the C functions and check null pointers, invalid UTF-8, bad JSON, the error slot, poisoning after a panic, deep and very large inputs, and clients on several threads. They also check that an `acme:Badge2` component keeps its type and props only when its catalog is passed, and that each kind of bad catalog gives its own error.
 - `cargo +nightly miri test -p polyui-ffi` runs the same tests under Miri, except the one with multi-megabyte inputs, which is too slow there. Miri reports no undefined behavior.
-- `bindings/ffi/tests/c/run.sh` builds a C program with clang that calls every function, including `polyui_client_new_with_catalogs`, once with AddressSanitizer and UndefinedBehaviorSanitizer and once under macOS `leaks`, and checks that the header also compiles as C++.
+- `bindings/ffi/tests/c/run.sh` builds a C program with clang that calls every function, including `polyui_client_new_with_catalogs`, with AddressSanitizer and UndefinedBehaviorSanitizer, and checks that the header also compiles as C++. On Linux, which is where CI runs it, LeakSanitizer fails the run on any leak. On a Mac it runs a second build under `leaks` instead.
 
 ## The Swift package
 

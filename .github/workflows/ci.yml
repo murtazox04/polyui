@@ -165,14 +165,16 @@ jobs:
           cargo test -p polyui-ffi --features lite
 
   ffi-c:
-    name: C ABI test from C and C++ (macOS, where the script's link line and leaks check were written and run)
-    runs-on: macos-15
+    name: C ABI test from C and C++ with address, leak and undefined behavior sanitizers
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - name: Install the toolchain from rust-toolchain.toml
         run: rustup toolchain install
-      - name: C test with address and undefined behavior sanitizers, full core
+      - name: Show the C compiler
+        run: clang --version
+      - name: C test with the full core
         run: bash bindings/ffi/tests/c/run.sh
       - name: Same with the lite core used by the apps
         run: POLYUI_FFI_FEATURES=lite bash bindings/ffi/tests/c/run.sh
