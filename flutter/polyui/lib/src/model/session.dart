@@ -129,6 +129,11 @@ class PolyuiSession extends ChangeNotifier {
     if (found == null) {
       return null;
     }
+    final answer = found.option;
+    final model = surfaces[surface];
+    if (model?.pendingConfirm != null && (answer == 'yes' || answer == 'no')) {
+      model?.clearConfirm();
+    }
     accept(found.batch);
     final action = found.action;
     if (action != null) {

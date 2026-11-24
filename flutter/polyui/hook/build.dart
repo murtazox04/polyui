@@ -300,7 +300,8 @@ List<Uri> rustSources(Uri workspace) {
       if (entity is File &&
           (path.endsWith('.rs') ||
               path.endsWith('.toml') ||
-              path.endsWith('.json'))) {
+              path.endsWith('.json') ||
+              path.endsWith('.html'))) {
         sources.add(entity.uri);
       }
     }

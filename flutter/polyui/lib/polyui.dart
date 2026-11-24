@@ -25,6 +25,16 @@ export 'src/model/chart_scene.dart'
 export 'src/model/component_node.dart' show ComponentNode;
 export 'src/model/session.dart' show PolyuiSend, PolyuiSession;
 export 'src/model/surface_model.dart' show PolyuiSurfaceModel;
+export 'src/model/voice.dart'
+    show
+        PolyuiListenStart,
+        PolyuiMatchedSpeech,
+        PolyuiSpeechInput,
+        PolyuiSpeechOutput,
+        PolyuiUnmatchedSpeech,
+        PolyuiVoice,
+        PolyuiVoiceProblem,
+        PolyuiVoiceState;
 export 'src/widgets/scope.dart'
     show PolyuiComponent, PolyuiComponentBuilder, PolyuiComponentContext;
 export 'src/widgets/surface.dart' show PolyuiSurface;

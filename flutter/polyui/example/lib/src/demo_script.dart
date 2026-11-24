@@ -6,11 +6,21 @@ class DemoScript {
     this.scrollToBottom =
         const String.fromEnvironment('POLYUI_SCROLL') == 'bottom',
     this.instant = const bool.fromEnvironment('POLYUI_INSTANT'),
+    this.log = const bool.fromEnvironment('POLYUI_LOG'),
+    this.live = const String.fromEnvironment('POLYUI_MODE') == 'live',
+    this.liveQuestion = const String.fromEnvironment('POLYUI_ASK'),
+    this.voiceStep = const String.fromEnvironment('POLYUI_VOICE'),
   });
 
   final String step;
   final bool scrollToBottom;
   final bool instant;
+  final bool log;
+  final bool live;
+  final String liveQuestion;
+  final String voiceStep;
+
+  bool get pressesInsideApp => step == 'embed-press';
 
   bool reaches(String target) {
     const order = ['ask', 'select', 'pay', 'paid'];
@@ -19,6 +29,23 @@ class DemoScript {
   }
 
   Future<void> run(ChatModel model) async {
+    if (live) {
+      model.goLive(model.liveUrl);
+      if (liveQuestion.isEmpty) {
+        return;
+      }
+      final connected = await waitFor(
+        () => model.connection == Connection.live,
+      );
+      if (connected) {
+        model.ask(liveQuestion);
+      }
+      return;
+    }
+    if (step == 'embed' || pressesInsideApp) {
+      model.ask(model.weatherQuestion);
+      return;
+    }
     if (!reaches('ask')) {
       return;
     }

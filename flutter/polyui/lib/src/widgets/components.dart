@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../model/component_node.dart';
 import 'chart_components.dart';
 import 'core_components.dart';
+import 'embed_component.dart';
 import 'form_components.dart';
 import 'scope.dart';
 

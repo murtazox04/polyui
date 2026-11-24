@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:polyui/polyui.dart';
 
 import 'scripted_server.dart';
+import 'transport.dart';
 
 sealed class ChatEntry {
   const ChatEntry(this.id);
@@ -13,9 +14,10 @@ sealed class ChatEntry {
 }
 
 final class UserEntry extends ChatEntry {
-  const UserEntry(super.id, this.text);
+  const UserEntry(super.id, this.text, {this.spoken = false});
 
   final String text;
+  final bool spoken;
 }
 
 final class AgentEntry extends ChatEntry {
@@ -30,45 +32,122 @@ final class SurfaceEntry extends ChatEntry {
   final String surface;
 }
 
+enum ChatMode { replay, live }
+
+enum Connection { replay, connecting, live, offline }
+
 class ChatModel extends ChangeNotifier {
-  ChatModel({required this.script, this.instant = false}) {
-    start();
+  ChatModel({
+    required this.script,
+    required this.weather,
+    this.instant = false,
+    this.log = false,
+  }) {
+    start(ChatMode.replay);
   }
 
   static const hello = PolyuiHello(
     clientName: 'polyui-flutter-example',
+    catalogs: ['core@1', 'chart@1', 'embed@1'],
     locale: 'en',
   );
 
   final Map<String, Object?> script;
+  final Map<String, Object?> weather;
   final bool instant;
+  final bool log;
   final List<ChatEntry> entries = [];
   late PolyuiSession session;
+  ChatTransport? transport;
   ScriptedServer? server;
+  ChatMode mode = ChatMode.replay;
+  Connection connection = Connection.replay;
+  Uri liveUrl = LiveTransport.defaultUrl();
   String? problem;
   int nextId = 0;
+  int run = 0;
   int? openAgentEntry;
 
   String get question => server?.question ?? 'What do we owe this month?';
 
-  void start() {
+  String get weatherQuestion =>
+      server?.weatherQuestion ?? 'What is the weather this week?';
+
+  String? get latestSurface {
+    for (final entry in entries.reversed) {
+      if (entry is SurfaceEntry) {
+        return entry.surface;
+      }
+    }
+    return null;
+  }
+
+  void start(ChatMode next, {Uri? url}) {
+    transport?.close();
+    transport = null;
+    server = null;
     entries.clear();
     openAgentEntry = null;
     problem = null;
+    mode = next;
+    final current = run += 1;
+    void deliver(String message) {
+      if (current == run) {
+        incoming(message);
+      }
+    }
+
     session = PolyuiSession.start(hello: hello, send: outgoing);
-    server = ScriptedServer(
-      script: script,
-      instant: instant,
-      deliver: incoming,
-    );
+    switch (next) {
+      case ChatMode.replay:
+        final scripted = ScriptedServer(
+          script: script,
+          weather: weather,
+          instant: instant,
+          deliver: deliver,
+        );
+        server = scripted;
+        transport = ReplayTransport(scripted);
+        connection = Connection.replay;
+      case ChatMode.live:
+        liveUrl = url ?? liveUrl;
+        final live = LiveTransport(
+          url: liveUrl,
+          deliver: deliver,
+          changed: (state, reason) {
+            if (current == run) {
+              liveChanged(state, reason);
+            }
+          },
+        );
+        transport = live;
+        connection = Connection.connecting;
+        unawaited(live.connect());
+    }
     outgoing(hello.jsonText());
     notifyListeners();
   }
 
-  void replay() {
+  void restart(ChatMode next, {Uri? url}) {
     final previous = session;
-    start();
+    start(next, url: url);
     previous.dispose();
+  }
+
+  void replay() => restart(ChatMode.replay);
+
+  void goLive(Uri url) => restart(ChatMode.live, url: url);
+
+  void liveChanged(LiveState state, String? reason) {
+    connection = switch (state) {
+      LiveState.connecting => Connection.connecting,
+      LiveState.open => Connection.live,
+      LiveState.closed => Connection.offline,
+    };
+    if (reason != null) {
+      problem = reason;
+    }
+    notifyListeners();
   }
 
   void ask(String text) {
@@ -81,15 +160,33 @@ class ChatModel extends ChangeNotifier {
     outgoing(jsonEncode({'v': 1, 't': 'user.say', 'text': trimmed}));
   }
 
+  void spokenMatch(String text) {
+    entries.add(UserEntry(takeId(), text, spoken: true));
+    notifyListeners();
+  }
+
   void outgoing(String text) {
-    final target = server;
-    if (target != null) {
-      unawaited(target.receive(text));
+    if (log) {
+      debugPrint('polyui-example out: $text');
     }
+    transport?.send(text);
   }
 
   void incoming(String text) {
-    final message = jsonDecode(text) as Map<String, Object?>;
+    if (log) {
+      debugPrint(
+        'polyui-example in: '
+        '${text.length > 300 ? '${text.substring(0, 300)}...' : text}',
+      );
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(text);
+    } on FormatException {
+      session.receive(text);
+      return;
+    }
+    final message = decoded is Map<String, Object?> ? decoded : const {};
     switch (message['t']) {
       case 'agent.delta':
         appendAgentText(message['text'] as String? ?? '');
@@ -135,6 +232,7 @@ class ChatModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    transport?.close();
     session.dispose();
     super.dispose();
   }

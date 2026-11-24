@@ -24,6 +24,10 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PolyUI listens when you tap the microphone, so you can answer the assistant by voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>PolyUI turns what you say into text to pick options and answer the assistant.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
