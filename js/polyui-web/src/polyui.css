@@ -692,6 +692,15 @@ textarea.pui-control {
   font-weight: var(--pui-weight-strong);
 }
 
+.pui-chart:has(.pui-mark-title) .pui-chart-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .pui-chart-svg {
   display: block;
   width: 100%;

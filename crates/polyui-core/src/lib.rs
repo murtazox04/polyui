@@ -1,5 +1,6 @@
 pub mod catalog;
 pub mod client;
+mod decode;
 pub mod limits;
 pub mod pointer;
 pub mod protocol;
@@ -8,6 +9,7 @@ pub mod sanitize;
 pub mod stream;
 pub mod summary;
 pub mod text;
+#[cfg(feature = "tools")]
 pub mod tools;
 pub mod validate;
 mod view;

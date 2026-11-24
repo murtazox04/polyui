@@ -770,6 +770,84 @@ pub fn check_literal(spec: &PropSpec, value: &Value) -> Result<(), String> {
     }
 }
 
+fn fits_action(value: &Value) -> bool {
+    let Some(map) = value.as_object() else {
+        return false;
+    };
+    if map.contains_key("action_id") {
+        return view::handle(value).is_some();
+    }
+    let known_keys = map
+        .keys()
+        .all(|key| ["action", "args", "with"].contains(&key.as_str()));
+    let args_ok = map.get("args").is_none_or(Value::is_object);
+    let with_ok = map.get("with").is_none_or(|with| {
+        with.as_array().is_some_and(|paths| {
+            paths.len() <= MAX_WITH_PATHS
+                && paths
+                    .iter()
+                    .all(|path| path.as_str().is_some_and(pointer::is_valid_target))
+        })
+    });
+    known_keys && map.get("action").is_some_and(Value::is_string) && args_ok && with_ok
+}
+
+fn fits_within(spec: &PropSpec, value: &Value, limits: &Limits) -> bool {
+    if let Value::Object(map) = value
+        && (map.contains_key("$bind") || map.contains_key("$ref"))
+    {
+        return false;
+    }
+    let length_ok = |text: &str, max: usize| text.chars().count() <= max;
+    match &spec.kind {
+        PropKind::String { min, max } => value.as_str().is_some_and(|text| {
+            let length = text.chars().count();
+            length <= max.map_or(limits.max_string_chars, |max| max as usize)
+                && min.is_none_or(|min| length as u64 >= min)
+        }),
+        PropKind::Int { min, max } => value
+            .as_i64()
+            .or_else(|| value.as_u64().map(|_| i64::MAX))
+            .is_some_and(|number| {
+                min.is_none_or(|min| number >= min) && max.is_none_or(|max| number <= max)
+            }),
+        PropKind::Number { min, max } => value.as_f64().is_some_and(|number| {
+            number.is_finite()
+                && min.is_none_or(|min| number >= min)
+                && max.is_none_or(|max| number <= max)
+        }),
+        PropKind::Bool => value.is_boolean(),
+        PropKind::Scalar => match value {
+            Value::String(text) => length_ok(text, limits.max_string_chars),
+            Value::Bool(_) | Value::Number(_) => true,
+            _ => false,
+        },
+        PropKind::Enum { values } => value
+            .as_str()
+            .is_some_and(|text| values.iter().any(|allowed| allowed == text)),
+        PropKind::Url { schemes } => value
+            .as_str()
+            .is_some_and(|url| sanitize::is_safe_url(url, schemes)),
+        PropKind::Action => fits_action(value),
+        PropKind::Path => value.as_str().is_some_and(pointer::is_valid_target),
+        PropKind::Array { of, max } => value.as_array().is_some_and(|items| {
+            items.len() <= max.map_or(limits.max_array_len, |max| max as usize)
+                && items.iter().all(|item| fits_within(of, item, limits))
+        }),
+        PropKind::Object { fields } => value.as_object().is_some_and(|map| {
+            map.iter().all(|(key, item)| {
+                catalog::lookup(fields, key).is_some_and(|field| fits_within(field, item, limits))
+            }) && fields
+                .iter()
+                .all(|(name, field)| !field.required || map.contains_key(name))
+        }),
+    }
+}
+
+pub(crate) fn fits(spec: &PropSpec, value: &Value) -> bool {
+    fits_within(spec, value, &Limits::default())
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Surface {
     pub id: Option<String>,
@@ -1473,8 +1551,7 @@ impl<'a> Validator<'a> {
             ));
             return;
         }
-        let index = view::index_of(components);
-        let root_position = index.get(root).copied();
+        let root_position = view::position_of(components, root);
         if root_position.is_none() {
             problems.push(Problem::new(
                 Location::Field("root".into()),
@@ -1497,7 +1574,7 @@ impl<'a> Validator<'a> {
                 continue;
             }
             for child_id in &component.children {
-                let Some(&child) = index.get(child_id.as_str()) else {
+                let Some(child) = view::position_of(components, child_id) else {
                     problems.push(Problem::new(
                         at(position),
                         format!(
@@ -1591,7 +1668,7 @@ impl<'a> Validator<'a> {
             let mut queue = vec![root_position];
             while let Some(current) = queue.pop() {
                 for child_id in &components[current].children {
-                    if let Some(&child) = index.get(child_id.as_str())
+                    if let Some(child) = view::position_of(components, child_id)
                         && parent[child] == Some(current)
                         && depth[child] == 0
                     {
@@ -2020,6 +2097,96 @@ pub fn downgrade_for_client(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn every_spec(spec: &PropSpec, out: &mut Vec<PropSpec>) {
+        out.push(spec.clone());
+        match &spec.kind {
+            PropKind::Array { of, .. } => every_spec(of, out),
+            PropKind::Object { fields } => {
+                for (_, field) in fields {
+                    every_spec(field, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn fits_agrees_with_check_literal() {
+        let mut specs = Vec::new();
+        for definition in CatalogSet::builtin().types() {
+            for (_, spec) in &definition.props {
+                every_spec(spec, &mut specs);
+            }
+        }
+        for extra in [
+            json!({ "kind": "int", "min": -2, "max": 5 }),
+            json!({ "kind": "number", "min": -1.5, "max": 2.5 }),
+            json!({ "kind": "string", "min": 2, "max": 3 }),
+            json!({ "kind": "url", "schemes": ["https", "http", "tel"] }),
+            json!({ "kind": "array", "max": 2, "of": { "kind": "bool" } }),
+            json!({ "kind": "array", "of": { "kind": "action" } }),
+            json!({ "kind": "object", "fields": { "a": { "kind": "int", "required": true }, "b": { "kind": "path" } } }),
+        ] {
+            specs.push(PropSpec::from_value(&extra).unwrap());
+        }
+        let long = "x".repeat(4097);
+        let values = [
+            json!(null),
+            json!(true),
+            json!(0),
+            json!(-3),
+            json!(4),
+            json!(9),
+            json!(u64::MAX),
+            json!(1.5),
+            json!(-7.25),
+            json!(""),
+            json!("a"),
+            json!("abc"),
+            json!("abcd"),
+            json!(long),
+            json!("primary"),
+            json!("bar"),
+            json!("https://example.com/a.png"),
+            json!("http://example.com"),
+            json!("javascript:alert(1)"),
+            json!("tel:+998901234567"),
+            json!("/form/phone"),
+            json!("form"),
+            json!([]),
+            json!([true, false]),
+            json!([true, false, true]),
+            json!([{ "id": "a", "label": "A" }]),
+            json!([{ "id": "a" }]),
+            json!([{ "x": "Jan", "y": 1 }, { "x": 2, "y": 3.5, "series": "s" }]),
+            json!([{ "x": "Jan", "y": "1" }]),
+            json!({ "$bind": "/a" }),
+            json!({ "$ref": "bill:1" }),
+            json!({ "a": 1 }),
+            json!({ "a": 1, "b": "/x" }),
+            json!({ "a": 1, "c": 2 }),
+            json!({ "b": "/x" }),
+            json!({ "action_id": "act_1", "confirm": true }),
+            json!({ "action_id": "" }),
+            json!({ "action": "pay", "args": { "bill": "b1" }, "with": ["/form/phone"] }),
+            json!({ "action": "pay", "args": 3 }),
+            json!({ "action": "pay", "with": ["nope"] }),
+            json!({ "action": "pay", "extra": 1 }),
+            json!({ "args": {} }),
+            json!([{ "action": "pay" }, { "action_id": "a" }]),
+        ];
+        for spec in &specs {
+            for value in &values {
+                assert_eq!(
+                    fits(spec, value),
+                    check_literal(spec, value).is_ok(),
+                    "{:?} with {value}",
+                    spec.kind
+                );
+            }
+        }
+    }
 
     #[test]
     fn problems_render_for_the_model() {

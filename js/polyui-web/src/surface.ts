@@ -71,7 +71,11 @@ export class PolyuiSurface extends HTMLElement {
 
   apply(batch: RenderBatch): void {
     const created: Element[] = [];
-    for (const op of batch.ops) this.#applyOp(op, created);
+    const recreated = new Set(batch.ops.flatMap((op) => (op.op === "create" ? [op.id] : [])));
+    for (const op of batch.ops) {
+      if (op.op === "remove" && recreated.has(op.id)) continue;
+      this.#applyOp(op, created);
+    }
     for (const node of created) {
       if (node.parentElement?.closest("[data-pui-enter]")) node.removeAttribute("data-pui-enter");
     }
@@ -146,6 +150,7 @@ export class PolyuiSurface extends HTMLElement {
     entry.view.element.setAttribute("data-pui-enter", "");
     if (existing) {
       existing.view.destroy?.();
+      if (this.#speaking === existing.view.element) this.#speaking = null;
       existing.view.element.replaceWith(entry.view.element);
     }
     this.#entries.set(op.id, entry);

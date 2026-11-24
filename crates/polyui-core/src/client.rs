@@ -1,4 +1,5 @@
 use crate::catalog::{CatalogSet, PropKind, TypeDef};
+use crate::decode;
 use crate::limits::{self, Limits};
 use crate::pointer;
 use crate::protocol::{
@@ -10,11 +11,12 @@ use crate::view::{self, RefMode, TextKind};
 use crate::voice::{self, Ordinal, Utterance, VoiceMatch};
 use serde::Serialize;
 use serde_json::{Map, Value};
-use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_DETAIL_BYTES: usize = 4096;
-const CHART_TYPE: &str = "chart:Chart";
-const SCENE_PROP: &str = "scene";
+pub const MAX_SCENE_ITEMS: usize = 20_000;
+pub const MAX_SCENE_STRING_CHARS: usize = 16_384;
+pub(crate) const CHART_TYPE: &str = "chart:Chart";
+pub(crate) const SCENE_PROP: &str = "scene";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct A11y {
@@ -191,6 +193,38 @@ struct Rendered {
     unknown_types: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct Surfaces(Vec<(String, SurfaceState)>);
+
+impl Surfaces {
+    fn slot(&self, surface: &str) -> Result<usize, usize> {
+        self.0.binary_search_by(|(id, _)| id.as_str().cmp(surface))
+    }
+
+    fn get(&self, surface: &str) -> Option<&SurfaceState> {
+        self.slot(surface).ok().map(|index| &self.0[index].1)
+    }
+
+    fn get_mut(&mut self, surface: &str) -> Option<&mut SurfaceState> {
+        self.slot(surface).ok().map(|index| &mut self.0[index].1)
+    }
+
+    fn insert(&mut self, surface: String, state: SurfaceState) {
+        match self.slot(&surface) {
+            Ok(index) => self.0[index].1 = state,
+            Err(index) => self.0.insert(index, (surface, state)),
+        }
+    }
+
+    fn remove(&mut self, surface: &str) -> Option<SurfaceState> {
+        self.slot(surface).ok().map(|index| self.0.remove(index).1)
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.iter().map(|(id, _)| id)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Client {
     hello: Hello,
@@ -198,8 +232,8 @@ pub struct Client {
     catalogs: CatalogSet,
     limits: Limits,
     session: Option<String>,
-    surfaces: BTreeMap<String, SurfaceState>,
-    reported_types: BTreeSet<String>,
+    surfaces: Surfaces,
+    reported_types: Vec<String>,
 }
 
 fn first_path_prop(definition: &TypeDef) -> Option<&str> {
@@ -360,9 +394,8 @@ fn render(
         }
         nodes.push(node);
     }
-    let fallback = view::index_of(components)
-        .get(root)
-        .map(|&position| alts[position].clone())
+    let fallback = view::position_of(components, root)
+        .map(|position| alts[position].clone())
         .unwrap_or_default();
     Rendered {
         nodes,
@@ -438,11 +471,13 @@ fn merge_components(components: &mut Vec<Component>, upsert: Vec<Component>, rem
 }
 
 fn dedupe(components: Vec<Component>) -> Vec<Component> {
-    let mut seen = BTreeSet::new();
-    components
-        .into_iter()
-        .filter(|component| seen.insert(component.id.clone()))
-        .collect()
+    let mut kept: Vec<Component> = Vec::with_capacity(components.len());
+    for component in components {
+        if !kept.iter().any(|existing| existing.id == component.id) {
+            kept.push(component);
+        }
+    }
+    kept
 }
 
 impl Client {
@@ -450,17 +485,21 @@ impl Client {
         Self::with_catalogs(hello_json, CatalogSet::builtin())
     }
 
-    pub fn with_catalogs(hello_json: &str, catalogs: CatalogSet) -> Result<Self, ProtocolError> {
+    pub fn with_catalogs(
+        hello_json: &str,
+        mut catalogs: CatalogSet,
+    ) -> Result<Self, ProtocolError> {
         let limits = Limits::default();
-        let hello = protocol::parse_hello(hello_json, &limits)?;
+        let hello = decode::hello(hello_json, &limits)?;
+        catalogs.keep_declared(&hello.catalogs);
         Ok(Self {
             locale: Locale::from_tag(hello.locale.as_deref().unwrap_or("en")),
-            catalogs: catalogs.restrict(&hello.catalogs),
+            catalogs,
             hello,
             limits,
             session: None,
-            surfaces: BTreeMap::new(),
-            reported_types: BTreeSet::new(),
+            surfaces: Surfaces::default(),
+            reported_types: Vec::new(),
         })
     }
 
@@ -489,7 +528,7 @@ impl Client {
     }
 
     pub fn receive(&mut self, message: &str) -> RenderBatch {
-        match protocol::parse_from_server(message, &self.limits) {
+        match decode::from_server(message, &self.limits) {
             Err(error) => RenderBatch {
                 send: vec![protocol::error_value(
                     None,
@@ -528,7 +567,7 @@ impl Client {
             Message::Welcome(welcome) => {
                 self.session = Some(welcome.session);
                 if !welcome.catalogs.is_empty() {
-                    self.catalogs = self.catalogs.restrict(&welcome.catalogs);
+                    self.catalogs.keep_declared(&welcome.catalogs);
                 }
                 RenderBatch::default()
             }
@@ -820,7 +859,8 @@ impl Client {
         }
         let mut send = Vec::new();
         for type_name in rendered.unknown_types {
-            if self.reported_types.insert(type_name.clone()) {
+            if !self.reported_types.contains(&type_name) {
+                self.reported_types.push(type_name.clone());
                 send.push(protocol::error_value(
                     Some(surface),
                     ErrorReason::UnknownComponent,

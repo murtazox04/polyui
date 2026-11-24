@@ -14,9 +14,9 @@ export function measure(file) {
 }
 
 export function report(dist) {
-  for (const name of ["polyui.js", "polyui.css"]) {
+  for (const name of ["polyui.js", "polyui.css", "polyui_core_bg.wasm"]) {
     const size = measure(join(dist, name));
-    console.log(`${name.padEnd(11)} raw ${size.raw} B, gzip ${size.gzip} B, brotli ${size.brotli} B`);
+    console.log(`${name.padEnd(19)} raw ${size.raw} B, gzip ${size.gzip} B, brotli ${size.brotli} B`);
   }
   const js = measure(join(dist, "polyui.js"));
   console.log(`renderer budget: ${js.brotli} / ${budgetBytes} B brotli ${js.brotli < budgetBytes ? "ok" : "OVER"}`);

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
@@ -9,8 +9,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const serve = process.argv.includes("--serve");
 
+execFileSync(process.execPath, [join(root, "..", "..", "bindings", "wasm", "build.mjs")], { cwd: root, stdio: "inherit" });
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
+copyFileSync(join(root, "wasm", "polyui_core_bg.wasm"), join(dist, "polyui_core_bg.wasm"));
 
 const shared = {
   absWorkingDir: root,

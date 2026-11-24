@@ -6,10 +6,6 @@ const colorToken = /^[a-z][a-z0-9-]{0,31}$/;
 const textRoles = new Set(["title", "axis_title", "tick", "legend", "value", "note"]);
 const markLimit = 6000;
 
-export function selectProp(row: number): string {
-  return `on_select:${row}`;
-}
-
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, parent?: Element): SVGElementTagNameMap[K] {
   const node = document.createElementNS(svgNamespace, tag);
   if (parent) parent.append(node);
@@ -177,7 +173,7 @@ export function createChartRenderer(unavailable: () => string): ComponentRendere
       if (row < 0 || !selectable) return;
       selected = row;
       markSelected();
-      api.fire(selectProp(row));
+      api.fire("on_select", { row });
     };
 
     const moveFocus = (from: SVGElement, step: number | "first" | "last"): void => {

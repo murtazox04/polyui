@@ -82,8 +82,8 @@ describe("chart:Chart", () => {
     expect(hits[1]?.getAttribute("role")).toBe("button");
     expect(hits[1]?.getAttribute("aria-label")).toBe("Oct: 120");
     hits[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(h.core.calls.at(-1)).toEqual({ method: "fire", args: ["s1", "chart", "on_select:1"] });
-    expect(h.messages().at(-1)).toMatchObject({ t: "ui.action", action_id: "act_pick", values: { row: 1 } });
+    expect(h.core.calls.at(-1)).toEqual({ method: "fire", args: ["s1", "chart", "on_select", '{"row":1}'] });
+    expect(h.messages().at(-1)).toMatchObject({ t: "ui.action", action_id: "act_pick", detail: { row: 1 } });
     expect(hits[1]?.getAttribute("aria-pressed")).toBe("true");
     hits[0]?.focus();
     hits[0]?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
@@ -92,7 +92,7 @@ describe("chart:Chart", () => {
     hits[1]?.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
     expect(document.activeElement).toBe(hits[2]);
     hits[2]?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    expect(h.core.calls.at(-1)).toEqual({ method: "fire", args: ["s1", "chart", "on_select:2"] });
+    expect(h.core.calls.at(-1)).toEqual({ method: "fire", args: ["s1", "chart", "on_select", '{"row":2}'] });
   });
 
   it("does not redraw when the same scene arrives again", () => {

@@ -13,7 +13,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/polyui.js"
     },
-    "./polyui.css": "./dist/polyui.css"
+    "./polyui.css": "./dist/polyui.css",
+    "./polyui_core_bg.wasm": "./dist/polyui_core_bg.wasm"
   },
   "files": [
     "dist"
@@ -21,6 +22,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "wasm": "node ../../bindings/wasm/build.mjs",
     "test": "node scripts/build.mjs && vitest run",
     "size": "node scripts/size.mjs",
     "demo": "node scripts/build.mjs --serve"

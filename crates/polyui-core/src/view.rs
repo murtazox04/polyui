@@ -2,9 +2,8 @@ use crate::catalog::{CatalogSet, PropKind, TypeDef};
 use crate::pointer;
 use crate::protocol::Component;
 use crate::text::{self, Locale};
-use crate::validate::check_literal;
+use crate::validate::fits;
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefMode {
@@ -107,8 +106,7 @@ pub(crate) fn resolve(
                     Value::from(path)
                 }),
             (_, Some(raw)) => bind(raw, data, mode).filter(|value| {
-                (mode == RefMode::Marked && value.as_str() == Some(REF_MARK))
-                    || check_literal(spec, value).is_ok()
+                (mode == RefMode::Marked && value.as_str() == Some(REF_MARK)) || fits(spec, value)
             }),
         };
         match value.or_else(|| spec.default.clone()) {
@@ -181,23 +179,18 @@ pub(crate) struct Tree {
     pub reachable: Vec<bool>,
 }
 
-pub(crate) fn index_of(components: &[Component]) -> BTreeMap<&str, usize> {
-    let mut index = BTreeMap::new();
-    for (position, component) in components.iter().enumerate() {
-        index.entry(component.id.as_str()).or_insert(position);
-    }
-    index
+pub(crate) fn position_of(components: &[Component], id: &str) -> Option<usize> {
+    components.iter().position(|component| component.id == id)
 }
 
 pub(crate) fn build_tree(root: Option<&str>, components: &[Component]) -> Tree {
-    let index = index_of(components);
     let mut tree = Tree {
         order: Vec::with_capacity(components.len()),
         children: vec![Vec::new(); components.len()],
         reachable: vec![false; components.len()],
     };
     let mut claimed = vec![false; components.len()];
-    let root_index = root.and_then(|root| index.get(root).copied());
+    let root_index = root.and_then(|root| position_of(components, root));
     let starts = root_index
         .into_iter()
         .chain(0..components.len())
@@ -214,7 +207,7 @@ pub(crate) fn build_tree(root: Option<&str>, components: &[Component]) -> Tree {
             tree.reachable[current] = from_root;
             let mut kids = Vec::new();
             for child_id in &components[current].children {
-                if let Some(&child) = index.get(child_id.as_str())
+                if let Some(child) = position_of(components, child_id)
                     && !claimed[child]
                 {
                     claimed[child] = true;
@@ -264,9 +257,8 @@ pub(crate) fn fallback_text(
             locale,
         );
     }
-    index_of(components)
-        .get(root)
-        .map(|&position| std::mem::take(&mut texts[position]))
+    position_of(components, root)
+        .map(|position| std::mem::take(&mut texts[position]))
         .unwrap_or_default()
 }
 

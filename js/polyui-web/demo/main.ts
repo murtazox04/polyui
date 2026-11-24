@@ -127,7 +127,8 @@ function respond(message: Json): void {
     offer = picked;
     later(220, () => deliver({ surface: surfaceId, ops: [payButton(`Pay ${offers[offer].now} so'm`, false)] }));
   } else if (action === "act_month") {
-    const row = fields["row"];
+    const detail = message["detail"];
+    const row = typeof detail === "object" && detail !== null && !Array.isArray(detail) ? detail["row"] : undefined;
     const entry = typeof row === "number" ? months[row] : undefined;
     const previous = typeof row === "number" ? months[row - 1] : undefined;
     if (!entry) return;

@@ -8,8 +8,9 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-default = ["stream"]
+default = ["stream", "tools"]
 stream = []
+tools = []
 
 [dependencies]
 serde = { workspace = true }

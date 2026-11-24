@@ -75,18 +75,18 @@ export class FakeCore implements PolyuiCore {
     return JSON.stringify({ surface, ops } satisfies RenderBatch);
   }
 
-  fire(surface: string, component: string, prop: string): string | null {
-    this.calls.push({ method: "fire", args: [surface, component, prop] });
+  fire(surface: string, component: string, prop: string, detail?: string): string | null {
+    this.calls.push({ method: "fire", args: detail === undefined ? [surface, component, prop] : [surface, component, prop, detail] });
     const found = this.#surface(surface).components.get(component);
-    const [name = "", row] = prop.split(":");
-    const handle = record(found?.props[name]);
+    const handle = record(found?.props[prop]);
     if (!found || !handle || found.props["disabled"] === true) return null;
     const values: { [key: string]: Json } = Object.fromEntries(this.#surface(surface).data);
-    if (row !== undefined) values["row"] = Number(row);
-    return JSON.stringify({ v: 1, t: "ui.action", surface, action_id: handle["action_id"] ?? null, values, source: "tap" });
+    const parsed = detail === undefined ? null : record(JSON.parse(detail) as Json);
+    if (detail !== undefined && !parsed) return null;
+    return JSON.stringify({ v: 1, t: "ui.action", surface, action_id: handle["action_id"] ?? null, values, source: "tap", ...(parsed ? { detail: parsed } : {}) });
   }
 
-  confirm(surface: string, actionId: string, nonce: string): string {
+  confirm(surface: string, actionId: string, nonce: string): string | null {
     this.calls.push({ method: "confirm", args: [surface, actionId, nonce] });
     return JSON.stringify({ v: 1, t: "ui.action", surface, action_id: actionId, confirm: nonce, source: "tap" });
   }

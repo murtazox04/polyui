@@ -167,9 +167,10 @@ export class Renderer implements SurfaceHost {
         if (this.#destroyed) return;
         this.#accept(this.#call(surface, () => this.#core.setValue(surface, path, JSON.stringify(value))));
       },
-      fire: (prop) => {
+      fire: (prop, detail) => {
         if (this.#destroyed) return;
-        const message = this.#call(surface, () => this.#core.fire(surface, id, prop));
+        const detailJson = detail === undefined ? undefined : JSON.stringify(detail);
+        const message = this.#call(surface, () => this.#core.fire(surface, id, prop, detailJson));
         if (message) this.#send(message);
       },
       safeUrl: (raw) => safeUrl(raw, this.#allowHttp),

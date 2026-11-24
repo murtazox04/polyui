@@ -549,6 +549,135 @@ fn string_list(value: Option<&Value>, path: &str) -> Result<Vec<String>, Catalog
     Ok(out)
 }
 
+mod builtin {
+    use super::{Catalog, ChildRule, PropKind, PropSpec, TypeDef};
+    use serde_json::{Map, Value};
+
+    fn text(map: &Map<String, Value>, key: &str) -> String {
+        map.get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    fn strings(value: Option<&Value>) -> Vec<String> {
+        value
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn entries(value: Option<&Value>) -> Vec<(String, PropSpec)> {
+        value
+            .and_then(Value::as_object)
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(name, spec)| prop(spec).map(|spec| (name.clone(), spec)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn prop(value: &Value) -> Option<PropSpec> {
+        let map = value.as_object()?;
+        let unsigned = |key: &str| map.get(key).and_then(Value::as_u64);
+        let kind = match map.get("kind")?.as_str()? {
+            "string" => PropKind::String {
+                min: unsigned("min"),
+                max: unsigned("max"),
+            },
+            "int" => PropKind::Int {
+                min: map.get("min").and_then(Value::as_i64),
+                max: map.get("max").and_then(Value::as_i64),
+            },
+            "number" => PropKind::Number {
+                min: map.get("min").and_then(Value::as_f64),
+                max: map.get("max").and_then(Value::as_f64),
+            },
+            "bool" => PropKind::Bool,
+            "scalar" => PropKind::Scalar,
+            "enum" => PropKind::Enum {
+                values: strings(map.get("values")),
+            },
+            "url" => PropKind::Url {
+                schemes: match map.get("schemes") {
+                    None => vec!["https".to_string()],
+                    some => strings(some)
+                        .iter()
+                        .map(|scheme| scheme.to_ascii_lowercase())
+                        .collect(),
+                },
+            },
+            "action" => PropKind::Action,
+            "path" => PropKind::Path,
+            "array" => PropKind::Array {
+                of: Box::new(prop(map.get("of")?)?),
+                max: unsigned("max"),
+            },
+            "object" => PropKind::Object {
+                fields: entries(map.get("fields")),
+            },
+            _ => return None,
+        };
+        let flag = |key: &str| map.get(key).and_then(Value::as_bool);
+        let bindable =
+            flag("bindable").unwrap_or(!matches!(kind, PropKind::Action | PropKind::Path));
+        Some(PropSpec {
+            kind,
+            required: flag("required").unwrap_or(false),
+            default: map.get("default").cloned(),
+            bindable,
+            description: map
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        })
+    }
+
+    pub(super) fn catalog(json: &str) -> Option<Catalog> {
+        let value: Value = serde_json::from_str(json).ok()?;
+        let id = value.get("id")?.as_str()?;
+        let types = value
+            .get("types")?
+            .as_object()?
+            .iter()
+            .filter_map(|(name, definition)| {
+                let map = definition.as_object()?;
+                let children = match map.get("children") {
+                    Some(Value::Bool(true)) => ChildRule::Any,
+                    Some(Value::Array(_)) => ChildRule::Only(strings(map.get("children"))),
+                    _ => ChildRule::None,
+                };
+                Some(TypeDef {
+                    name: name.clone(),
+                    qualified: if id == "core" {
+                        name.clone()
+                    } else {
+                        format!("{id}:{name}")
+                    },
+                    description: text(map, "description"),
+                    role: text(map, "role"),
+                    children,
+                    props: entries(map.get("props")),
+                    alt: text(map, "alt"),
+                    say: text(map, "say"),
+                })
+            })
+            .collect();
+        Some(Catalog {
+            id: id.to_string(),
+            version: value.get("version")?.as_u64()?,
+            types,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CatalogSet {
     catalogs: Vec<Catalog>,
@@ -563,7 +692,7 @@ impl CatalogSet {
         Self {
             catalogs: [CORE_JSON, CHART_JSON]
                 .into_iter()
-                .filter_map(|text| Catalog::from_json(text).ok())
+                .filter_map(builtin::catalog)
                 .collect(),
         }
     }
@@ -636,6 +765,10 @@ impl CatalogSet {
         }
     }
 
+    pub(crate) fn keep_declared(&mut self, declared: &[String]) {
+        self.catalogs.retain(|catalog| declares(declared, catalog));
+    }
+
     pub fn negotiate(&self, declared: &[String]) -> Vec<String> {
         self.catalogs
             .iter()
@@ -672,6 +805,13 @@ mod tests {
         );
         assert!(Catalog::from_json(CORE_JSON).is_ok());
         assert!(Catalog::from_json(CHART_JSON).is_ok());
+    }
+
+    #[test]
+    fn builtin_shortcut_matches_the_checked_parser() {
+        for json in [CORE_JSON, CHART_JSON] {
+            assert_eq!(builtin::catalog(json), Catalog::from_json(json).ok());
+        }
     }
 
     #[test]

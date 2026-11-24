@@ -10,8 +10,8 @@ export interface A11y {
 export interface PolyuiCore {
   receive(message: string): string;
   setValue(surface: string, path: string, value: string): string;
-  fire(surface: string, component: string, prop: string): string | null;
-  confirm(surface: string, actionId: string, nonce: string): string;
+  fire(surface: string, component: string, prop: string, detail?: string): string | null;
+  confirm(surface: string, actionId: string, nonce: string): string | null;
   say(surface: string): string;
   matchVoice(surface: string, text: string): string | null;
 }
@@ -104,7 +104,7 @@ export interface ComponentApi {
   readonly id: string;
   readonly type: string;
   setValue(path: string, value: Json): void;
-  fire(prop: string): void;
+  fire(prop: string, detail?: Json): void;
   safeUrl(raw: unknown): string | null;
 }
 

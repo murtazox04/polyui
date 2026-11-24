@@ -1,3 +1,5 @@
+#![cfg(feature = "tools")]
+
 use polyui_core::tools::{ToolOptions, for_client, tool_definitions};
 use polyui_core::{ActionSpec, ActionTable, CatalogSet};
 use serde_json::{Value, json};

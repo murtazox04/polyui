@@ -259,7 +259,7 @@ pub fn check_value(value: &Value, limits: &Limits) -> Result<(), LimitError> {
     Ok(())
 }
 
-fn walk(value: &Value, enclosing: usize, limits: &Limits) -> Result<(), LimitError> {
+pub(crate) fn walk(value: &Value, enclosing: usize, limits: &Limits) -> Result<(), LimitError> {
     let check_string = |text: &str| {
         if enclosing >= 2 && text.chars().count() > limits.max_string_chars {
             Err(LimitError::StringTooLong {
@@ -293,16 +293,21 @@ fn walk(value: &Value, enclosing: usize, limits: &Limits) -> Result<(), LimitErr
                 });
             }
             map.iter().try_for_each(|(key, item)| {
-                if enclosing + 1 >= 2 && key.chars().count() > limits.max_string_chars {
-                    return Err(LimitError::StringTooLong {
-                        limit: limits.max_string_chars,
-                    });
-                }
+                check_key(key, enclosing + 1, limits)?;
                 walk(item, enclosing + 1, limits)
             })
         }
         _ => Ok(()),
     }
+}
+
+pub(crate) fn check_key(key: &str, enclosing: usize, limits: &Limits) -> Result<(), LimitError> {
+    if enclosing >= 2 && key.chars().count() > limits.max_string_chars {
+        return Err(LimitError::StringTooLong {
+            limit: limits.max_string_chars,
+        });
+    }
+    Ok(())
 }
 
 struct ByteCounter(usize);

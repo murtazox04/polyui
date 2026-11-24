@@ -87,6 +87,21 @@ describe("render ops", () => {
     expect(document.querySelector('[data-pui-id="pay"]')).toBeNull();
   });
 
+  it("swaps a component in place when a batch removes and recreates it with a new type", () => {
+    const h = harness();
+    h.play(billsBatch);
+    h.play({
+      surface: "s1",
+      ops: [
+        { op: "remove", id: "total" },
+        { op: "create", id: "total", type: "Text", props: { text: "Total", style: "muted" }, a11y: { role: "text", label: "Total" } },
+      ],
+    });
+    const body = h.find('[data-pui-id="card"] .pui-card-body');
+    expect([...body.children].map((child) => child.getAttribute("data-pui-id"))).toEqual(["total", "phone", "plan", "pay"]);
+    expect(h.find('[data-pui-id="total"]').tagName).toBe("P");
+  });
+
   it("closes a surface and empties it", () => {
     const h = harness();
     h.play(billsBatch);

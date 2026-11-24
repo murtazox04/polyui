@@ -106,9 +106,7 @@ pub fn summarize(
         data: &data,
         locale,
     };
-    let root = view::index_of(&surface.components)
-        .get(surface.root.as_str())
-        .copied();
+    let root = view::position_of(&surface.components, &surface.root);
     match root {
         Some(root) => format!("surface {surface_id} open: {}", describe(root, &context)),
         None => format!("surface {surface_id} open: (empty)"),
