@@ -1,0 +1,33 @@
+[book]
+title = "PolyUI"
+description = "A generative UI protocol for LLM agents: one Rust core, typed catalogs, server-side checks, screen and voice."
+authors = ["Murtazo Xurramov"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "dist"
+create-missing = false
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+site-url = "/polyui/"
+git-repository-url = "https://github.com/murtazox04/polyui"
+git-repository-icon = "fab-github"
+default-theme = "light"
+preferred-dark-theme = "coal"
+smart-punctuation = false
+mathjax-support = false
+additional-css = ["theme/polyui.css"]
+additional-js = ["mermaid.min.js", "theme/polyui.js"]
+no-section-label = true
+
+[output.html.fold]
+enable = false
+
+[output.html.search]
+enable = true
+limit-results = 20
+use-boolean-and = true

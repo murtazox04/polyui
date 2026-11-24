@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; require-trusted-types-for 'script'; trusted-types 'none'" />
+    <title>PolyUI dashboard demo</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./polyui.css" />
+    <link rel="stylesheet" href="./dashboard.css" />
+    <script type="module" src="./dashboard.js"></script>
+  </head>
+  <body>
+    <header class="bar">
+      <a class="brand" href="../../">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2.5" /><rect x="13" y="3" width="8" height="8" rx="4" /><rect x="3" y="13" width="8" height="8" rx="4" /><rect x="13" y="13" width="8" height="8" rx="2.5" /></svg>
+        PolyUI
+      </a>
+      <p class="status" id="status" role="status">Loading the core</p>
+    </header>
+    <main class="page">
+      <div class="intro">
+        <h1>A dashboard from a live run</h1>
+        <p>A model was asked "How is the store doing this year? Build me a dashboard." against the shop demo. It wrote the SQL and the layout; the numbers came from the queries. This is the <code>ui.open</code> the server sent, drawn here by the wasm core and the web renderer in your browser.</p>
+      </div>
+      <div class="stage" id="stage"></div>
+      <details class="source">
+        <summary>What the model saw instead of the numbers</summary>
+        <p>The model's copy of this surface keeps <code>{"$ref": "query:q1"}</code> and <code>{"$ref": "stat:q2"}</code> where the rows and values are. Its tool result shows them as <code>[ref]</code>. Only the client copy, this message, carries the data.</p>
+        <p>Source: <a href="https://github.com/murtazox04/polyui/blob/main/crates/polyui-server/tests/fixtures/shop_dashboard_open.json">shop_dashboard_open.json</a>. Guide: <a href="../../docs/dashboards.html">Dashboards from your own data</a>.</p>
+      </details>
+    </main>
+  </body>
+</html>

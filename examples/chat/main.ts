@@ -1,4 +1,7 @@
 import { createRenderer, loadCore, type Json, type Renderer, type WasmCore } from "../../js/polyui-web/src/index";
+import { ReplaySocket } from "./replay";
+
+declare const REPLAY: boolean;
 
 type JsonObject = { readonly [key: string]: Json };
 type Source = "typed" | "voice";
@@ -63,6 +66,7 @@ interface Setup {
 let setup: Setup | null = null;
 
 async function readSetup(): Promise<Setup> {
+  if (REPLAY) return { embedOrigin: null };
   try {
     const response = await fetch(new URL("/config.json", location.href));
     if (!response.ok) return { embedOrigin: null };
@@ -96,7 +100,12 @@ function helloFor(current: Setup) {
   };
 }
 
-let socket: WebSocket | null = null;
+interface Line extends EventTarget {
+  readonly readyState: number;
+  send(data: string): void;
+}
+
+let socket: Line | null = null;
 let core: WasmCore | null = null;
 let renderer: Renderer | null = null;
 let live = false;
@@ -228,7 +237,8 @@ function onServerMessage(raw: string): void {
     case "welcome":
       live = true;
       retries = 0;
-      setStatus("live", "Connected");
+      setStatus("live", REPLAY ? "Replay" : "Connected");
+      if (REPLAY) setHint("This page replays one canned conversation in your browser with the real wasm core. No model is called.");
       renderer.receive(raw);
       refreshSend();
       return;
@@ -285,7 +295,7 @@ async function connect(): Promise<void> {
     setHint(error instanceof Error ? error.message : String(error));
     return;
   }
-  const ws = new WebSocket(endpoint);
+  const ws: Line = REPLAY ? new ReplaySocket() : new WebSocket(endpoint);
   socket = ws;
   core = next;
   renderer = createRenderer({
@@ -297,8 +307,8 @@ async function connect(): Promise<void> {
     allowHttp: sandboxOverHttp(current.embedOrigin),
   });
   ws.addEventListener("open", () => ws.send(JSON.stringify(hello)));
-  ws.addEventListener("message", (event: MessageEvent<unknown>) => {
-    if (typeof event.data === "string") onServerMessage(event.data);
+  ws.addEventListener("message", (event) => {
+    if (event instanceof MessageEvent && typeof event.data === "string") onServerMessage(event.data);
   });
   ws.addEventListener("close", () => {
     if (socket !== ws) return;

@@ -20,6 +20,11 @@ const types = {
 
 const server = createServer((request, response) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
+  if (path === "/config.json") {
+    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    response.end(JSON.stringify({ embed_origin: null }));
+    return;
+  }
   const file = normalize(join(dist, path === "/" ? "index.html" : path));
   if (!file.startsWith(dist + sep)) {
     response.writeHead(403).end();
