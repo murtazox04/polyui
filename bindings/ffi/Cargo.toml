@@ -1,0 +1,25 @@
+[package]
+name = "polyui-ffi"
+description = "C ABI over the PolyUI client core for native renderers (iOS, Android, Flutter)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "polyui_ffi"
+crate-type = ["staticlib", "cdylib", "rlib"]
+doctest = false
+
+[features]
+lite = ["polyui-core/client-lite"]
+
+[dependencies]
+polyui-core = { path = "../../crates/polyui-core", default-features = false }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

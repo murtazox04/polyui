@@ -1,0 +1,6 @@
+PolyUI/PolyUICore.xcframework/
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
