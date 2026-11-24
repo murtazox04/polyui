@@ -1,0 +1,23 @@
+[package]
+name = "polyui-bench"
+description = "Measures how often a model produces a valid show_ui with the PolyUI reference server, with tool calls and with inline JSON."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "polyui-bench"
+path = "src/main.rs"
+
+[dependencies]
+polyui-core = { workspace = true }
+polyui-server = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { version = "4.6.9", features = ["derive"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+futures-util = "0.3.34"
