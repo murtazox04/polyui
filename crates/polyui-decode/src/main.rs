@@ -1,7 +1,7 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use polyui_decode::llguidance::api::TopLevelGrammar;
 use polyui_decode::request::{self, Chat};
-use polyui_decode::{CallFormat, Checker, Layout, Reply, ToolGrammar};
+use polyui_decode::{CallFormat, Checker, Layout, Reply, SchemaDialect, ToolGrammar};
 use serde_json::{Value, json};
 use std::io::Read;
 use std::path::PathBuf;
@@ -48,6 +48,28 @@ struct GrammarArgs {
     layout: LayoutChoice,
     #[arg(long, help = "Force a tool call: plain text is not allowed.")]
     tool_only: bool,
+    #[arg(
+        long,
+        value_enum,
+        default_value = "standard",
+        help = "JSON Schema dialect of the engine: no-same-type-unions merges anyOf branches of the same JSON type, for engines that refuse them."
+    )]
+    dialect: DialectChoice,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DialectChoice {
+    Standard,
+    NoSameTypeUnions,
+}
+
+impl From<DialectChoice> for SchemaDialect {
+    fn from(choice: DialectChoice) -> Self {
+        match choice {
+            DialectChoice::Standard => Self::Standard,
+            DialectChoice::NoSameTypeUnions => Self::NoSameTypeUnions,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -172,7 +194,10 @@ fn load(args: &GrammarArgs) -> Result<ToolGrammar, String> {
     for (tool, change) in grammar.changes() {
         eprintln!("note: {tool} {change}");
     }
-    Ok(grammar.with_format(format).with_layout(layout))
+    Ok(grammar
+        .with_format(format)
+        .with_layout(layout)
+        .with_dialect(args.dialect.into()))
 }
 
 fn print_json(value: &Value) -> Result<(), String> {

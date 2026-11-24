@@ -1,3 +1,4 @@
+use crate::dialect::SchemaDialect;
 use crate::format::{CallFormat, Layout, lark_string, regex_literal};
 use crate::order::schema_order;
 use crate::schema::{Change, SchemaError, prepare};
@@ -146,6 +147,13 @@ impl ToolGrammar {
 
     pub fn with_layout(mut self, layout: Layout) -> Self {
         self.layout = layout;
+        self
+    }
+
+    pub fn with_dialect(mut self, dialect: SchemaDialect) -> Self {
+        for tool in &mut self.tools {
+            tool.input_schema = dialect.apply(&tool.input_schema);
+        }
         self
     }
 

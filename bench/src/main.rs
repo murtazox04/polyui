@@ -8,6 +8,7 @@ use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
 use meter::{Budget, Pacer};
 use polyui_core::tools::{self, ToolProfile};
+use polyui_decode::SchemaDialect;
 use polyui_server::anthropic::{self, AnthropicProvider, ApiKey};
 use polyui_server::bills::{BillsHost, HOUSEHOLD_USER};
 use polyui_server::openai::{self, OpenAiCompatProvider, json_schema_format};
@@ -38,6 +39,21 @@ impl From<ProfileChoice> for ToolProfile {
         match choice {
             ProfileChoice::Compact => Self::Compact,
             ProfileChoice::Full => Self::Full,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum DialectChoice {
+    Standard,
+    NoSameTypeUnions,
+}
+
+impl From<DialectChoice> for SchemaDialect {
+    fn from(choice: DialectChoice) -> Self {
+        match choice {
+            DialectChoice::Standard => Self::Standard,
+            DialectChoice::NoSameTypeUnions => Self::NoSameTypeUnions,
         }
     }
 }
@@ -86,6 +102,13 @@ struct Args {
         help = "Tool profile for the prompt: compact (one line per type) or full (every prop in the schema); constrained grammars always use full"
     )]
     tool_profile: ProfileChoice,
+    #[arg(
+        long,
+        value_enum,
+        default_value = "no-same-type-unions",
+        help = "JSON Schema dialect of the constrained reply schema: no-same-type-unions merges anyOf branches of the same JSON type, for servers such as ember that refuse them; standard keeps every union"
+    )]
+    schema_dialect: DialectChoice,
     #[arg(
         long,
         value_delimiter = ',',
@@ -253,9 +276,10 @@ fn providers(args: &Args) -> Result<Providers, String> {
                 compat = compat.with_temperature(temperature);
             }
             let constrained = if wants_constrained {
-                let schema = run::constrained_schema(&grammar_tools())?;
+                let dialect = SchemaDialect::from(args.schema_dialect);
+                let schema = run::constrained_schema(&grammar_tools(), dialect)?;
                 eprintln!(
-                    "constrained reply schema: {} bytes",
+                    "constrained reply schema: {} bytes, {dialect} dialect",
                     schema.to_string().len()
                 );
                 let format = json_schema_format("polyui_reply", schema);
@@ -433,7 +457,14 @@ mod tests {
     async fn grammars_always_use_the_full_profile() {
         let tools = grammar_tools();
         assert!(tools[0]["input_schema"].to_string().contains("anyOf"));
-        assert!(run::constrained_schema(&tools).is_ok());
+        let standard = run::constrained_schema(&tools, SchemaDialect::Standard).unwrap();
+        let merged = run::constrained_schema(&tools, SchemaDialect::NoSameTypeUnions).unwrap();
+        assert!(!polyui_decode::same_type_unions(&standard).is_empty());
+        assert!(polyui_decode::same_type_unions(&merged).is_empty());
+        assert_eq!(
+            merged["properties"]["tool"],
+            serde_json::json!({ "type": "string", "enum": ["show_ui", "update_ui", "close_ui", "get_usage", "none"] })
+        );
     }
 
     #[test]

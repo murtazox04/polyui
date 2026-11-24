@@ -72,6 +72,7 @@ The main pieces:
 | `request::*` | Request bodies for llama-server and vLLM (below). |
 | `Checker` | Compiles a grammar or schema in llguidance and feeds text or tokens through it. The tests and `polyui-decode check` use it. |
 | `prepare`, `schema::keywords` | The keyword check on its own. |
+| `SchemaDialect`, `with_dialect`, `merge_same_type_unions` | Rewrite the schemas for engines that refuse unions of the same JSON type (see [below](#servers-that-refuse-same-type-unions)). |
 
 There is also a small command line tool:
 
@@ -143,6 +144,30 @@ vllm serve <model> --structured-outputs-config.backend guidance
 Then send `request::vllm_chat_grammar` (the same Lark grammar under `structured_outputs.grammar`) or `request::vllm_chat_json` (the tool input under `structured_outputs.json`) to `/v1/chat/completions`. vLLM passes a grammar that starts with `%llguidance` straight to llguidance as Lark. The older fields `guided_json`, `guided_grammar` and `guided_decoding_backend` were removed in vLLM 0.12.0; on an older vLLM use those names instead. With `structured_outputs.json`, vLLM's own `disable_any_whitespace` option decides the whitespace, not `Layout`.
 
 We have not run vLLM against this crate.
+
+## Servers that refuse same-type unions
+
+Some structured output engines refuse a schema in which two branches of an `anyOf` or `oneOf` have the same JSON type. The ember gateway behind our benchmark is one: it answered the constrained reply schema with `anyOf/oneOf/type alternatives must differ in JSON type`, at the `args` of an `on_press` action. The full `show_ui` schema is full of such unions. The component list is a union of one object per type, an action's `args` is a union of one object per action, and the benchmark wraps the tool calls in a union of one object per tool.
+
+`SchemaDialect::NoSameTypeUnions` rewrites a schema for those engines. It walks every subschema and, in each union, merges the branches that share a JSON type:
+
+- Objects become one closed object. Its properties are all the properties of the branches; a property that several branches define gets the merged union of their schemas. A property is required only when every branch requires it. If one branch is open, the merged object is open too.
+- Strings that are all `const` or `enum` become one `enum` with every value, so a `type` or `tool` discriminator becomes one list of names. Other strings become a plain string.
+- `integer` and `number` count as one type. Arrays get one merged `items`.
+- A bound stays only when every branch has it, and then the loosest one wins: the largest `maxLength`, `maximum` or `maxItems`, the smallest `minLength`, `minimum` or `minItems`. Other keywords stay when all branches agree on them.
+- Branches of different types stay in an `anyOf`, one per type. A `oneOf` becomes an `anyOf`. Everything outside a union is left as it was.
+
+The result accepts every value the original accepts, and more. With the bills catalogs a component may now carry the props of any type, a `Text` may come without its `text`, a `Divider` may get a `title`, and a `Stat` value may be longer than 40 characters. In the benchmark's reply schema the tool name and its input are no longer tied together, so nothing in `input` is required, not even `root`. All of these reach the server validator and are refused there, as they would be from a hosted model. For the bills host the reply schema shrinks from 34 902 to 19 985 bytes.
+
+```rust
+use polyui_decode::{SchemaDialect, ToolGrammar, merge_same_type_unions, same_type_unions};
+
+let grammar = ToolGrammar::new(&catalogs, &actions)?.with_dialect(SchemaDialect::NoSameTypeUnions);
+let reply_schema = merge_same_type_unions(&reply_schema);
+assert!(same_type_unions(&reply_schema).is_empty());
+```
+
+`same_type_unions` lists the path of every union whose branches overlap in type, so you can check a schema before you send it. Every command of the CLI takes `--dialect no-same-type-unions`. The tests check that no such union is left in any fixture's schema, that the 6 valid conformance fixtures still match the merged schema when llguidance checks them, and that the validator refuses the four calls above that the merged schema lets through.
 
 ## What the grammar guarantees
 

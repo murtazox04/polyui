@@ -3,9 +3,9 @@ use crate::validate::ActionRegistry;
 use serde_json::{Value, json};
 use std::fmt::Display;
 
-const SHOW_UI: &str = "Show UI: a flat list of components, a parent lists child ids in children. Returns what is on screen, or numbered problems to fix and retry.";
+const SHOW_UI: &str = "Show UI: a flat list of components, each {id, type, props, children}. root is the id of the top component. A parent lists the ids of its child components in its own children, next to props and never inside props, and every component must be reachable from root that way. Returns what is on screen, or numbered problems to fix and retry.";
 const UPDATE_UI: &str = "Change an open surface: upsert adds or replaces components by id, remove drops ids, root sets the top id, data sets values. Types as in show_ui.";
-const LEGEND: &str = "Types: Type(prop, ...). ! required. A bare name is text, name<=N text of at most N chars. a|b one of. [X] list. path: data pointer like /form/name. [children]: takes child ids.";
+const LEGEND: &str = "Types: Type(prop, ...). ! required. A bare name is text, name<=N text of at most N chars. a|b one of. [X] list. path: data pointer like /form/name. [children]: the type may have children.";
 const BINDING: &str = "A prop that is not an action or path may be {\"$bind\":\"/path\"} (data model) or {\"$ref\":\"source:key\"} (host value).";
 const ACTION: &str = "Action: {\"action\":\"name\",\"args\":{...},\"with\":[\"/path\"]}, with lists paths sent when it fires. Actions:";
 const NOT_BINDABLE: &str = " (no $bind or $ref)";

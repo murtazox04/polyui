@@ -86,7 +86,7 @@ pub const FORMATS: [&str; 11] = [
 
 const DROPPED_ANNOTATIONS: [&str; 5] = ["description", "title", "examples", "default", "$comment"];
 
-const SCHEMA_MAPS: [&str; 5] = [
+pub(crate) const SCHEMA_MAPS: [&str; 5] = [
     "properties",
     "patternProperties",
     "$defs",
@@ -94,9 +94,9 @@ const SCHEMA_MAPS: [&str; 5] = [
     "dependentSchemas",
 ];
 
-const SCHEMA_LISTS: [&str; 4] = ["anyOf", "oneOf", "allOf", "prefixItems"];
+pub(crate) const SCHEMA_LISTS: [&str; 4] = ["anyOf", "oneOf", "allOf", "prefixItems"];
 
-const SCHEMA_VALUES: [&str; 3] = ["items", "additionalItems", "additionalProperties"];
+pub(crate) const SCHEMA_VALUES: [&str; 3] = ["items", "additionalItems", "additionalProperties"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Change {

@@ -370,6 +370,7 @@ mod tests {
                     tool: "show_ui".into(),
                     ok: *ok,
                     problems: if *ok { Vec::new() } else { vec!["kind".into()] },
+                    call: String::new(),
                 })
                 .collect(),
             opened: attempts.contains(&true),

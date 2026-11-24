@@ -1,0 +1,320 @@
+{
+  "date": "2026-11-24",
+  "model": "claude-haiku-5-5",
+  "tools": {
+    "profile": "compact",
+    "catalog_subset": []
+  },
+  "prices": {
+    "input_per_million": 0.1,
+    "output_per_million": 0.5,
+    "cache_write_factor": 1.25,
+    "cache_read_factor": 0.1
+  },
+  "prompts": 8,
+  "total_model_calls": 16,
+  "provider_requests": null,
+  "stopped_early": false,
+  "total_cost_usd": 0.009321225,
+  "variants": [
+    {
+      "variant": "tools",
+      "overall": {
+        "runs": 8,
+        "ui_runs": 6,
+        "first_try_valid": 6,
+        "valid_after_one_retry": 6,
+        "valid_after_two_retries": 6,
+        "ui_expected": 6,
+        "ui_shown_when_expected": 5,
+        "no_ui_expected": 1,
+        "no_ui_when_not_expected": 1,
+        "mean_ms_to_open": 5390.833333333333,
+        "model_calls": 16,
+        "input_tokens": 48,
+        "output_tokens": 7965,
+        "cache_write_tokens": 40165,
+        "cache_read_tokens": 31330,
+        "cost_usd": 0.009321225,
+        "budget_cut": 0,
+        "problem_kinds": []
+      },
+      "per_locale": {
+        "en": {
+          "runs": 2,
+          "ui_runs": 1,
+          "first_try_valid": 1,
+          "valid_after_one_retry": 1,
+          "valid_after_two_retries": 1,
+          "ui_expected": 2,
+          "ui_shown_when_expected": 1,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": 6431.0,
+          "model_calls": 3,
+          "input_tokens": 10,
+          "output_tokens": 2000,
+          "cache_write_tokens": 9400,
+          "cache_read_tokens": 3741,
+          "cost_usd": 0.0022134100000000003,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "ru": {
+          "runs": 2,
+          "ui_runs": 1,
+          "first_try_valid": 1,
+          "valid_after_one_retry": 1,
+          "valid_after_two_retries": 1,
+          "ui_expected": 0,
+          "ui_shown_when_expected": 0,
+          "no_ui_expected": 1,
+          "no_ui_when_not_expected": 1,
+          "mean_ms_to_open": 7530.0,
+          "model_calls": 3,
+          "input_tokens": 10,
+          "output_tokens": 2003,
+          "cache_write_tokens": 10578,
+          "cache_read_tokens": 3736,
+          "cost_usd": 0.00236211,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "uz-Cyrl": {
+          "runs": 2,
+          "ui_runs": 2,
+          "first_try_valid": 2,
+          "valid_after_one_retry": 2,
+          "valid_after_two_retries": 2,
+          "ui_expected": 2,
+          "ui_shown_when_expected": 2,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": 5160.0,
+          "model_calls": 4,
+          "input_tokens": 12,
+          "output_tokens": 2189,
+          "cache_write_tokens": 10433,
+          "cache_read_tokens": 7531,
+          "cost_usd": 0.0024751350000000003,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "uz-Latn": {
+          "runs": 2,
+          "ui_runs": 2,
+          "first_try_valid": 2,
+          "valid_after_one_retry": 2,
+          "valid_after_two_retries": 2,
+          "ui_expected": 2,
+          "ui_shown_when_expected": 2,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": 4032.0,
+          "model_calls": 6,
+          "input_tokens": 16,
+          "output_tokens": 1773,
+          "cache_write_tokens": 9754,
+          "cache_read_tokens": 16322,
+          "cost_usd": 0.00227057,
+          "budget_cut": 0,
+          "problem_kinds": []
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "prompt": "en-bills",
+      "locale": "en",
+      "category": "bills",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"surface\":\"bills\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"Card\",\"props\":{\"title\":\"Your bills this month\",\"subtitle\":\"4 unpaid bills\",\"tone\":\"plain\"},\"children\":[\"total\",\"gas_card\",\"power_card\",\"water_card\",\"net_card\"]},{\"id\":\"total\",\"type\":\"Stat\",\"props\":{\"label\":\"Total due\",\"value\":\"231 732,19\",\"unit\":\"so'm\",\"tone\":\"warning\"}},{\"id\":\"gas_card\",\"type\":\"Card\",\"props\":{\"title\":\"Gas (Hududgaz Toshkent)\",\"subtitle\":\"112 m3 this month\",\"tone\":\"plain\"},\"children\":[\"gas_stat\",\"gas_btn\"]},{\"id\":\"gas_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"Due 2026-12-10\",\"value\":\"29 322,19\",\"unit\":\"so'm\",\"hint\":{\"$ref\":\"account:gas\"}}},{\"id\":\"gas_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Pay gas bill\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}}},{\"id\":\"power_card\",\"type\":\"Card\",\"props\":{\"title\":\"Electricity (Toshkent shahar elektr tarmoqlari)\",\"subtitle\":\"318 kWh this month\",\"tone\":\"plain\"},\"children\":[\"power_stat\",\"power_btn\"]},{\"id\":\"power_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"Due 2026-12-05\",\"value\":\"84 510,00\",\"unit\":\"so'm\",\"hint\":{\"$ref\":\"account:electricity\"}}},{\"id\":\"power_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Pay electricity bill\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_power_2611\"}}}},{\"id\":\"water_card\",\"type\":\"Card\",\"props\":{\"title\":\"Water (Suvsoz)\",\"subtitle\":\"13.3 m3 this month\",\"tone\":\"plain\"},\"children\":[\"water_stat\",\"water_btn\"]},{\"id\":\"water_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"Due 2026-12-15\",\"value\":\"18 900,00\",\"unit\":\"so'm\",\"hint\":{\"$ref\":\"account:water\"}}},{\"id\":\"water_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Pay water bill\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_water_2611\"}}}},{\"id\":\"net_card\",\"type\":\"Card\",\"props\":{\"title\":\"Internet (Uztelecom)\",\"subtitle\":\"236 GB this month\",\"tone\":\"warning\"},\"children\":[\"net_stat\",\"net_btn\"]},{\"id\":\"net_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"Due 2026-12-01\",\"value\":\"99 000,00\",\"unit\":\"so'm\",\"tone\":\"warning\",\"hint\":{\"$ref\":\"account:internet\"}}},{\"id\":\"net_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Pay internet bill\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_net_2611\"}}}}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 6431,
+      "ms_total": 7676,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1579,
+      "cache_write_tokens": 5651,
+      "cache_read_tokens": 3741,
+      "ending": "done",
+      "text": "You owe **231 732,19 so'm** this month across four unpaid bills. Internet is due first, on 2026-12-01.\n\nEach bill has a pay button, and the app will ask you to confirm before any money moves."
+    },
+    {
+      "prompt": "en-phone-form",
+      "locale": "en",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 3087,
+      "model_calls": 1,
+      "input_tokens": 4,
+      "output_tokens": 421,
+      "cache_write_tokens": 3749,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Please send the new phone number for payment notifications, including the country code (for example +998 90 123 45 67)."
+    },
+    {
+      "prompt": "ru-ambiguous",
+      "locale": "ru",
+      "category": "ambiguous",
+      "expect": "either",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"surface\":\"bills\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"Card\",\"props\":{\"title\":\"Счета за ноябрь\",\"subtitle\":\"Не оплачены\",\"tone\":\"plain\"},\"children\":[\"gas\",\"power\",\"water\",\"net\"]},{\"id\":\"gas\",\"type\":\"Card\",\"props\":{\"title\":\"Газ \u2014 Hududgaz Toshkent\",\"tone\":\"plain\"},\"children\":[\"gas_stat\",\"gas_badge\",\"gas_text\",\"gas_btn\"]},{\"id\":\"gas_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"К оплате\",\"value\":\"29 322,19\",\"unit\":\"so'm\",\"hint\":{\"$ref\":\"account:gas\"}}},{\"id\":\"gas_badge\",\"type\":\"Badge\",\"props\":{\"text\":\"до 10.12.2026\",\"tone\":\"info\"}},{\"id\":\"gas_text\",\"type\":\"Text\",\"props\":{\"text\":\"Потребление: 112 м³\",\"style\":\"caption\"}},{\"id\":\"gas_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Оплатить газ\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}}},{\"id\":\"power\",\"type\":\"Card\",\"props\":{\"title\":\"Электричество \u2014 Toshkent shahar elektr tarmoqlari\",\"tone\":\"plain\"},\"children\":[\"power_stat\",\"power_badge\",\"power_text\",\"power_btn\"]},{\"id\":\"power_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"К оплате\",\"value\":\"84 510,00\",\"unit\":\"so'm\",\"hint\":{\"$ref\":\"account:electricity\"}}},{\"id\":\"power_badge\",\"type\":\"Badge\",\"props\":{\"text\":\"до 05.12.2026\",\"tone\":\"info\"}},{\"id\":\"power_text\",\"type\":\"Text\",\"props\":{\"text\":\"Потребление: 318 кВт·ч\",\"style\":\"caption\"}},{\"id\":\"power_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Оплатить электричество\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_power_2611\"}}}},{\"id\":\"water\",\"type\":\"Card\",\"props\":{\"title\":\"Вода \u2014 Suvsoz\",\"tone\":\"plain\"},\"children\":[\"water_stat\",\"water_badge\",\"water_text\",\"water_btn\"]},{\"id\":\"water_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"К оплате\",\"value\":\"18 900,00\",\"unit\":\"so'm\",\"hint\":{\"$ref\":\"account:water\"}}},{\"id\":\"water_badge\",\"type\":\"Badge\",\"props\":{\"text\":\"до 15.12.2026\",\"tone\":\"info\"}},{\"id\":\"water_text\",\"type\":\"Text\",\"props\":{\"text\":\"Потребление: 13,3 м³\",\"style\":\"caption\"}},{\"id\":\"water_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Оплатить воду\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_water_2611\"}}}},{\"id\":\"net\",\"type\":\"Card\",\"props\":{\"title\":\"Интернет \u2014 Uztelecom\",\"tone\":\"warning\"},\"children\":[\"net_stat\",\"net_badge\",\"net_text\",\"net_btn\"]},{\"id\":\"net_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"К оплате\",\"value\":\"99 000,00\",\"unit\":\"so'm\",\"hint\":{\"$ref\":\"account:internet\"}}},{\"id\":\"net_badge\",\"type\":\"Badge\",\"props\":{\"text\":\"до 01.12.2026, скоро срок\",\"tone\":\"warning\"}},{\"id\":\"net_text\",\"type\":\"Text\",\"props\":{\"text\":\"Трафик: 236 ГБ\",\"style\":\"caption\"}},{\"id\":\"net_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Оплатить интернет\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_net_2611\"}}}}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 7530,
+      "ms_total": 9072,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1965,
+      "cache_write_tokens": 6837,
+      "cache_read_tokens": 3736,
+      "ending": "done",
+      "text": "Вот все счета за ноябрь. Какой именно вас интересует, скажите, или оплатите любой прямо здесь.Ниже все четыре неоплаченных счёта, всего 231 732,19 so'm. Самый срочный \u2014 интернет: до 01.12.2026. Нажмите «Оплатить» у нужного счёта, и приложение попросит подтверждение. Если вам нужен конкретный счёт, например по истории расхода, скажите какой."
+    },
+    {
+      "prompt": "ru-no-ui",
+      "locale": "ru",
+      "category": "no-ui",
+      "expect": "no-ui",
+      "variant": "tools",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 2381,
+      "model_calls": 1,
+      "input_tokens": 4,
+      "output_tokens": 38,
+      "cache_write_tokens": 3741,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Пожалуйста! Хорошего дня. Если понадобятся счета или тарифы, я на связи."
+    },
+    {
+      "prompt": "uz-cyrl-bill-detail",
+      "locale": "uz-Cyrl",
+      "category": "bill-detail",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"root\":\"gas_card\",\"surface\":\"gas_bill\",\"components\":[{\"id\":\"gas_card\",\"type\":\"Card\",\"props\":{\"title\":\"Газ ҳисоби\",\"subtitle\":\"Hududgaz Toshkent\",\"tone\":\"warning\"},\"children\":[\"gas_amount\",\"gas_due\",\"gas_pay\"]},{\"id\":\"gas_amount\",\"type\":\"Stat\",\"props\":{\"label\":\"Тўлаш керак\",\"value\":\"29 322,19\",\"unit\":\"so'm\",\"tone\":\"warning\",\"hint\":{\"$ref\":\"account:gas\"}}},{\"id\":\"gas_due\",\"type\":\"Stat\",\"props\":{\"label\":\"Тўлов муддати\",\"value\":\"2026-12-10\",\"tone\":\"neutral\"}},{\"id\":\"gas_pay\",\"type\":\"Button\",\"props\":{\"label\":\"Газ ҳисобини тўлаш\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}}}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3716,
+      "ms_total": 5357,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 806,
+      "cache_write_tokens": 4809,
+      "cache_read_tokens": 3766,
+      "ending": "done",
+      "text": "Газ ҳисобини **29 322,19 so'm** тўлашингиз керак. Муддати: **2026-12-10**."
+    },
+    {
+      "prompt": "uz-cyrl-offers",
+      "locale": "uz-Cyrl",
+      "category": "offers",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"surface\":\"internet_tariffs\",\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"Card\",\"props\":{\"title\":\"Интернет тарифлари\",\"subtitle\":\"Uztelecom\"},\"children\":[\"title\",\"row\",\"choice\"]},{\"id\":\"title\",\"type\":\"Text\",\"props\":{\"text\":\"Тарифни солиштиринг ва танланг.\",\"style\":\"body\"},\"children\":[]},{\"id\":\"row\",\"type\":\"Row\",\"props\":{\"gap\":\"medium\"},\"children\":[\"c50\",\"c100\",\"c200\"]},{\"id\":\"c50\",\"type\":\"Card\",\"props\":{\"title\":\"Oila 50\",\"tone\":\"plain\"},\"children\":[\"s50\"]},{\"id\":\"s50\",\"type\":\"Stat\",\"props\":{\"label\":\"Ойлик тўлов\",\"value\":\"99 000,00\",\"unit\":\"so'm\",\"hint\":\"50 Mbit/s\"},\"children\":[]},{\"id\":\"c100\",\"type\":\"Card\",\"props\":{\"title\":\"Oila 100\",\"tone\":\"plain\"},\"children\":[\"s100\"]},{\"id\":\"s100\",\"type\":\"Stat\",\"props\":{\"label\":\"Ойлик тўлов\",\"value\":\"149 000,00\",\"unit\":\"so'm\",\"hint\":\"100 Mbit/s\"},\"children\":[]},{\"id\":\"c200\",\"type\":\"Card\",\"props\":{\"title\":\"Turbo 200\",\"tone\":\"plain\"},\"children\":[\"s200\"]},{\"id\":\"s200\",\"type\":\"Stat\",\"props\":{\"label\":\"Ойлик тўлов\",\"value\":\"219 000,00\",\"unit\":\"so'm\",\"hint\":\"200 Mbit/s\"},\"children\":[]},{\"id\":\"choice\",\"type\":\"ChoiceGroup\",\"props\":{\"label\":\"Тарифни танланг\",\"value\":\"/offer\",\"on_change\":{\"action\":\"pick_offer\",\"with\":[\"/offer\"]},\"options\":[{\"id\":\"oila_50\",\"label\":\"Oila 50\",\"detail\":\"50 Mbit/s · 99 000,00 so'm\"},{\"id\":\"oila_100\",\"label\":\"Oila 100\",\"detail\":\"100 Mbit/s · 149 000,00 so'm\"},{\"id\":\"turbo_200\",\"label\":\"Turbo 200\",\"detail\":\"200 Mbit/s · 219 000,00 so'm\"}]},\"children\":[]}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 6604,
+      "ms_total": 8020,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 1383,
+      "cache_write_tokens": 5624,
+      "cache_read_tokens": 3765,
+      "ending": "done",
+      "text": "Учта тариф экранда: Oila 50 (99 000,00 so'm, 50 Mbit/s), Oila 100 (149 000,00 so'm, 100 Mbit/s) ва Turbo 200 (219 000,00 so'm, 200 Mbit/s). Пастдаги рўйхатдан бирини танланг."
+    },
+    {
+      "prompt": "uz-latn-chart",
+      "locale": "uz-Latn",
+      "category": "chart",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"surface\":\"gas_usage\",\"root\":\"dash\",\"components\":[{\"id\":\"dash\",\"type\":\"chart:Dashboard\",\"props\":{\"title\":\"Gaz sarfi, oxirgi 6 oy\",\"columns\":1},\"children\":[\"chart\",\"gas_stat\"]},{\"id\":\"chart\",\"type\":\"chart:Chart\",\"props\":{\"title\":\"Oylik gaz sarfi\",\"kind\":\"bar\",\"x_label\":\"Oy\",\"y_label\":\"Sarf\",\"unit\":\"m3\",\"rows\":[{\"x\":\"2026-06\",\"y\":38,\"series\":\"Sarf\"},{\"x\":\"2026-07\",\"y\":35,\"series\":\"Sarf\"},{\"x\":\"2026-08\",\"y\":36,\"series\":\"Sarf\"},{\"x\":\"2026-09\",\"y\":44,\"series\":\"Sarf\"},{\"x\":\"2026-10\",\"y\":71,\"series\":\"Sarf\"},{\"x\":\"2026-11\",\"y\":112,\"series\":\"Sarf\"}]}},{\"id\":\"gas_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"Joriy oy to'lovi (noyabr)\",\"value\":\"29 322,19\",\"unit\":\"so'm\",\"hint\":{\"$ref\":\"account:gas\"},\"tone\":\"warning\"}}]}"
+        },
+        {
+          "tool": "update_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"surface\":\"gas_usage\",\"root\":\"wrap\",\"upsert\":[{\"id\":\"wrap\",\"type\":\"Card\",\"props\":{\"title\":\"Gaz\",\"tone\":\"plain\"},\"children\":[\"dash\",\"pay_gas\"]},{\"id\":\"pay_gas\",\"type\":\"Button\",\"props\":{\"label\":\"Gaz to'lovini to'lash\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}}}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 4066,
+      "ms_total": 7982,
+      "model_calls": 4,
+      "input_tokens": 10,
+      "output_tokens": 1109,
+      "cache_write_tokens": 5310,
+      "cache_read_tokens": 12572,
+      "ending": "done",
+      "text": "Gaz sarfi grafigi ekranda. Noyabrda sarf 112 m3 bo'ldi, oktyabrda 71 m3 edi. Gaz to'lovi 10-dekabrgacha to'lanishi kerak."
+    },
+    {
+      "prompt": "uz-latn-pay",
+      "locale": "uz-Latn",
+      "category": "pay",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"root\":\"gas_card\",\"components\":[{\"id\":\"gas_card\",\"type\":\"Card\",\"props\":{\"title\":\"Gaz to'lovi\",\"subtitle\":\"Hududgaz Toshkent · muddat: 2026-12-10\",\"tone\":\"warning\"},\"children\":[\"gas_stat\",\"gas_pay\"]},{\"id\":\"gas_stat\",\"type\":\"Stat\",\"props\":{\"label\":\"Hisob-kitob summasi\",\"value\":\"29 322,19\",\"unit\":\"so'm\",\"hint\":{\"$ref\":\"account:gas\"}}},{\"id\":\"gas_pay\",\"type\":\"Button\",\"props\":{\"label\":\"Gaz uchun to'lash\",\"tone\":\"primary\",\"on_press\":{\"action\":\"pay_bill\",\"args\":{\"bill\":\"b_gas_2611\"}}}}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3998,
+      "ms_total": 5284,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 664,
+      "cache_write_tokens": 4444,
+      "cache_read_tokens": 3750,
+      "ending": "done",
+      "text": "Gaz to'lovi: 29 322,19 so'm, muddati 2026-12-10. To'lash tugmasini bosing. Ilova to'lovni tasdiqlashingizni so'raydi."
+    }
+  ]
+}

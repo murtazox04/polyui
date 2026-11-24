@@ -1,0 +1,372 @@
+{
+  "date": "2026-11-24",
+  "model": "model/chat/ember",
+  "tools": {
+    "profile": "compact",
+    "catalog_subset": []
+  },
+  "prices": {
+    "input_per_million": 0.0,
+    "output_per_million": 0.0,
+    "cache_write_factor": 1.25,
+    "cache_read_factor": 0.1
+  },
+  "prompts": 8,
+  "total_model_calls": 9,
+  "provider_requests": 9,
+  "stopped_early": true,
+  "total_cost_usd": 0.0,
+  "variants": [
+    {
+      "variant": "constrained",
+      "overall": {
+        "runs": 8,
+        "ui_runs": 2,
+        "first_try_valid": 0,
+        "valid_after_one_retry": 0,
+        "valid_after_two_retries": 0,
+        "ui_expected": 6,
+        "ui_shown_when_expected": 0,
+        "no_ui_expected": 1,
+        "no_ui_when_not_expected": 1,
+        "mean_ms_to_open": null,
+        "model_calls": 9,
+        "input_tokens": 16580,
+        "output_tokens": 927,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 0,
+        "cost_usd": 0.0,
+        "budget_cut": 3,
+        "problem_kinds": [
+          [
+            "is not reachable from root \"x\"",
+            2
+          ],
+          [
+            "required prop is missing",
+            2
+          ],
+          [
+            "unknown field \"x\"",
+            2
+          ],
+          [
+            "\"x\",\"x\":[{\"x\":\"x\",\"x\":\"x\",\"x\":{\"x\":\"x\" is not in components",
+            1
+          ],
+          [
+            "Text cannot have children",
+            1
+          ],
+          [
+            "components is required",
+            1
+          ]
+        ]
+      },
+      "per_locale": {
+        "en": {
+          "runs": 2,
+          "ui_runs": 1,
+          "first_try_valid": 0,
+          "valid_after_one_retry": 0,
+          "valid_after_two_retries": 0,
+          "ui_expected": 2,
+          "ui_shown_when_expected": 0,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": null,
+          "model_calls": 2,
+          "input_tokens": 2586,
+          "output_tokens": 90,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost_usd": 0.0,
+          "budget_cut": 1,
+          "problem_kinds": [
+            [
+              "unknown field \"x\"",
+              2
+            ],
+            [
+              "root is required",
+              1
+            ]
+          ]
+        },
+        "ru": {
+          "runs": 2,
+          "ui_runs": 0,
+          "first_try_valid": 0,
+          "valid_after_one_retry": 0,
+          "valid_after_two_retries": 0,
+          "ui_expected": 0,
+          "ui_shown_when_expected": 0,
+          "no_ui_expected": 1,
+          "no_ui_when_not_expected": 1,
+          "mean_ms_to_open": null,
+          "model_calls": 1,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost_usd": 0.0,
+          "budget_cut": 1,
+          "problem_kinds": []
+        },
+        "uz-Cyrl": {
+          "runs": 2,
+          "ui_runs": 1,
+          "first_try_valid": 0,
+          "valid_after_one_retry": 0,
+          "valid_after_two_retries": 0,
+          "ui_expected": 2,
+          "ui_shown_when_expected": 0,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": null,
+          "model_calls": 3,
+          "input_tokens": 8809,
+          "output_tokens": 779,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost_usd": 0.0,
+          "budget_cut": 1,
+          "problem_kinds": [
+            [
+              "is not reachable from root \"x\"",
+              2
+            ],
+            [
+              "required prop is missing",
+              2
+            ],
+            [
+              "\"x\",\"x\":[{\"x\":\"x\",\"x\":\"x\",\"x\":{\"x\":\"x\" is not in components",
+              1
+            ],
+            [
+              "Text cannot have children",
+              1
+            ],
+            [
+              "components is required",
+              1
+            ],
+            [
+              "unknown prop for ChoiceGroup",
+              1
+            ]
+          ]
+        },
+        "uz-Latn": {
+          "runs": 2,
+          "ui_runs": 0,
+          "first_try_valid": 0,
+          "valid_after_one_retry": 0,
+          "valid_after_two_retries": 0,
+          "ui_expected": 2,
+          "ui_shown_when_expected": 0,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": null,
+          "model_calls": 3,
+          "input_tokens": 5185,
+          "output_tokens": 58,
+          "cache_write_tokens": 0,
+          "cache_read_tokens": 0,
+          "cost_usd": 0.0,
+          "budget_cut": 0,
+          "problem_kinds": []
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "prompt": "en-bills",
+      "locale": "en",
+      "category": "bills",
+      "expect": "ui",
+      "variant": "constrained",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "unknown field \"x\"",
+            "unknown field \"x\"",
+            "root is required"
+          ],
+          "call": "{\"tool\":\"show_ui\",\"input\":{\"components\":[{\"id\":\"root\",\"type\":\"Text\",\"props\":{\"text\":\"Monthly Bills\",\"style\":\"title\"},\"children\":[\"bill_list\"]},{\"id\":\"bill_list\",\"type\":\"List\",\"props\":{\"title\":\"Unpaid bills\",\"ordered\":true},\"children\":[\"b_gas\",\"b_power\",\"b_water\",\"b_net\"]}],\"data\":[],\"remove\":[],\"service\":\"electricity\"}}"
+        }
+      ],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 119668,
+      "model_calls": 2,
+      "input_tokens": 2586,
+      "output_tokens": 90,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "error: HTTP 503: model_call_failed: {'detail': {'error': 'model_unavailable', 'message': 'all rungs failed for chat/ember: ember streamed past 85 s'}}",
+      "text": ""
+    },
+    {
+      "prompt": "en-phone-form",
+      "locale": "en",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "constrained",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 0,
+      "model_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "budget",
+      "text": ""
+    },
+    {
+      "prompt": "ru-ambiguous",
+      "locale": "ru",
+      "category": "ambiguous",
+      "expect": "either",
+      "variant": "constrained",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 60914,
+      "model_calls": 1,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "error: HTTP 503: model_call_failed: {'detail': {'error': 'model_unavailable', 'message': 'all rungs failed for chat/ember: ember: RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)'}}",
+      "text": ""
+    },
+    {
+      "prompt": "ru-no-ui",
+      "locale": "ru",
+      "category": "no-ui",
+      "expect": "no-ui",
+      "variant": "constrained",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 0,
+      "model_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "budget",
+      "text": ""
+    },
+    {
+      "prompt": "uz-cyrl-bill-detail",
+      "locale": "uz-Cyrl",
+      "category": "bill-detail",
+      "expect": "ui",
+      "variant": "constrained",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 0,
+      "model_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "budget",
+      "text": ""
+    },
+    {
+      "prompt": "uz-cyrl-offers",
+      "locale": "uz-Cyrl",
+      "category": "offers",
+      "expect": "ui",
+      "variant": "constrained",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "components is required",
+            "\"x\",\"x\":[{\"x\":\"x\",\"x\":\"x\",\"x\":{\"x\":\"x\" is not in components"
+          ],
+          "call": "{\"tool\":\"show_ui\",\"input\":{\"root\":\"root\\\",\\\"components\\\":[{\\\"id\\\":\\\"root\\\",\\\"type\\\":\\\"Text\\\",\\\"props\\\":{\\\"text\\\":\\\"Internet tariflari\\\",\\\"style\\\":\\\"title\\\"}},{\\\"id\\\":\\\"list\\\",\\\"type\\\":\\\"List\\\",\\\"props\\\":{\\\"title\\\":\\\"Mavjud tariflar\\\",\\\"ordered\\\":true},\\\"children\\\":[\\\"choice_group\\\"]},{\\\"id\\\":\\\"choice_group\\\",\\\"type\\\":\\\"ChoiceGroup\\\",\\\"props\\\":{\\\"label\\\":\\\"Tarifni tanlang\\\",\\\"options\\\":[{\\\"id\\\":\\\"oila_50\\\",\\\"label\\\":\\\"Oila 50\\\",\\\"detail\\\":\\\"50 Mbit/s - 99 000,00 so'm\\\"},{\\\"id\\\":\\\"oila_100\\\",\\\"label\\\":\\\"Oila 100\\\",\\\"detail\\\":\\\"100 Mbit/s - 149 000,00 so'm\\\"},{\\\"id\\\":\\\"turbo_200\\\",\\\"label\\\":\\\"Turbo 200\\\",\\\"detail\\\":\\\"200 Mbit/s - 219 000,00 so'm\\\"}],\\\"value\\\":\\\"/offer\\\",\\\"on_change\\\":{\\\"action\\\":\\\"pick_offer\\\",\\\"with\\\":[\\\"/offer\\\"]}\\\"}]}\"}}"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "required prop is missing",
+            "Text cannot have children",
+            "is not reachable from root \"x\"",
+            "is not reachable from root \"x\""
+          ],
+          "call": "{\"tool\":\"show_ui\",\"input\":{\"root\":\"root\",\"components\":[{\"id\":\"root\",\"type\":\"Text\",\"props\":{\"text\":\"Internet tariflari\",\"style\":\"title\"},\"children\":[\"list\"]},{\"id\":\"list\",\"type\":\"List\",\"props\":{\"title\":\"Mavjud tariflar\",\"ordered\":true},\"children\":[\"choice_group\"]},{\"id\":\"choice_group\",\"type\":\"ChoiceGroup\",\"props\":{\"label\":\"Tarifni tanlang\",\"options\":[{\"id\":\"oila_50\",\"label\":\"Oila 50\",\"detail\":\"50 Mbit/s - 99 000,00 so'm\"},{\"id\":\"oila_100\",\"label\":\"Oila 100\",\"detail\":\"100 Mbit/s - 149 000,00 so'm\"},{\"id\":\"turbo_200\",\"label\":\"Turbo 200\",\"detail\":\"200 Mbit/s - 219 000,00 so'm\"}],\"multiple\":false,\"on_change\":{\"action\":\"pick_offer\",\"with\":[\"/offer\"]}}}]}}"
+        },
+        {
+          "tool": "show_ui",
+          "ok": false,
+          "problems": [
+            "unknown prop for ChoiceGroup",
+            "required prop is missing"
+          ],
+          "call": "{\"tool\":\"show_ui\",\"input\":{\"root\":\"container\",\"components\":[{\"id\":\"container\",\"type\":\"Card\",\"props\":{\"title\":\"\",\"subtitle\":\"\",\"tone\":\"plain\"},\"children\":[\"root_text\",\"list\"]},{\"id\":\"root_text\",\"type\":\"Text\",\"props\":{\"text\":\"Internet tariflari\",\"style\":\"title\"}},{\"id\":\"list\",\"type\":\"List\",\"props\":{\"title\":\"Mavjud tariflar\",\"ordered\":true},\"children\":[\"choice_group\"]},{\"id\":\"choice_group\",\"type\":\"ChoiceGroup\",\"props\":{\"label\":\"Tarifni tanlagh\",\"options\":[{\"id\":\"oila_50\",\"label\":\"Oila 50\",\"detail\":\"50 Mbit/s - 99 000,00 so'm\"},{\"id\":\"oila_100\",\"label\":\"Oila 100\",\"detail\":\"100 Mbit/s - 149 000,00 so'm\"},{\"id\":\"turbo_200\",\"label\":\"Turbo 200\",\"detail\":\"200 Mbit/s - 219 000,00 so'm\"}],\"multiple\":false,\"on_change\":{\"action\":\"pick_offer\",\"with\":[\"/offer\"]},\"on_select\":{ \"action\": \"pick_offer\", \"args\": {\"offer\": \"oila_50\"} }},\"children\":[]}]}}"
+        }
+      ],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 90983,
+      "model_calls": 3,
+      "input_tokens": 8809,
+      "output_tokens": 779,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": ""
+    },
+    {
+      "prompt": "uz-latn-chart",
+      "locale": "uz-Latn",
+      "category": "chart",
+      "expect": "ui",
+      "variant": "constrained",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 88014,
+      "model_calls": 2,
+      "input_tokens": 2598,
+      "output_tokens": 17,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "error: HTTP 503: model_call_failed: {'detail': {'error': 'model_unavailable', 'message': 'all rungs failed for chat/ember: ember: RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)'}}",
+      "text": ""
+    },
+    {
+      "prompt": "uz-latn-pay",
+      "locale": "uz-Latn",
+      "category": "pay",
+      "expect": "ui",
+      "variant": "constrained",
+      "attempts": [],
+      "opened": false,
+      "ms_to_open": null,
+      "ms_total": 29899,
+      "model_calls": 1,
+      "input_tokens": 2587,
+      "output_tokens": 41,
+      "cache_write_tokens": 0,
+      "cache_read_tokens": 0,
+      "ending": "done",
+      "text": "Tushunarli, gaz uchun to'lovni amalga oshiraman. To'lovni tasdiqlash uchun quyidagi tugmani bosing."
+    }
+  ]
+}

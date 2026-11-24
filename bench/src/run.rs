@@ -5,7 +5,7 @@ use clap::ValueEnum;
 use futures_util::StreamExt;
 use polyui_core::protocol::{self, Hello};
 use polyui_core::tools::ToolProfile;
-use polyui_decode::ToolGrammar;
+use polyui_decode::{SchemaDialect, ToolGrammar};
 use polyui_server::bills::{BillsHost, HOUSEHOLD_USER};
 use polyui_server::session::UI_TOOLS;
 use polyui_server::{
@@ -20,6 +20,7 @@ use tokio::sync::mpsc::Receiver;
 
 pub const TURN_TIMEOUT: Duration = Duration::from_secs(240);
 const TEXT_KEPT: usize = 400;
+const CALL_KEPT: usize = 4000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
@@ -54,6 +55,7 @@ pub struct Attempt {
     pub tool: String,
     pub ok: bool,
     pub problems: Vec<String>,
+    pub call: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -129,6 +131,10 @@ fn kept(text: &str) -> String {
     text.chars().take(TEXT_KEPT).collect()
 }
 
+fn call_kept(text: &str) -> String {
+    text.chars().take(CALL_KEPT).collect()
+}
+
 fn result_text(block: &Value) -> String {
     match &block["content"] {
         Value::String(text) => text.clone(),
@@ -176,16 +182,19 @@ pub fn ui_attempts(trace: &Trace, opens: usize, gave_up: bool) -> Vec<Attempt> {
             continue;
         }
         let id = block["id"].as_str().unwrap_or_default();
+        let call = call_kept(&block["input"].to_string());
         let attempt = match results.get(id) {
             Some((true, content)) => Attempt {
                 tool: name.to_string(),
                 ok: false,
                 problems: problem_kinds(content),
+                call,
             },
             Some((false, _)) => Attempt {
                 tool: name.to_string(),
                 ok: true,
                 problems: Vec::new(),
+                call,
             },
             None => {
                 let ok = !gave_up && name == "show_ui" && opens > shown;
@@ -197,6 +206,7 @@ pub fn ui_attempts(trace: &Trace, opens: usize, gave_up: bool) -> Vec<Attempt> {
                     } else {
                         vec!["result not seen, the turn ended after this call".to_string()]
                     },
+                    call,
                 }
             }
         };
@@ -301,6 +311,10 @@ pub async fn run_tools(bench: &Bench, prompt: &Prompt) -> RunRecord {
     let trace = lock(&trace);
     if trace.refused {
         outcome.ending = "budget".into();
+    } else if outcome.ending.starts_with("error")
+        && let Some(detail) = trace.errors.last()
+    {
+        outcome.ending = format!("{} (provider: {detail})", outcome.ending);
     }
     let gave_up = outcome.text.contains(&host.fallback_text(session.locale()));
     let attempts = ui_attempts(&trace, outcome.opens, gave_up);
@@ -324,7 +338,7 @@ pub fn inline_guide(show_ui: &Value, profile: ToolProfile) -> String {
         }
     };
     format!(
-        "Important: in this client show_ui, update_ui and close_ui are not tools you can call. To put UI on the screen, write the show_ui input as one JSON object inside a single fenced code block that starts with ```json and ends with ```. Text outside the block is shown to the user as plain text. The JSON object must follow this JSON Schema:\n{schema}{types}\nIf the next message lists problems, write the whole corrected JSON again in one fenced json block. When no UI is needed, answer in plain text with no code block."
+        "Important: in this client show_ui, update_ui and close_ui are not tools you can call. To put UI on the screen, write the show_ui input as one JSON object inside a single fenced code block that starts with ```json and ends with ```. Write the JSON compactly, with no indentation or line breaks. Text outside the block is shown to the user as plain text. The JSON object must follow this JSON Schema:\n{schema}{types}\nIf the next message lists problems, write the whole corrected JSON again in one fenced json block. When no UI is needed, answer in plain text with no code block."
     )
 }
 
@@ -490,6 +504,7 @@ pub async fn run_inline(bench: &Bench, prompt: &Prompt) -> RunRecord {
                 } else {
                     Vec::new()
                 },
+                call: call_kept(&block),
             });
             if outcome.is_error {
                 failures += 1;
@@ -540,7 +555,7 @@ fn branch(tool: &str, key: &str, schema: Value) -> Value {
     })
 }
 
-pub fn constrained_schema(tools: &[Value]) -> Result<Value, String> {
+pub fn constrained_schema(tools: &[Value], dialect: SchemaDialect) -> Result<Value, String> {
     let grammar = ToolGrammar::from_tools(&Value::Array(tools.to_vec()))
         .map_err(|error| error.to_string())?;
     let mut branches: Vec<Value> = grammar
@@ -549,7 +564,7 @@ pub fn constrained_schema(tools: &[Value]) -> Result<Value, String> {
         .map(|tool| branch(&tool.name, "input", tool.input_schema.clone()))
         .collect();
     branches.push(branch(NO_TOOL, "text", json!({ "type": "string" })));
-    Ok(json!({ "anyOf": branches }))
+    Ok(dialect.apply(&json!({ "anyOf": branches })))
 }
 
 pub fn constrained_guide(tools: &[Value]) -> String {
@@ -563,7 +578,7 @@ pub fn constrained_guide(tools: &[Value]) -> String {
         ));
     }
     format!(
-        "Important: in this client every reply you write is exactly one JSON object, and nothing else. To use a tool, reply {{\"tool\": \"<tool name>\", \"input\": <the tool input>}}. To answer in plain text without UI, reply {{\"tool\": \"none\", \"text\": \"<your answer>\"}}. The text of a none reply is shown to the user as it is. A tool result comes back in the next message; then reply again with one JSON object. If the next message lists problems, reply with the whole corrected call. Write object keys in the order the schemas list them. These are the tools:{listed}"
+        "Important: in this client every reply you write is exactly one JSON object, and nothing else. To use a tool, reply {{\"tool\": \"<tool name>\", \"input\": <the tool input>}}. To answer in plain text without UI, reply {{\"tool\": \"none\", \"text\": \"<your answer>\"}}. Write the JSON compactly, with no indentation or line breaks. The text of a none reply is shown to the user as it is. A tool result comes back in the next message; then reply again with one JSON object. If the next message lists problems, reply with the whole corrected call. Write object keys in the order the schemas list them. These are the tools:{listed}"
     )
 }
 
@@ -646,6 +661,7 @@ pub async fn run_constrained(bench: &Bench, prompt: &Prompt) -> RunRecord {
                         } else {
                             Vec::new()
                         },
+                        call: call_kept(&reply.text),
                     });
                     if !outcome.is_error {
                         if name == "show_ui" {
@@ -663,6 +679,7 @@ pub async fn run_constrained(bench: &Bench, prompt: &Prompt) -> RunRecord {
                     tool: "reply".into(),
                     ok: false,
                     problems: vec!["the reply is not one JSON object with a tool".to_string()],
+                    call: call_kept(&reply.text),
                 });
                 failures += 1;
                 "[problem] The reply was not one JSON object with a \"tool\" key. Reply again with one JSON object.".to_string()
@@ -764,6 +781,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tool_runs_keep_the_provider_error_behind_the_agent_message() {
+        let scripted = Arc::new(ScriptedProvider::new());
+        scripted.reply(
+            ScriptedReply::new().error(polyui_server::ProviderError::new(
+                polyui_server::provider::ErrorKind::Overloaded,
+                "HTTP 503: ember:chat: empty",
+            )),
+        );
+        let record = run_tools(&bench(scripted), &prompt()).await;
+        assert!(record.ending.starts_with("error: "), "{}", record.ending);
+        assert!(
+            record
+                .ending
+                .ends_with("(provider: HTTP 503: ember:chat: empty)"),
+            "{}",
+            record.ending
+        );
+    }
+
+    #[tokio::test]
     async fn tool_runs_that_give_up_count_every_attempt_as_failed() {
         let scripted = Arc::new(ScriptedProvider::new());
         for id in ["t1", "t2", "t3"] {
@@ -848,7 +885,7 @@ mod tests {
         let tools = vec![
             json!({ "name": "close_ui", "description": "Close.", "input_schema": { "type": "object", "properties": { "surface": { "type": "string", "description": "id" } }, "required": ["surface"], "additionalProperties": false } }),
         ];
-        let schema = constrained_schema(&tools).unwrap();
+        let schema = constrained_schema(&tools, SchemaDialect::Standard).unwrap();
         assert_eq!(
             schema,
             json!({ "anyOf": [

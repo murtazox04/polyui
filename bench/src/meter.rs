@@ -73,6 +73,7 @@ pub struct Trace {
     pub replies: Vec<Vec<Value>>,
     pub usage: Usage,
     pub refused: bool,
+    pub errors: Vec<String>,
 }
 
 pub fn lock(trace: &Mutex<Trace>) -> MutexGuard<'_, Trace> {
@@ -151,7 +152,10 @@ impl ModelProvider for Metered {
                 trace.replies.push(content.clone());
                 trace.usage.add(usage);
             }
-            ModelEvent::Error(_) => budget.note(true),
+            ModelEvent::Error(error) => {
+                budget.note(true);
+                lock(&trace).errors.push(error.detail.clone());
+            }
             _ => {}
         })
         .boxed()
@@ -209,6 +213,7 @@ mod tests {
             let _: Vec<ModelEvent> = metered.stream(request()).collect().await;
         }
         assert!(budget.stopped());
+        assert_eq!(lock(&metered.trace()).errors.len(), 3);
         let refused: Vec<ModelEvent> = metered.stream(request()).collect().await;
         assert!(matches!(refused.as_slice(), [ModelEvent::Error(_)]));
         assert_eq!(budget.used(), 4);
