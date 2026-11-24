@@ -18,6 +18,136 @@ struct Builder<'a> {
     limits: Limits,
 }
 
+const STRICT_NOTE: &str =
+    " Every field must be present: write null for a field you do not set and [] for an empty list.";
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StrictCost {
+    pub tools: usize,
+    pub optional: usize,
+    pub unions: usize,
+}
+
+pub const STRICT_LIMITS: StrictCost = StrictCost {
+    tools: 20,
+    optional: 24,
+    unions: 16,
+};
+
+impl StrictCost {
+    pub fn of_tool(tool: &Value) -> Self {
+        let mut cost = Self {
+            tools: 1,
+            ..Self::default()
+        };
+        if let Some(schema) = tool.get("input_schema") {
+            cost.visit(schema);
+        }
+        cost
+    }
+
+    fn visit(&mut self, schema: &Value) {
+        let Value::Object(map) = schema else {
+            return;
+        };
+        if map.contains_key("anyOf") || map.get("type").is_some_and(Value::is_array) {
+            self.unions += 1;
+        }
+        if let Some(Value::Object(properties)) = map.get("properties") {
+            let required: Vec<&str> = map
+                .get("required")
+                .and_then(Value::as_array)
+                .map(|names| names.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            self.optional += properties
+                .keys()
+                .filter(|name| !required.contains(&name.as_str()))
+                .count();
+            properties
+                .values()
+                .for_each(|property| self.visit(property));
+        }
+        if let Some(items) = map.get("items") {
+            self.visit(items);
+        }
+        for key in ["anyOf", "allOf"] {
+            if let Some(Value::Array(branches)) = map.get(key) {
+                branches.iter().for_each(|branch| self.visit(branch));
+            }
+        }
+        for key in ["$defs", "definitions"] {
+            if let Some(Value::Object(definitions)) = map.get(key) {
+                definitions
+                    .values()
+                    .for_each(|definition| self.visit(definition));
+            }
+        }
+    }
+
+    pub fn plus(self, other: Self) -> Self {
+        Self {
+            tools: self.tools + other.tools,
+            optional: self.optional + other.optional,
+            unions: self.unions + other.unions,
+        }
+    }
+
+    pub fn within(self, limits: Self) -> bool {
+        self.tools <= limits.tools
+            && self.optional <= limits.optional
+            && self.unions <= limits.unions
+    }
+}
+
+fn is_strict(tool: &Value) -> bool {
+    tool.get("strict") == Some(&Value::Bool(true))
+}
+
+pub fn limit_strict(tools: &mut [Value]) {
+    let mut total = StrictCost::default();
+    for tool in tools.iter_mut() {
+        if !is_strict(tool) {
+            continue;
+        }
+        let next = total.plus(StrictCost::of_tool(tool));
+        if next.within(STRICT_LIMITS) {
+            total = next;
+        } else if let Value::Object(map) = tool {
+            map.remove("strict");
+        }
+    }
+}
+
+fn nullable(schema: Value) -> Value {
+    let Value::Object(mut map) = schema else {
+        return schema;
+    };
+    if let Some(Value::Array(values)) = map.get_mut("enum") {
+        values.push(Value::Null);
+        map.remove("type");
+        return Value::Object(map);
+    }
+    if let Some(Value::Array(branches)) = map.get_mut("anyOf") {
+        branches.push(json!({ "type": "null" }));
+        return Value::Object(map);
+    }
+    if map.get("type") == Some(&Value::from("boolean")) {
+        map.remove("type");
+        map.insert("enum".into(), json!([true, false, null]));
+        return Value::Object(map);
+    }
+    let description = map.remove("description");
+    let mut wrapped = Map::new();
+    wrapped.insert(
+        "anyOf".into(),
+        Value::Array(vec![Value::Object(map), json!({ "type": "null" })]),
+    );
+    if let Some(description) = description {
+        wrapped.insert("description".into(), description);
+    }
+    Value::Object(wrapped)
+}
+
 fn closed_object(properties: Map<String, Value>, required: Vec<String>) -> Value {
     let mut schema = Map::new();
     schema.insert("type".into(), Value::from("object"));
@@ -53,7 +183,38 @@ fn binding_schema() -> Value {
     })
 }
 
+fn single_key_schema(key: &str) -> Value {
+    json!({
+        "type": "object",
+        "properties": { key: { "type": "string" } },
+        "required": [key],
+        "additionalProperties": false
+    })
+}
+
 impl Builder<'_> {
+    fn object(
+        &self,
+        properties: Map<String, Value>,
+        required: Vec<String>,
+        lists: &[&str],
+    ) -> Value {
+        if !self.strict {
+            return closed_object(properties, required);
+        }
+        let mut all = Map::new();
+        for (name, schema) in properties {
+            let schema = if required.contains(&name) || lists.contains(&name.as_str()) {
+                schema
+            } else {
+                nullable(schema)
+            };
+            all.insert(name, schema);
+        }
+        let names = all.keys().cloned().collect();
+        closed_object(all, names)
+    }
+
     fn limit(&self, schema: &mut Value, key: &str, value: Option<Value>) {
         if self.strict {
             return;
@@ -91,7 +252,7 @@ impl Builder<'_> {
                 }
             }
             let branch = describe(
-                closed_object(properties, required),
+                self.object(properties, required, &[]),
                 Some(&format!("Arguments for {name}.")),
             );
             if !branches.contains(&branch) {
@@ -103,7 +264,7 @@ impl Builder<'_> {
         } else {
             json!({ "anyOf": branches })
         };
-        let mut with = json!({ "type": "array", "items": { "type": "string" }, "description": "Data paths whose values are sent when the action fires." });
+        let mut with = json!({ "type": "array", "items": { "type": "string" }, "description": "Data paths whose values are sent when the action fires. [] for none." });
         self.limit(
             &mut with,
             "maxItems",
@@ -113,7 +274,12 @@ impl Builder<'_> {
         properties.insert("action".into(), json!({ "type": "string", "enum": names }));
         properties.insert("args".into(), args);
         properties.insert("with".into(), with);
-        Some(closed_object(properties, vec!["action".into()]))
+        let required = if self.strict {
+            vec!["action".into(), "args".into()]
+        } else {
+            vec!["action".into()]
+        };
+        Some(self.object(properties, required, &["with"]))
     }
 
     fn literal_schema(&self, spec: &PropSpec) -> Option<Value> {
@@ -174,15 +340,19 @@ impl Builder<'_> {
                 None => {}
             }
         }
-        Some(closed_object(properties, required))
+        Some(self.object(properties, required, &[]))
     }
 
     fn prop_schema(&self, spec: &PropSpec) -> Option<Value> {
         let literal = self.literal_schema(spec)?;
-        let schema = if spec.bindable {
-            json!({ "anyOf": [ literal, binding_schema() ] })
-        } else {
-            literal
+        let schema = match (spec.bindable, self.strict) {
+            (false, _) => literal,
+            (true, false) => json!({ "anyOf": [ literal, binding_schema() ] }),
+            (true, true) => json!({ "anyOf": [
+                literal,
+                single_key_schema("$bind"),
+                single_key_schema("$ref")
+            ] }),
         };
         Some(describe(schema, spec.description.as_deref()))
     }
@@ -201,7 +371,7 @@ impl Builder<'_> {
         );
         properties.insert("props".into(), props);
         let mut required = vec!["id".to_string(), "type".to_string()];
-        if definition.props.iter().any(|(_, spec)| spec.required) {
+        if self.strict || definition.props.iter().any(|(_, spec)| spec.required) {
             required.push("props".into());
         }
         let children_description = match &definition.children {
@@ -224,7 +394,7 @@ impl Builder<'_> {
         }
         let description = format!("{}: {}", definition.qualified, definition.description);
         Some(describe(
-            closed_object(properties, required),
+            self.object(properties, required, &["children"]),
             Some(&description),
         ))
     }
@@ -272,6 +442,11 @@ impl Builder<'_> {
     fn tool(&self, name: &str, description: &str, input_schema: Value) -> Value {
         let mut tool = Map::new();
         tool.insert("name".into(), Value::from(name));
+        let description = if self.strict {
+            format!("{description}{STRICT_NOTE}")
+        } else {
+            description.to_string()
+        };
         tool.insert("description".into(), Value::from(description));
         tool.insert("input_schema".into(), input_schema);
         if self.strict {
@@ -309,7 +484,11 @@ pub fn show_ui_tool(
     builder.tool(
         "show_ui",
         SHOW_UI_DESCRIPTION,
-        closed_object(properties, vec!["root".into(), "components".into()]),
+        builder.object(
+            properties,
+            vec!["root".into(), "components".into()],
+            &["data"],
+        ),
     )
 }
 
@@ -337,7 +516,11 @@ pub fn update_ui_tool(
     builder.tool(
         "update_ui",
         UPDATE_UI_DESCRIPTION,
-        closed_object(properties, vec!["surface".into()]),
+        builder.object(
+            properties,
+            vec!["surface".into()],
+            &["upsert", "remove", "data"],
+        ),
     )
 }
 
@@ -351,8 +534,24 @@ pub fn close_ui_tool(actions: &dyn ActionRegistry, options: ToolOptions) -> Valu
     builder.tool(
         "close_ui",
         CLOSE_UI_DESCRIPTION,
-        closed_object(properties, vec!["surface".into()]),
+        builder.object(properties, vec!["surface".into()], &[]),
     )
+}
+
+fn every_tool(
+    catalogs: &CatalogSet,
+    actions: &dyn ActionRegistry,
+    options: ToolOptions,
+) -> Vec<Value> {
+    vec![
+        show_ui_tool(catalogs, actions, options),
+        update_ui_tool(catalogs, actions, options),
+        close_ui_tool(actions, options),
+    ]
+}
+
+pub fn strict_tool_definitions(catalogs: &CatalogSet, actions: &dyn ActionRegistry) -> Value {
+    Value::Array(every_tool(catalogs, actions, ToolOptions { strict: true }))
 }
 
 pub fn tool_definitions(
@@ -360,11 +559,26 @@ pub fn tool_definitions(
     actions: &dyn ActionRegistry,
     options: ToolOptions,
 ) -> Value {
-    Value::Array(vec![
-        show_ui_tool(catalogs, actions, options),
-        update_ui_tool(catalogs, actions, options),
-        close_ui_tool(actions, options),
-    ])
+    let loose = every_tool(catalogs, actions, ToolOptions { strict: false });
+    if !options.strict {
+        return Value::Array(loose);
+    }
+    let strict = every_tool(catalogs, actions, options);
+    let mut order: Vec<usize> = (0..strict.len()).collect();
+    order.sort_by_key(|&index| {
+        let cost = StrictCost::of_tool(&strict[index]);
+        (cost.unions + cost.optional, index)
+    });
+    let mut total = StrictCost::default();
+    let mut chosen = loose;
+    for index in order {
+        let next = total.plus(StrictCost::of_tool(&strict[index]));
+        if next.within(STRICT_LIMITS) {
+            total = next;
+            chosen[index] = strict[index].clone();
+        }
+    }
+    Value::Array(chosen)
 }
 
 pub fn for_client(

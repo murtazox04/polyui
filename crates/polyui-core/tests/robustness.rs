@@ -2,7 +2,7 @@ use polyui_core::protocol;
 use polyui_core::sanitize;
 use polyui_core::text::{self, Locale};
 use polyui_core::validate::{ActionSpec, ActionTable, StaticRefs, Surface, Validator};
-use polyui_core::{Catalog, CatalogSet, Client, pointer, voice};
+use polyui_core::{Catalog, CatalogSet, Client, PropKind, pointer, voice};
 use serde_json::{Map, Value, json};
 use std::fs;
 use std::path::Path;
@@ -125,7 +125,9 @@ fn validator_parts() -> (CatalogSet, ActionTable, StaticRefs) {
     (
         CatalogSet::builtin(),
         actions,
-        StaticRefs::new().with("bill", "a", json!("x")),
+        StaticRefs::new()
+            .declare("bill", PropKind::Scalar)
+            .with("bill", "a", json!("x")),
     )
 }
 

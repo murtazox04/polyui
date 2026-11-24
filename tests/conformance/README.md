@@ -14,7 +14,8 @@ One model tool call checked against the catalogs.
 | `input_text` | Raw text instead of `input`, for broken JSON and limit cases. |
 | `current` | For `update_ui`: the surface before the call (`root`, `components`, `data`). |
 | `actions` | Registered actions: name to `{ "args": {prop specs}, "requires_confirm": bool }`. |
-| `refs` | Registered `$ref` sources: source to `{ key: value }`. |
+| `refs` | Values behind `$ref` sources: source to `{ key: value }`. |
+| `ref_kinds` | The kind each `$ref` source declares, as a prop spec like `{ "kind": "string", "max": 16 }`. A source without a kind is not registered. |
 | `catalogs` | Optional list like `["core@1"]` the set is restricted to. |
 | `extension` | Optional extension catalog added to the built-in ones. |
 | `allow_http` | Host allows `http` URLs. Default `false`. |

@@ -70,7 +70,7 @@ Your application implements `Host`. The server calls it; it never calls the mode
 |---|---|
 | `system_prompt(user, locale)` | Your instructions and context. The server appends a short guide on using the UI tools and what the client can draw. |
 | `actions()` | The action registry (`polyui_core::ActionTable` works). Each action has typed arguments and a `requires_confirm` flag. |
-| `refs(user)` | A `RefResolver` for this user. Return a refusal when the user may not see a value. |
+| `refs(user)` | A `RefResolver` for this user. `source_kind` declares the kind of value each source gives (for example text of up to 16 characters); `resolve` returns the value or a refusal when the user may not see it. The model only ever sees one fixed message when a `$ref` cannot be resolved. |
 | `confirm_text(user, action, args, locale)` | Title, body and button label for the confirm sheet. |
 | `run_action(user, call)` | Runs the action. Return `ActionOutcome::ok()` or `ActionOutcome::rejected(message)`. The message is shown to the user; `with_note` adds a note only the model sees. |
 | `authenticate(headers)` | Turns request headers into a `User`. The default is a guest. |
@@ -132,6 +132,6 @@ It asks for the gas bill, checks that a valid `ui.open` arrives, and prints whet
 
 ## Known limits
 
-- The Anthropic API currently refuses `strict: true` for the generated tool schemas because they have more than 24 optional parameters in total. The provider notices that error once, logs it, and sends the same schemas without `strict` from then on. Validation on the server is unchanged, so nothing invalid reaches a client either way.
+- The Anthropic API limits strict tool schemas to 24 optional parameters and 16 parameters with union types across one request. `polyui-core` builds strict schemas with no optional parameters (null stands for a missing value), and marks a tool `strict` only when it fits what is left of those limits, counting host tools too. With the built-in catalogs every bindable prop is a union, so `show_ui` and `update_ui` go without `strict` and `close_ui` (and small host tools such as `get_usage`) go with it. Sending all three strict returns HTTP 400 "Schemas contains too many parameters with union types (116 parameters with type arrays or anyOf) ... (limit: 16 parameters with unions)". If the API still refuses strict schemas (for example "Schema is too complex for compilation"), the provider logs it once and sends the same tools without `strict` from then on. Validation on the server is unchanged, so nothing invalid reaches a client either way.
 - Sessions live in memory. A WebSocket session ends when the socket closes. An SSE session ends when its event stream closes, or after 60 seconds if no stream was opened.
 - A turn that is running finishes even if the client leaves; its messages are dropped.

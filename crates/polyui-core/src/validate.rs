@@ -13,6 +13,7 @@ pub const MAX_ID_CHARS: usize = 64;
 pub const MAX_WITH_PATHS: usize = 32;
 pub const MAX_SYNONYMS: usize = 12;
 const MAX_LISTED_PROBLEMS: usize = 20;
+const LABEL_FIELD: &str = "label";
 const COMPONENT_FIELDS: [&str; 7] = ["id", "type", "props", "children", "alt", "say", "voice"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -290,14 +291,27 @@ impl ActionRegistry for ActionTable {
     }
 }
 
+pub const REF_FAILURE: &str = "$ref could not be resolved.";
+
 pub trait RefResolver {
-    fn has_source(&self, source: &str) -> bool;
+    fn source_kind(&self, source: &str) -> Option<PropKind>;
     fn resolve(&self, source: &str, key: &str) -> Result<Value, String>;
+
+    fn has_source(&self, source: &str) -> bool {
+        self.source_kind(source).is_some()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct RefSource {
+    name: String,
+    kind: Option<PropKind>,
+    entries: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StaticRefs {
-    sources: Vec<(String, Map<String, Value>)>,
+    sources: Vec<RefSource>,
 }
 
 impl StaticRefs {
@@ -305,31 +319,47 @@ impl StaticRefs {
         Self::default()
     }
 
-    pub fn with(mut self, source: &str, key: &str, value: Value) -> Self {
-        match self.sources.iter_mut().find(|(name, _)| name == source) {
-            Some((_, entries)) => {
-                entries.insert(key.to_string(), value);
-            }
+    fn source_mut(&mut self, source: &str) -> &mut RefSource {
+        let position = match self.sources.iter().position(|entry| entry.name == source) {
+            Some(position) => position,
             None => {
-                let mut entries = Map::new();
-                entries.insert(key.to_string(), value);
-                self.sources.push((source.to_string(), entries));
+                self.sources.push(RefSource {
+                    name: source.to_string(),
+                    kind: None,
+                    entries: Map::new(),
+                });
+                self.sources.len() - 1
             }
-        }
+        };
+        &mut self.sources[position]
+    }
+
+    pub fn declare(mut self, source: &str, kind: PropKind) -> Self {
+        self.source_mut(source).kind = Some(kind);
+        self
+    }
+
+    pub fn with(mut self, source: &str, key: &str, value: Value) -> Self {
+        self.source_mut(source)
+            .entries
+            .insert(key.to_string(), value);
         self
     }
 }
 
 impl RefResolver for StaticRefs {
-    fn has_source(&self, source: &str) -> bool {
-        self.sources.iter().any(|(name, _)| name == source)
+    fn source_kind(&self, source: &str) -> Option<PropKind> {
+        self.sources
+            .iter()
+            .find(|entry| entry.name == source)
+            .and_then(|entry| entry.kind.clone())
     }
 
     fn resolve(&self, source: &str, key: &str) -> Result<Value, String> {
         self.sources
             .iter()
-            .find(|(name, _)| name == source)
-            .and_then(|(_, entries)| entries.get(key))
+            .find(|entry| entry.name == source)
+            .and_then(|entry| entry.entries.get(key))
             .cloned()
             .ok_or_else(|| format!("no value for \"{key}\""))
     }
@@ -382,6 +412,121 @@ fn expected(kind: &PropKind) -> String {
     }
 }
 
+fn bounds_text<T: fmt::Display>(min: Option<T>, max: Option<T>) -> String {
+    match (min, max) {
+        (Some(min), Some(max)) => format!(" from {min} to {max}"),
+        (Some(min), None) => format!(" of at least {min}"),
+        (None, Some(max)) => format!(" up to {max}"),
+        (None, None) => String::new(),
+    }
+}
+
+fn kind_text(kind: &PropKind, max_string_chars: usize) -> String {
+    match kind {
+        PropKind::String { min, max } => format!(
+            "text of {} to {} characters",
+            min.unwrap_or(0),
+            max.unwrap_or(max_string_chars as u64)
+        ),
+        PropKind::Int { min, max } => format!("a whole number{}", bounds_text(*min, *max)),
+        PropKind::Number { min, max } => format!("a number{}", bounds_text(*min, *max)),
+        other => expected(other),
+    }
+}
+
+fn contains_range<T: PartialOrd + Copy>(
+    inner: (Option<T>, Option<T>),
+    outer: (Option<T>, Option<T>),
+) -> bool {
+    let low_ok = match (inner.0, outer.0) {
+        (_, None) => true,
+        (Some(inner), Some(outer)) => inner >= outer,
+        (None, Some(_)) => false,
+    };
+    let high_ok = match (inner.1, outer.1) {
+        (_, None) => true,
+        (Some(inner), Some(outer)) => inner <= outer,
+        (None, Some(_)) => false,
+    };
+    low_ok && high_ok
+}
+
+fn widen(range: (Option<i64>, Option<i64>)) -> (Option<f64>, Option<f64>) {
+    (
+        range.0.map(|low| low as f64),
+        range.1.map(|high| high as f64),
+    )
+}
+
+fn ref_kind_fits(
+    declared: &PropKind,
+    target: &PropKind,
+    allow_http: bool,
+    max_string_chars: usize,
+) -> bool {
+    let text_range = |min: &Option<u64>, max: &Option<u64>| {
+        (
+            Some(min.unwrap_or(0)),
+            Some(max.unwrap_or(max_string_chars as u64)),
+        )
+    };
+    let fits_text = |length: usize, min: &Option<u64>, max: &Option<u64>| {
+        let (low, high) = text_range(min, max);
+        low.is_none_or(|low| length as u64 >= low) && high.is_none_or(|high| length as u64 <= high)
+    };
+    match (declared, target) {
+        (
+            PropKind::String { min, max },
+            PropKind::String {
+                min: low,
+                max: high,
+            },
+        ) => contains_range(text_range(min, max), text_range(low, high)),
+        (PropKind::String { max, .. }, PropKind::Scalar) => {
+            max.unwrap_or(max_string_chars as u64) <= max_string_chars as u64
+        }
+        (
+            PropKind::Int { min, max },
+            PropKind::Int {
+                min: low,
+                max: high,
+            },
+        ) => contains_range((*min, *max), (*low, *high)),
+        (
+            PropKind::Int { min, max },
+            PropKind::Number {
+                min: low,
+                max: high,
+            },
+        ) => contains_range(widen((*min, *max)), (*low, *high)),
+        (
+            PropKind::Number { min, max },
+            PropKind::Number {
+                min: low,
+                max: high,
+            },
+        ) => contains_range((*min, *max), (*low, *high)),
+        (PropKind::Int { .. } | PropKind::Number { .. } | PropKind::Bool, PropKind::Scalar)
+        | (PropKind::Bool, PropKind::Bool)
+        | (PropKind::Scalar, PropKind::Scalar) => true,
+        (PropKind::Enum { values }, PropKind::Enum { values: allowed }) => {
+            values.iter().all(|value| allowed.contains(value))
+        }
+        (PropKind::Enum { values }, PropKind::String { min, max }) => values
+            .iter()
+            .all(|value| fits_text(value.chars().count(), min, max)),
+        (PropKind::Enum { values }, PropKind::Scalar) => values
+            .iter()
+            .all(|value| value.chars().count() <= max_string_chars),
+        (PropKind::Url { schemes }, PropKind::Url { schemes: allowed }) => schemes
+            .iter()
+            .all(|scheme| allowed.contains(scheme) && (allow_http || scheme != "http")),
+        (PropKind::Array { .. }, PropKind::Array { .. })
+        | (PropKind::Object { .. }, PropKind::Object { .. }) => declared == target,
+        _ => false,
+    }
+}
+
 fn join_path(base: &str, key: &str) -> String {
     if base.is_empty() {
         key.to_string()
@@ -402,13 +547,13 @@ pub(crate) struct Checker<'a> {
     pub max_array_len: usize,
 }
 
-impl Checker<'_> {
-    fn literal() -> Self {
+impl<'a> Checker<'a> {
+    fn literal(allow_http: bool) -> Self {
         let limits = Limits::default();
         Self {
             bindings: false,
             handles: true,
-            allow_http: true,
+            allow_http,
             actions: None,
             refs: None,
             data: None,
@@ -552,6 +697,9 @@ impl Checker<'_> {
                 Some(map) => {
                     for (key, item) in map {
                         match catalog::lookup(fields, key) {
+                            Some(field) if is_blank_label(key, field, self.bound(item)) => {
+                                out.push((join_path(path, key), "label must not be blank.".into()))
+                            }
                             Some(field) => self.check(field, item, &join_path(path, key), out),
                             None => out.push((
                                 path.to_string(),
@@ -572,6 +720,17 @@ impl Checker<'_> {
                 None => fail(mismatch()),
             },
         }
+    }
+
+    fn bound<'v>(&self, value: &'v Value) -> &'v Value
+    where
+        'a: 'v,
+    {
+        value
+            .get("$bind")
+            .and_then(Value::as_str)
+            .and_then(|target| self.data.and_then(|data| pointer::get(data, target)))
+            .unwrap_or(value)
     }
 
     fn check_binding(
@@ -626,14 +785,28 @@ impl Checker<'_> {
                 "$ref \"{}\" must look like \"source:key\".",
                 clip(reference)
             )),
-            Some((source, _)) => {
-                if !self.refs.is_some_and(|refs| refs.has_source(source)) {
+            Some((source, _)) => match self.refs.and_then(|refs| refs.source_kind(source)) {
+                None => fail(format!(
+                    "$ref source \"{}\" is not registered.",
+                    clip(source)
+                )),
+                Some(declared)
+                    if !ref_kind_fits(
+                        &declared,
+                        &spec.kind,
+                        self.allow_http,
+                        self.max_string_chars,
+                    ) =>
+                {
                     fail(format!(
-                        "$ref source \"{}\" is not registered.",
-                        clip(source)
-                    ));
+                        "$ref source \"{}\" gives {}, but this prop needs {}.",
+                        clip(source),
+                        kind_text(&declared, self.max_string_chars),
+                        kind_text(&spec.kind, self.max_string_chars)
+                    ))
                 }
-            }
+                Some(_) => {}
+            },
         }
     }
 
@@ -751,6 +924,19 @@ impl Checker<'_> {
     }
 }
 
+pub fn without_nulls(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .filter(|(_, item)| !item.is_null())
+                .map(|(key, item)| (key.clone(), without_nulls(item)))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(without_nulls).collect()),
+        other => other.clone(),
+    }
+}
+
 fn known_list<'a>(names: impl Iterator<Item = &'a str>) -> String {
     let names: Vec<&str> = names.collect();
     if names.is_empty() {
@@ -762,7 +948,7 @@ fn known_list<'a>(names: impl Iterator<Item = &'a str>) -> String {
 
 pub fn check_literal(spec: &PropSpec, value: &Value) -> Result<(), String> {
     let mut out = Vec::new();
-    Checker::literal().check(spec, value, "", &mut out);
+    Checker::literal(true).check(spec, value, "", &mut out);
     match out.into_iter().next() {
         None => Ok(()),
         Some((path, message)) if path.is_empty() => Err(message),
@@ -792,7 +978,13 @@ fn fits_action(value: &Value) -> bool {
     known_keys && map.get("action").is_some_and(Value::is_string) && args_ok && with_ok
 }
 
-fn fits_within(spec: &PropSpec, value: &Value, limits: &Limits) -> bool {
+fn is_blank_label(key: &str, field: &PropSpec, value: &Value) -> bool {
+    key == LABEL_FIELD
+        && matches!(field.kind, PropKind::String { .. })
+        && value.as_str().is_some_and(|text| text.trim().is_empty())
+}
+
+fn fits_within(spec: &PropSpec, value: &Value, limits: &Limits, allow_http: bool) -> bool {
     if let Value::Object(map) = value
         && (map.contains_key("$bind") || map.contains_key("$ref"))
     {
@@ -825,18 +1017,28 @@ fn fits_within(spec: &PropSpec, value: &Value, limits: &Limits) -> bool {
         PropKind::Enum { values } => value
             .as_str()
             .is_some_and(|text| values.iter().any(|allowed| allowed == text)),
-        PropKind::Url { schemes } => value
-            .as_str()
-            .is_some_and(|url| sanitize::is_safe_url(url, schemes)),
+        PropKind::Url { schemes } => value.as_str().is_some_and(|url| {
+            let allowed: Vec<&str> = schemes
+                .iter()
+                .map(String::as_str)
+                .filter(|scheme| allow_http || *scheme != "http")
+                .collect();
+            sanitize::is_safe_url(url, &allowed)
+        }),
         PropKind::Action => fits_action(value),
         PropKind::Path => value.as_str().is_some_and(pointer::is_valid_target),
         PropKind::Array { of, max } => value.as_array().is_some_and(|items| {
             items.len() <= max.map_or(limits.max_array_len, |max| max as usize)
-                && items.iter().all(|item| fits_within(of, item, limits))
+                && items
+                    .iter()
+                    .all(|item| fits_within(of, item, limits, allow_http))
         }),
         PropKind::Object { fields } => value.as_object().is_some_and(|map| {
             map.iter().all(|(key, item)| {
-                catalog::lookup(fields, key).is_some_and(|field| fits_within(field, item, limits))
+                catalog::lookup(fields, key).is_some_and(|field| {
+                    !is_blank_label(key, field, item)
+                        && fits_within(field, item, limits, allow_http)
+                })
             }) && fields
                 .iter()
                 .all(|(name, field)| !field.required || map.contains_key(name))
@@ -844,8 +1046,8 @@ fn fits_within(spec: &PropSpec, value: &Value, limits: &Limits) -> bool {
     }
 }
 
-pub(crate) fn fits(spec: &PropSpec, value: &Value) -> bool {
-    fits_within(spec, value, &Limits::default())
+pub(crate) fn fits(spec: &PropSpec, value: &Value, allow_http: bool) -> bool {
+    fits_within(spec, value, &Limits::default(), allow_http)
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1008,6 +1210,7 @@ impl<'a> Validator<'a> {
 
     pub fn show_ui(&self, input: &Value) -> Result<Surface, Problems> {
         self.precheck(input, Operation::Show)?;
+        let input = &without_nulls(input);
         let mut problems = Vec::new();
         let Some(map) = input.as_object() else {
             return Err(Problems {
@@ -1090,6 +1293,7 @@ impl<'a> Validator<'a> {
 
     pub fn update_ui(&self, input: &Value, current: &Surface) -> Result<Update, Problems> {
         self.precheck(input, Operation::Update)?;
+        let input = &without_nulls(input);
         let mut problems = Vec::new();
         let Some(map) = input.as_object() else {
             return Err(Problems {
@@ -1118,7 +1322,7 @@ impl<'a> Validator<'a> {
             None => None,
             other => required_string(other, "root", &mut problems),
         };
-        let (data_after_map, data_after) =
+        let (_, data_after) =
             self.build_data(map.get("data"), &current.data_value(), &mut problems);
         let data_ops: Vec<DataOp> = data_entries(map.get("data"));
         let mut upsert = Vec::new();
@@ -1221,15 +1425,23 @@ impl<'a> Validator<'a> {
             .collect();
         let merged_root = root.clone().unwrap_or_else(|| current.root.clone());
         self.check_graph(&merged_root, &merged, &locations, false, &mut problems);
-        let size = limits::json_size(&Value::Object(data_after_map));
-        if size > self.limits.max_data_bytes {
-            problems.push(Problem::new(
-                Location::Field("data".into()),
-                format!(
-                    "data model would be {size} bytes, max is {}.",
-                    self.limits.max_data_bytes
-                ),
-            ));
+        for component in &merged {
+            if upsert.iter().any(|candidate| candidate.id == component.id) {
+                continue;
+            }
+            if let Some(definition) = self.catalogs.get(&component.type_name) {
+                let base = Location::Existing {
+                    id: component.id.clone(),
+                    prop: None,
+                };
+                self.check_props(
+                    definition,
+                    &component.props,
+                    &base,
+                    Some(&data_after),
+                    &mut problems,
+                );
+            }
         }
         finish(Operation::Update, problems)?;
         Ok(Update {
@@ -1243,6 +1455,7 @@ impl<'a> Validator<'a> {
 
     pub fn close_ui(&self, input: &Value) -> Result<String, Problems> {
         self.precheck(input, Operation::Close)?;
+        let input = &without_nulls(input);
         let mut problems = Vec::new();
         let Some(map) = input.as_object() else {
             return Err(Problems {
@@ -1261,7 +1474,8 @@ impl<'a> Validator<'a> {
 
     pub fn data(&self, value: &Value) -> Result<Map<String, Value>, Problems> {
         let mut problems = Vec::new();
-        let (map, _) = self.build_data(Some(value), &Value::Object(Map::new()), &mut problems);
+        let value = without_nulls(value);
+        let (map, _) = self.build_data(Some(&value), &Value::Object(Map::new()), &mut problems);
         finish(Operation::Show, problems)?;
         Ok(map)
     }
@@ -1274,7 +1488,8 @@ impl<'a> Validator<'a> {
         data: Option<&Value>,
     ) -> Result<Component, Vec<Problem>> {
         let mut problems = Vec::new();
-        let component = self.check_component(list, index, value, data, &mut problems);
+        let value = without_nulls(value);
+        let component = self.check_component(list, index, &value, data, &mut problems);
         match component {
             Some(component) if problems.is_empty() => Ok(component),
             _ => Err(problems),
@@ -1361,13 +1576,10 @@ impl<'a> Validator<'a> {
             Value::Object(map) => map.clone(),
             _ => Map::new(),
         };
-        if limits::json_size(&data) > self.limits.max_data_bytes {
+        if let Err(error) = limits::check_data_model(&data, &self.limits) {
             problems.push(Problem::new(
                 Location::Field("data".into()),
-                format!(
-                    "data model is larger than {} bytes.",
-                    self.limits.max_data_bytes
-                ),
+                format!("the data model as sent to the client: {error}."),
             ));
         }
         (map, data)
@@ -1959,106 +2171,110 @@ fn seal_value(
     }
 }
 
-pub fn resolve_refs(
-    components: &[Component],
-    catalogs: &CatalogSet,
-    refs: &dyn RefResolver,
-    operation: Operation,
-) -> Result<Vec<Component>, Problems> {
-    let list = if operation == Operation::Update {
-        "upsert"
-    } else {
-        "components"
-    };
-    let mut problems = Vec::new();
-    let mut out = components.to_vec();
-    for (index, component) in out.iter_mut().enumerate() {
-        let Some(definition) = catalogs.get(&component.type_name) else {
-            continue;
-        };
-        let base = item_location(list, index, &component.id);
-        for (name, value) in component.props.iter_mut() {
-            if let Some(spec) = definition.prop(name) {
-                let mut failures = Vec::new();
-                resolve_value(spec, value, name, refs, &mut failures);
-                problems.extend(
-                    failures
-                        .into_iter()
-                        .map(|(path, message)| Problem::new(base.with_prop(&path), message)),
-                );
-            }
-        }
-    }
-    finish(operation, problems)?;
-    Ok(out)
-}
-
-fn resolve_value(
-    spec: &PropSpec,
-    value: &mut Value,
-    path: &str,
-    refs: &dyn RefResolver,
-    failures: &mut Vec<(String, String)>,
-) {
-    if let Some(reference) = value
+fn ref_value(value: &Value) -> Option<&str> {
+    value
         .as_object()
         .filter(|map| map.len() == 1)
         .and_then(|map| map.get("$ref"))
         .and_then(Value::as_str)
-        .map(str::to_string)
-    {
-        let Some((source, key)) = split_ref(&reference) else {
-            failures.push((
-                path.into(),
-                format!(
-                    "$ref \"{}\" must look like \"source:key\".",
-                    clip(&reference)
-                ),
-            ));
-            return;
+}
+
+impl Validator<'_> {
+    pub fn resolve_refs(
+        &self,
+        components: &[Component],
+        operation: Operation,
+    ) -> Result<Vec<Component>, Problems> {
+        let list = if operation == Operation::Update {
+            "upsert"
+        } else {
+            "components"
         };
-        if !refs.has_source(source) {
-            failures.push((
-                path.into(),
-                format!("$ref source \"{}\" is not registered.", clip(source)),
-            ));
+        let mut problems = Vec::new();
+        let mut out = components.to_vec();
+        for (index, component) in out.iter_mut().enumerate() {
+            let Some(definition) = self.catalogs.get(&component.type_name) else {
+                continue;
+            };
+            let base = item_location(list, index, &component.id);
+            for (name, value) in component.props.iter_mut() {
+                if let Some(spec) = definition.prop(name) {
+                    let mut failures = Vec::new();
+                    self.resolve_value(spec, value, name, &mut failures);
+                    problems.extend(
+                        failures
+                            .into_iter()
+                            .map(|path| Problem::new(base.with_prop(&path), REF_FAILURE)),
+                    );
+                }
+            }
+        }
+        finish(operation, problems)?;
+        Ok(out)
+    }
+
+    fn resolved(&self, spec: &PropSpec, reference: &str) -> Option<Value> {
+        let (source, key) = split_ref(reference)?;
+        let declared = self.refs.source_kind(source)?;
+        if !ref_kind_fits(
+            &declared,
+            &spec.kind,
+            self.allow_http,
+            self.limits.max_string_chars,
+        ) {
+            return None;
+        }
+        let value = self.refs.resolve(source, key).ok()?;
+        let checker = Checker {
+            bindings: false,
+            handles: false,
+            data: None,
+            ..self.checker(None)
+        };
+        let declared_spec = PropSpec {
+            kind: declared,
+            ..spec.clone()
+        };
+        let mut out = Vec::new();
+        checker.check(&declared_spec, &value, "", &mut out);
+        checker.check(spec, &value, "", &mut out);
+        out.is_empty().then_some(value)
+    }
+
+    fn resolve_value(
+        &self,
+        spec: &PropSpec,
+        value: &mut Value,
+        path: &str,
+        failures: &mut Vec<String>,
+    ) {
+        if let Some(reference) = ref_value(value).map(str::to_string) {
+            match self.resolved(spec, &reference) {
+                Some(resolved) => *value = resolved,
+                None => failures.push(path.to_string()),
+            }
             return;
         }
-        match refs.resolve(source, key) {
-            Ok(resolved) => {
-                if check_literal(spec, &resolved).is_ok() {
-                    *value = resolved;
-                } else {
-                    failures.push((
-                        path.into(),
-                        format!(
-                            "$ref \"{}\" resolved to a value that does not fit this prop.",
-                            clip(&reference)
-                        ),
-                    ));
+        match (&spec.kind, value) {
+            (PropKind::Array { of, .. }, Value::Array(items)) => {
+                for (index, item) in items.iter_mut().enumerate() {
+                    self.resolve_value(of, item, &format!("{path}[{index}]"), failures);
                 }
             }
-            Err(reason) => failures.push((
-                path.into(),
-                format!("$ref \"{}\" was refused: {reason}.", clip(&reference)),
-            )),
-        }
-        return;
-    }
-    match (&spec.kind, value) {
-        (PropKind::Array { of, .. }, Value::Array(items)) => {
-            for (index, item) in items.iter_mut().enumerate() {
-                resolve_value(of, item, &format!("{path}[{index}]"), refs, failures);
-            }
-        }
-        (PropKind::Object { fields }, Value::Object(map)) => {
-            for (key, item) in map.iter_mut() {
-                if let Some(field) = catalog::lookup(fields, key) {
-                    resolve_value(field, item, &join_path(path, key), refs, failures);
+            (PropKind::Object { fields }, Value::Object(map)) => {
+                for (key, item) in map.iter_mut() {
+                    if let Some(field) = catalog::lookup(fields, key) {
+                        let target = join_path(path, key);
+                        let before = failures.len();
+                        self.resolve_value(field, item, &target, failures);
+                        if failures.len() == before && is_blank_label(key, field, item) {
+                            failures.push(target);
+                        }
+                    }
                 }
             }
+            _ => {}
         }
-        _ => {}
     }
 }
 
@@ -2070,6 +2286,24 @@ pub fn downgrade_for_client(
 ) -> Surface {
     let mut out = surface.clone();
     let data = surface.data_value();
+    let mut hidden: Vec<String> = Vec::new();
+    for component in &surface.components {
+        if client.get(&component.type_name).is_some() {
+            continue;
+        }
+        let mut pending = component.children.clone();
+        while let Some(id) = pending.pop() {
+            if hidden.contains(&id) {
+                continue;
+            }
+            if let Some(child) = surface.get(&id) {
+                pending.extend(child.children.iter().cloned());
+            }
+            hidden.push(id);
+        }
+    }
+    out.components
+        .retain(|component| !hidden.contains(&component.id));
     for component in out.components.iter_mut() {
         if client.get(&component.type_name).is_some() {
             continue;
@@ -2159,6 +2393,7 @@ mod tests {
             json!([true, false, true]),
             json!([{ "id": "a", "label": "A" }]),
             json!([{ "id": "a" }]),
+            json!([{ "id": "a", "label": " " }]),
             json!([{ "x": "Jan", "y": 1 }, { "x": 2, "y": 3.5, "series": "s" }]),
             json!([{ "x": "Jan", "y": "1" }]),
             json!({ "$bind": "/a" }),
@@ -2179,7 +2414,7 @@ mod tests {
         for spec in &specs {
             for value in &values {
                 assert_eq!(
-                    fits(spec, value),
+                    fits(spec, value, true),
                     check_literal(spec, value).is_ok(),
                     "{:?} with {value}",
                     spec.kind

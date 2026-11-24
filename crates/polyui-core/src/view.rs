@@ -88,6 +88,7 @@ pub(crate) fn resolve(
     definition: &TypeDef,
     data: &Value,
     mode: RefMode,
+    allow_http: bool,
 ) -> Resolved {
     let mut resolved = Resolved::default();
     for (name, spec) in &definition.props {
@@ -106,7 +107,8 @@ pub(crate) fn resolve(
                     Value::from(path)
                 }),
             (_, Some(raw)) => bind(raw, data, mode).filter(|value| {
-                (mode == RefMode::Marked && value.as_str() == Some(REF_MARK)) || fits(spec, value)
+                (mode == RefMode::Marked && value.as_str() == Some(REF_MARK))
+                    || fits(spec, value, allow_http)
             }),
         };
         match value.or_else(|| spec.default.clone()) {
@@ -240,7 +242,7 @@ pub(crate) fn fallback_text(
             .map(|definition| {
                 template_values(
                     definition,
-                    &resolve(component, definition, data, RefMode::Missing),
+                    &resolve(component, definition, data, RefMode::Missing, true),
                 )
             })
             .unwrap_or_default();

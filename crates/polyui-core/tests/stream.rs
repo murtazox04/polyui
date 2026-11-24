@@ -140,8 +140,8 @@ fn duplicates_garbage_and_limits() {
     assert!(events.iter().any(|event| matches!(event, StreamEvent::Invalid(problems) if problems.to_string().contains("deeper than 32"))));
 
     let mut big = ShowUiStream::new(&validator);
-    let chunk = "x".repeat(200 * 1024);
-    assert!(big.feed(&format!("{{\"pad\":\"{chunk}")).is_empty());
+    let chunk = format!("\"{}\",", "x".repeat(4000)).repeat(50);
+    assert!(big.feed(&format!("{{\"pad\":[{chunk}")).is_empty());
     let events = big.feed(&chunk);
     assert!(matches!(events.last(), Some(StreamEvent::Invalid(_))));
 

@@ -176,6 +176,14 @@
               "role": "img",
               "label": "image: Logo"
             }
+          },
+          {
+            "op": "children",
+            "id": "card",
+            "children": [
+              "who",
+              "pic"
+            ]
           }
         ],
         "fallback": "Balance: 1 200. [image: Logo]"

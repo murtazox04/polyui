@@ -1,6 +1,6 @@
 use crate::limits::{Container, LimitError, Scanner, Token};
 use crate::protocol::Component;
-use crate::validate::{Location, Operation, Problem, Problems, Surface, Validator};
+use crate::validate::{self, Location, Operation, Problem, Problems, Surface, Validator};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
@@ -28,8 +28,9 @@ pub struct ShowUiStream<'a> {
     element_index: usize,
     elements_started: usize,
     seen_ids: BTreeSet<String>,
+    emitted: Vec<(usize, Value)>,
     data: Value,
-    failure: Option<String>,
+    failure: Option<Problems>,
 }
 
 fn single(location: Location, message: String) -> Problems {
@@ -43,7 +44,7 @@ impl<'a> ShowUiStream<'a> {
     pub fn new(validator: &'a Validator<'a>) -> Self {
         Self {
             validator,
-            scanner: Scanner::new(*validator.limits()),
+            scanner: Scanner::capping_every_string(*validator.limits()),
             buffer: String::new(),
             expect_key: false,
             key_start: 0,
@@ -55,6 +56,7 @@ impl<'a> ShowUiStream<'a> {
             element_index: 0,
             elements_started: 0,
             seen_ids: BTreeSet::new(),
+            emitted: Vec::new(),
             data: Value::Object(Map::new()),
             failure: None,
         }
@@ -100,25 +102,30 @@ impl<'a> ShowUiStream<'a> {
     }
 
     pub fn finish(self) -> Result<Surface, Problems> {
-        if let Some(message) = self.failure {
-            return Err(single(Location::Input, message));
+        if let Some(problems) = self.failure {
+            return Err(problems);
         }
         self.validator.show_ui_str(&self.buffer)
     }
 
     fn fail(&mut self, message: String, events: &mut Vec<StreamEvent>) {
-        events.push(StreamEvent::Invalid(single(
-            Location::Input,
-            message.clone(),
-        )));
-        self.failure = Some(message);
+        let problems = single(Location::Input, message);
+        events.push(StreamEvent::Invalid(problems.clone()));
+        self.failure = Some(problems);
     }
 
-    fn start_element(&mut self) {
+    fn start_element(&mut self, events: &mut Vec<StreamEvent>) {
         if self.in_components && self.element_expected {
             self.element_index = self.elements_started;
             self.elements_started += 1;
             self.element_expected = false;
+            let limit = self.validator.limits().max_components;
+            if self.elements_started > limit {
+                self.fail(
+                    format!("more than {limit} components, max is {limit}."),
+                    events,
+                );
+            }
         }
     }
 
@@ -136,7 +143,7 @@ impl<'a> ShowUiStream<'a> {
                     }
                 }
                 3 if self.in_components => {
-                    self.start_element();
+                    self.start_element(events);
                     self.element_start = offset;
                 }
                 _ => {}
@@ -154,7 +161,7 @@ impl<'a> ShowUiStream<'a> {
             Token::StringStart => match depth {
                 1 if self.expect_key => self.key_start = offset,
                 1 => self.value_start = offset,
-                2 if self.scanner.top() == Some(Container::Array) => self.start_element(),
+                2 if self.scanner.top() == Some(Container::Array) => self.start_element(events),
                 _ => {}
             },
             Token::StringEnd => {
@@ -173,7 +180,7 @@ impl<'a> ShowUiStream<'a> {
             }
             Token::ValueStart => {
                 if depth == 2 {
-                    self.start_element();
+                    self.start_element(events);
                 }
             }
             Token::Comma => match depth {
@@ -193,17 +200,47 @@ impl<'a> ShowUiStream<'a> {
             return;
         };
         match (self.key.as_str(), value) {
-            ("root", Value::String(root)) => events.push(StreamEvent::Root(root)),
-            ("surface", Value::String(surface)) => events.push(StreamEvent::Surface(surface)),
+            ("root", Value::String(root)) if validate::is_valid_id(&root) => {
+                events.push(StreamEvent::Root(root));
+            }
+            ("surface", Value::String(surface)) if validate::is_valid_id(&surface) => {
+                events.push(StreamEvent::Surface(surface));
+            }
+            (key @ ("root" | "surface"), Value::String(_)) => self.fail(
+                format!("{key} must be 1 to 64 characters from A-Z, a-z, 0-9, _ and -."),
+                events,
+            ),
             ("data", value) => match self.validator.data(&value) {
-                Ok(map) => {
-                    self.data = Value::Object(map.clone());
-                    events.push(StreamEvent::Data(map));
-                }
+                Ok(map) => self.accept_data(map, events),
                 Err(problems) => events.push(StreamEvent::Invalid(problems)),
             },
             _ => {}
         }
+    }
+
+    fn accept_data(&mut self, map: Map<String, Value>, events: &mut Vec<StreamEvent>) {
+        let data = Value::Object(map.clone());
+        let items: Vec<Problem> = self
+            .emitted
+            .iter()
+            .filter_map(|(index, raw)| {
+                self.validator
+                    .component("components", *index, raw, Some(&data))
+                    .err()
+            })
+            .flatten()
+            .collect();
+        if items.is_empty() {
+            self.data = data;
+            events.push(StreamEvent::Data(map));
+            return;
+        }
+        let problems = Problems {
+            operation: Operation::Show,
+            items,
+        };
+        events.push(StreamEvent::Invalid(problems.clone()));
+        self.failure = Some(problems);
     }
 
     fn element_done(&mut self, offset: usize, events: &mut Vec<StreamEvent>) {
@@ -228,6 +265,7 @@ impl<'a> ShowUiStream<'a> {
         {
             Ok(component) => {
                 if self.seen_ids.insert(component.id.clone()) {
+                    self.emitted.push((index, value));
                     events.push(StreamEvent::Component { index, component });
                 } else {
                     events.push(StreamEvent::Rejected {

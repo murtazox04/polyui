@@ -309,6 +309,7 @@ impl Session {
             _ => Vec::new(),
         };
         tool_list.extend(agent.host.tools());
+        tools::limit_strict(&mut tool_list);
         let system = system_prompt(
             &agent.host.system_prompt(&user, locale),
             &hello,
@@ -636,8 +637,8 @@ impl Session {
                 return false;
             }
         }
-        if polyui_core::limits::json_size(&client.data_value())
-            > self.agent.config.limits.max_data_bytes
+        if polyui_core::limits::check_data_model(&client.data_value(), &self.agent.config.limits)
+            .is_err()
         {
             return false;
         }
@@ -911,12 +912,7 @@ impl Session {
             Err(problems) => return ToolOutcome::error(problems.to_string()),
         };
         let mut client = surface.clone();
-        client.components = match validate::resolve_refs(
-            &surface.components,
-            &self.catalogs,
-            refs.as_ref(),
-            Operation::Show,
-        ) {
+        client.components = match validator.resolve_refs(&surface.components, Operation::Show) {
             Ok(components) => components,
             Err(problems) => return ToolOutcome::error(problems.to_string()),
         };
@@ -959,11 +955,23 @@ impl Session {
             self.agent.host.actions(),
             ids::action_id,
         );
-        Self::register(&mut ui, &id, sealed);
         surface.id = Some(id.clone());
         client.id = Some(id.clone());
         let view = self.client_view(&client);
         let fallback = client.fallback(&self.catalogs, self.locale);
+        let open = Message::Open(Open {
+            surface: id.clone(),
+            seq: 1,
+            root: view.root,
+            components: view.components,
+            data: view.data,
+            fallback: Some(fallback),
+        })
+        .to_value();
+        if let Err(outcome) = self.fits_client(Operation::Show, &[&open]) {
+            return outcome;
+        }
+        Self::register(&mut ui, &id, sealed);
         let summary = surface.summary(&id, &self.catalogs, self.locale);
         ui.surfaces.insert(
             id.clone(),
@@ -974,18 +982,30 @@ impl Session {
             },
         );
         drop(ui);
-        self.send(
-            Message::Open(Open {
-                surface: id,
-                seq: 1,
-                root: view.root,
-                components: view.components,
-                data: view.data,
-                fallback: Some(fallback),
-            })
-            .to_value(),
-        );
+        self.send(open);
         ToolOutcome::ok(summary)
+    }
+
+    fn fits_client(&self, operation: Operation, messages: &[&Value]) -> Result<(), ToolOutcome> {
+        let limits = self.agent.config.limits;
+        for message in messages {
+            if let Err(error) = protocol::check_for_client(message, &limits) {
+                return Err(ToolOutcome::error(
+                    Problems {
+                        operation,
+                        items: vec![Problem::new(
+                            Location::Input,
+                            format!(
+                                "the {} message for the client would break a limit: {error}. Show less at once.",
+                                message["t"].as_str().unwrap_or("ui")
+                            ),
+                        )],
+                    }
+                    .to_string(),
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn not_open(&self, operation: Operation, id: &str, open: &str) -> ToolOutcome {
@@ -1018,12 +1038,7 @@ impl Session {
             Ok(update) => update,
             Err(problems) => return ToolOutcome::error(problems.to_string()),
         };
-        let mut upsert = match validate::resolve_refs(
-            &update.upsert,
-            &self.catalogs,
-            refs.as_ref(),
-            Operation::Update,
-        ) {
+        let mut upsert = match validator.resolve_refs(&update.upsert, Operation::Update) {
             Ok(components) => components,
             Err(problems) => return ToolOutcome::error(problems.to_string()),
         };
@@ -1081,14 +1096,18 @@ impl Session {
             .filter(|component| !before.components.contains(component))
             .cloned()
             .collect();
+        let gone: Vec<String> = before
+            .components
+            .iter()
+            .filter(|component| after.get(&component.id).is_none())
+            .map(|component| component.id.clone())
+            .collect();
         let touched: Vec<&str> = update
             .upsert
             .iter()
             .map(|component| component.id.as_str())
             .chain(update.remove.iter().map(String::as_str))
             .collect();
-        ui.forget_actions(&id, Some(&touched));
-        Self::register(&mut ui, &id, sealed);
         let mut seq = state.seq;
         let mut messages = Vec::new();
         if !update.data.is_empty() {
@@ -1102,19 +1121,33 @@ impl Session {
                 .to_value(),
             );
         }
-        if !changed.is_empty() || !update.remove.is_empty() || update.root.is_some() {
+        if !changed.is_empty() || !gone.is_empty() || update.root.is_some() {
             seq += 1;
             messages.push(
                 Message::Patch(Patch {
                     surface: id.clone(),
                     seq,
                     upsert: changed,
-                    remove: update.remove.clone(),
+                    remove: gone,
                     root: update.root.clone(),
                 })
                 .to_value(),
             );
         }
+        let snapshot = Message::Snapshot(Snapshot {
+            surface: id.clone(),
+            seq,
+            root: after.root.clone(),
+            components: after.components.clone(),
+            data: after.data.clone(),
+        })
+        .to_value();
+        let outgoing: Vec<&Value> = messages.iter().chain([&snapshot]).collect();
+        if let Err(outcome) = self.fits_client(Operation::Update, &outgoing) {
+            return outcome;
+        }
+        ui.forget_actions(&id, Some(&touched));
+        Self::register(&mut ui, &id, sealed);
         let summary = model.summary(&id, &self.catalogs, self.locale);
         ui.surfaces
             .insert(id.clone(), SurfaceState { model, client, seq });

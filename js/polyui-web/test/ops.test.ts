@@ -102,6 +102,33 @@ describe("render ops", () => {
     expect(h.find('[data-pui-id="total"]').tagName).toBe("P");
   });
 
+  it("keeps a replaced child and a replaced root attached when the core reattaches them", () => {
+    const h = harness();
+    h.play(billsBatch);
+    h.play({
+      surface: "s1",
+      ops: [
+        { op: "remove", id: "total" },
+        { op: "create", id: "total", type: "Text", props: { text: "Total", style: "muted" }, a11y: { role: "text", label: "Total" } },
+        { op: "children", id: "card", children: ["total", "phone", "plan", "pay"] },
+      ],
+    });
+    const body = h.find('[data-pui-id="card"] .pui-card-body');
+    expect([...body.children].map((child) => child.getAttribute("data-pui-id"))).toEqual(["total", "phone", "plan", "pay"]);
+    h.play({
+      surface: "s1",
+      ops: [
+        { op: "remove", id: "card" },
+        { op: "create", id: "card", type: "Text", props: { text: "Your bills", style: "muted" }, a11y: { role: "text", label: "Your bills" } },
+        { op: "root", id: "card" },
+      ],
+    });
+    const surface = h.find("polyui-surface");
+    expect(surface.childElementCount).toBe(1);
+    expect(surface.firstElementChild).toBe(h.find('[data-pui-id="card"]'));
+    expect(h.find('[data-pui-id="card"]').tagName).toBe("P");
+  });
+
   it("closes a surface and empties it", () => {
     const h = harness();
     h.play(billsBatch);

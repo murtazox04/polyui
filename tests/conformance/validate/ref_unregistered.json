@@ -9,6 +9,16 @@
       "card": "4471"
     }
   },
+  "ref_kinds": {
+    "bill": {
+      "kind": "string",
+      "max": 40
+    },
+    "account": {
+      "kind": "string",
+      "max": 16
+    }
+  },
   "input": {
     "root": "c",
     "components": [

@@ -1,7 +1,7 @@
 use crate::host::{ActionCall, ActionOutcome, ConfirmText, Host, User};
 use axum::http::HeaderMap;
 use futures_util::future::BoxFuture;
-use polyui_core::{ActionRegistry, ActionSpec, ActionTable, Locale, RefResolver};
+use polyui_core::{ActionRegistry, ActionSpec, ActionTable, Locale, PropKind, RefResolver};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 use std::sync::Mutex;
@@ -337,9 +337,14 @@ pub struct HouseholdRefs<'a> {
     user: &'a User,
 }
 
+pub const MASK_CHARS: u64 = 16;
+
 impl RefResolver for HouseholdRefs<'_> {
-    fn has_source(&self, source: &str) -> bool {
-        source == "account" || source == "card"
+    fn source_kind(&self, source: &str) -> Option<PropKind> {
+        matches!(source, "account" | "card").then_some(PropKind::String {
+            min: Some(1),
+            max: Some(MASK_CHARS),
+        })
     }
 
     fn resolve(&self, source: &str, key: &str) -> Result<Value, String> {
@@ -410,7 +415,7 @@ Always answer in the language the user writes in: Uzbek in Latin script, Uzbek i
 
 Prefer UI to long text. Show amounts with Stat inside a Card. Give every unpaid bill a Button with tone primary and on_press {{\"action\": \"pay_bill\", \"args\": {{\"bill\": \"<bill id>\"}}}}. The app asks the user to confirm every payment itself. To compare internet tariffs use a ChoiceGroup with value \"/offer\", one option per tariff (id = offer id) and on_change {{\"action\": \"pick_offer\", \"with\": [\"/offer\"]}}. For usage history call get_usage and draw a chart:Chart with kind bar or line, x = month, y = usage or charge, using exactly the rows it returns. Never invent numbers.
 
-Account numbers are secret. Never write them. Where the user should see one, write {{\"$ref\": \"account:<service>\"}} as the prop value, for example as the hint of a Stat. The family card is {{\"$ref\": \"card:main\"}}.
+Account numbers are secret. Never write them. Where the user should see one, write {{\"$ref\": \"account:<service>\"}} as the prop value, for example as the hint of a Stat. The family card is {{\"$ref\": \"card:main\"}}. Each of these refs is text of up to 16 characters.
 
 Current bills:
 {}

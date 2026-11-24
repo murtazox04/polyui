@@ -20,7 +20,7 @@ impl Default for Limits {
             max_depth: 32,
             max_array_len: 1000,
             max_string_chars: 4096,
-            max_data_bytes: 1024 * 1024,
+            max_data_bytes: 128 * 1024,
             max_components: 256,
             max_tree_depth: 12,
         }
@@ -85,6 +85,7 @@ struct Frame {
 #[derive(Debug, Clone)]
 pub(crate) struct Scanner {
     limits: Limits,
+    string_depth: usize,
     stack: Vec<Frame>,
     in_string: bool,
     escaped: bool,
@@ -96,11 +97,20 @@ impl Scanner {
     pub(crate) fn new(limits: Limits) -> Self {
         Self {
             limits,
+            string_depth: 2,
             stack: Vec::new(),
             in_string: false,
             escaped: false,
             hex_left: 0,
             string_chars: 0,
+        }
+    }
+
+    #[cfg(feature = "stream")]
+    pub(crate) fn capping_every_string(limits: Limits) -> Self {
+        Self {
+            string_depth: 1,
+            ..Self::new(limits)
         }
     }
 
@@ -224,7 +234,8 @@ impl Scanner {
 
     fn count_char(&mut self) -> Result<Token, LimitError> {
         self.string_chars += 1;
-        if self.stack.len() >= 2 && self.string_chars > self.limits.max_string_chars {
+        if self.stack.len() >= self.string_depth && self.string_chars > self.limits.max_string_chars
+        {
             return Err(LimitError::StringTooLong {
                 limit: self.limits.max_string_chars,
             });
@@ -254,6 +265,18 @@ pub fn check_value(value: &Value, limits: &Limits) -> Result<(), LimitError> {
         return Err(LimitError::MessageTooLarge {
             size,
             limit: limits.max_message_bytes,
+        });
+    }
+    Ok(())
+}
+
+pub fn check_data_model(data: &Value, limits: &Limits) -> Result<(), LimitError> {
+    walk(data, 1, limits)?;
+    let size = json_size(data);
+    if size > limits.max_data_bytes {
+        return Err(LimitError::DataTooLarge {
+            size,
+            limit: limits.max_data_bytes,
         });
     }
     Ok(())

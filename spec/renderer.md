@@ -47,12 +47,14 @@ Rules the core guarantees, so renderers do not have to check:
 
 - `props` are complete: defaults are filled and `$bind` values are resolved. A renderer never sees `$bind`, `$ref` or action `args`.
 - `create` comes before any `children` op that references the new id.
+- When a component is replaced (its type changes, or it falls back to a muted `Text`), the batch has `remove` and `create` for it, then a `children` op for its parent, and a `root` op when it is the root. A renderer that detaches a node on `remove` attaches the new one again from these ops; a renderer that swaps the node in place can apply them as no-ops.
 - Components with a `path` prop (Input, ChoiceGroup) also carry an op-level `value`: the current data model value at that path, or `null`.
 - `chart:Chart` props carry a `scene` object built by the server with `polyui-chart`. The client core never compiles charts, which keeps the wasm small.
 - `update` carries all props of the component, not a delta. Renderers replace, they do not merge.
 - Ops for one batch are applied together. A renderer should apply a whole batch in one frame.
 - A component whose required prop resolved to nothing arrives as `{ "op": "create", "type": "Text", "props": { "text": "<its alt>", "style": "muted" } }` instead.
 - Unknown types never reach a renderer. The core turns them into `Text` with the `alt`.
+- A `url` prop with an `http` URL counts as not fitting unless the client core was built with `allow_http` (in Rust, `Client::with_allow_http(true)`), the same rule the server applies with its own `allow_http` setting.
 
 ## Voice utterances
 

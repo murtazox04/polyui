@@ -365,6 +365,21 @@ fn scene_limits(limits: &Limits) -> Limits {
     }
 }
 
+pub(crate) fn check_outgoing(message: &Value, limits: &Limits) -> Result<(), LimitError> {
+    let size = limits::json_size(message);
+    if size > limits.max_message_bytes {
+        return Err(LimitError::MessageTooLarge {
+            size,
+            limit: limits.max_message_bytes,
+        });
+    }
+    let relaxed = scene_limits(limits);
+    match message {
+        Value::Object(map) => check_message(map, limits, &relaxed),
+        other => limits::walk(other, 0, limits),
+    }
+}
+
 fn read(input: &str, limits: &Limits) -> Result<Value, ProtocolError> {
     limits::prescan(input, limits)?;
     serde_json::from_str(input).map_err(|error| ProtocolError::Json(error.to_string()))

@@ -1,7 +1,7 @@
 use polyui_core::validate::{
     self, ActionSpec, ActionTable, Operation, Problems, StaticRefs, Surface, Validator,
 };
-use polyui_core::{Catalog, CatalogSet, Client, Locale};
+use polyui_core::{Catalog, CatalogSet, Client, Locale, PropKind};
 use serde_json::{Value, json};
 
 fn actions() -> ActionTable {
@@ -19,8 +19,21 @@ fn actions() -> ActionTable {
 
 fn refs() -> StaticRefs {
     StaticRefs::new()
+        .declare(
+            "account",
+            PropKind::String {
+                min: None,
+                max: Some(16),
+            },
+        )
         .with("account", "card", json!("4471"))
-        .with("account", "logo", json!("javascript:alert(1)"))
+        .declare(
+            "brand",
+            PropKind::Url {
+                schemes: vec!["https".into()],
+            },
+        )
+        .with("brand", "logo", json!("javascript:alert(1)"))
 }
 
 fn extended() -> CatalogSet {
@@ -168,14 +181,24 @@ fn ref_values_are_checked_and_unregistered_sources_rejected() {
         ),
         "must be the only key",
     );
+    rejected(
+        &catalogs,
+        single(
+            json!({ "id": "i", "type": "Image", "props": { "src": { "$ref": "account:card" }, "alt": "x" } }),
+        ),
+        "$ref source \"account\" gives text of 0 to 16 characters, but this prop needs an absolute https URL.",
+    );
+    let refs = refs();
+    let actions = actions();
+    let validator = Validator::new(&catalogs, &actions, &refs);
     let surface = check(
         &catalogs,
-        single(json!({ "id": "i", "type": "Image", "props": { "src": { "$ref": "account:logo" }, "alt": "x" } })),
+        single(json!({ "id": "i", "type": "Image", "props": { "src": { "$ref": "brand:logo" }, "alt": "x" } })),
     )
     .expect("the $ref shape is valid");
-    let refused = validate::resolve_refs(&surface.components, &catalogs, &refs(), Operation::Show)
+    let refused = validator
+        .resolve_refs(&surface.components, Operation::Show)
         .expect_err("a javascript: value from a resolver is still rejected");
-    assert!(refused.to_string().contains("does not fit"));
     assert!(!refused.to_string().contains("javascript"));
     let missing = check(
         &catalogs,
@@ -184,9 +207,14 @@ fn ref_values_are_checked_and_unregistered_sources_rejected() {
         ),
     )
     .unwrap();
-    let refused = validate::resolve_refs(&missing.components, &catalogs, &refs(), Operation::Show)
+    let missing = validator
+        .resolve_refs(&missing.components, Operation::Show)
         .unwrap_err();
-    assert!(refused.to_string().contains("was refused"));
+    assert_eq!(
+        refused.items[0].message, missing.items[0].message,
+        "every resolve failure reads the same"
+    );
+    assert_eq!(missing.items[0].message, validate::REF_FAILURE);
 }
 
 #[test]
@@ -197,8 +225,11 @@ fn ref_values_never_reach_the_summary() {
         single(json!({ "id": "s", "type": "Stat", "props": { "label": "Card", "value": { "$ref": "account:card" } } })),
     )
     .unwrap();
-    let resolved =
-        validate::resolve_refs(&surface.components, &catalogs, &refs(), Operation::Show).unwrap();
+    let refs = refs();
+    let actions = actions();
+    let resolved = Validator::new(&catalogs, &actions, &refs)
+        .resolve_refs(&surface.components, Operation::Show)
+        .unwrap();
     assert_eq!(resolved[0].props["value"], json!("4471"));
     let summary = surface.summary("s1", &catalogs, Locale::En);
     assert!(summary.contains("[ref]"), "{summary}");

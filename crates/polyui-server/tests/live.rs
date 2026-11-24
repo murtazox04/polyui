@@ -82,7 +82,27 @@ async fn live_gas_bill_opens_valid_ui() {
         .iter()
         .take_while(|result| result["is_error"] == true)
         .count();
+    let strict_tools: Vec<String> = requests
+        .first()
+        .map(|request| {
+            request
+                .tools
+                .iter()
+                .filter(|tool| tool["strict"] == true)
+                .filter_map(|tool| tool["name"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
     println!("model: {model}");
+    println!("tools sent with strict: {strict_tools:?}");
+    println!(
+        "strict accepted by the API: {}",
+        if provider.inner.strict_tools() {
+            "yes"
+        } else {
+            "no, the provider fell back to non-strict"
+        }
+    );
     println!("end: {ending}");
     println!("agent text: {text}");
     println!("model calls: {}", requests.len());

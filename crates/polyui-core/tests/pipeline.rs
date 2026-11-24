@@ -1,6 +1,8 @@
 use polyui_core::protocol::{Message, Open};
 use polyui_core::validate::{self, Operation};
-use polyui_core::{ActionSpec, ActionTable, CatalogSet, Client, Locale, StaticRefs, Validator};
+use polyui_core::{
+    ActionSpec, ActionTable, CatalogSet, Client, Locale, PropKind, StaticRefs, Validator,
+};
 use serde_json::{Value, json};
 
 fn hello(locale: &str, catalogs: &[&str]) -> String {
@@ -15,7 +17,15 @@ fn server_pipeline_feeds_the_client() {
         "pay_bill",
         ActionSpec::from_value(&json!({ "args": { "bill": { "kind": "string", "required": true } }, "requires_confirm": true })).unwrap(),
     );
-    let refs = StaticRefs::new().with("bill", "gas_total", json!("29 322"));
+    let refs = StaticRefs::new()
+        .declare(
+            "bill",
+            PropKind::String {
+                min: None,
+                max: Some(40),
+            },
+        )
+        .with("bill", "gas_total", json!("29 322"));
     let validator = Validator::new(&catalogs, &actions, &refs);
     let surface = validator
         .show_ui(&json!({
@@ -33,8 +43,9 @@ fn server_pipeline_feeds_the_client() {
         "surface s1 open: Card(2) \"Hisoblar\" > [Stat \"Gaz: [ref] so'm\", Button \"To'lash\" (act)]"
     );
     let mut resolved = surface.clone();
-    resolved.components =
-        validate::resolve_refs(&surface.components, &catalogs, &refs, Operation::Show).unwrap();
+    resolved.components = validator
+        .resolve_refs(&surface.components, Operation::Show)
+        .unwrap();
     let sealed = validate::seal_actions(&mut resolved.components, &catalogs, &actions, || {
         "act_1".to_string()
     });
@@ -132,7 +143,11 @@ fn downgrade_sends_alt_text_for_undeclared_types() {
         json!("Spend. Total: 10")
     );
     assert!(downgraded.components[0].children.is_empty());
-    assert_eq!(downgraded.components[1], surface.components[1]);
+    assert_eq!(
+        downgraded.components.len(),
+        1,
+        "children of a downgraded component are dropped"
+    );
 }
 
 fn open(client: &mut Client, components: Value, data: Value) {

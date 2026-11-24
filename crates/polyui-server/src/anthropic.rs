@@ -241,9 +241,19 @@ impl ModelProvider for AnthropicProvider {
     }
 }
 
+const STRICT_REFUSALS: [&str; 6] = [
+    "optional parameters",
+    "union types",
+    "too complex for compilation",
+    "strict tools",
+    "grammar",
+    "compilation timeout",
+];
+
 fn is_strict_schema_refusal(error: &ProviderError) -> bool {
+    let detail = error.detail.to_lowercase();
     error.kind == ErrorKind::BadRequest
-        && (error.detail.contains("optional parameters") || error.detail.contains("grammar"))
+        && STRICT_REFUSALS.iter().any(|phrase| detail.contains(phrase))
 }
 
 fn status_kind(status: u16) -> ErrorKind {
@@ -630,6 +640,19 @@ mod tests {
     }
 
     #[test]
+    fn every_strict_limit_refusal_turns_strict_off() {
+        for detail in [
+            "HTTP 400: Schemas contains too many parameters with union types (116 parameters with type arrays or anyOf). This causes exponential compilation cost. Reduce the number of nullable or union-typed parameters (limit: 16 parameters with unions).",
+            "HTTP 400: Schema is too complex for compilation.",
+        ] {
+            assert!(
+                is_strict_schema_refusal(&ProviderError::new(ErrorKind::BadRequest, detail)),
+                "{detail}"
+            );
+        }
+    }
+
+    #[test]
     fn request_body_marks_tools_for_eager_streaming() {
         let provider = AnthropicProvider::new(ApiKey::new("k").unwrap(), DEFAULT_MODEL);
         let body = provider.body(&ModelRequest {
@@ -646,6 +669,10 @@ mod tests {
         assert!(is_strict_schema_refusal(&ProviderError::new(
             ErrorKind::BadRequest,
             "HTTP 400: Schemas contains too many optional parameters (322)"
+        )));
+        assert!(!is_strict_schema_refusal(&ProviderError::new(
+            ErrorKind::BadRequest,
+            "HTTP 400: max_tokens: must be at least 1"
         )));
         provider.strict_tools.store(false, Ordering::Relaxed);
         let loose = provider.body(&ModelRequest {

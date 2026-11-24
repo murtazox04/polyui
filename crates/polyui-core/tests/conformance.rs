@@ -1,5 +1,5 @@
 use polyui_core::validate::{ActionSpec, ActionTable, StaticRefs, Surface, Validator};
-use polyui_core::{Catalog, CatalogSet, Client, Component, Locale};
+use polyui_core::{Catalog, CatalogSet, Client, Component, Locale, PropSpec};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -77,6 +77,10 @@ fn run_validate(case: &Value) -> Value {
         );
     }
     let mut refs = StaticRefs::new();
+    for (source, kind) in case["ref_kinds"].as_object().cloned().unwrap_or_default() {
+        let spec = PropSpec::from_value(&kind).expect("ref kind parses");
+        refs = refs.declare(&source, spec.kind);
+    }
     for (source, entries) in case["refs"].as_object().cloned().unwrap_or_default() {
         for (key, value) in entries.as_object().cloned().unwrap_or_default() {
             refs = refs.with(&source, &key, value);

@@ -222,6 +222,86 @@ const NO_WORDS: [&str; 9] = [
     "нет",
     "отмена",
 ];
+const NEGATORS: [&str; 12] = [
+    "not",
+    "don't",
+    "dont",
+    "never",
+    "nothing",
+    "emas",
+    "эмас",
+    "не",
+    "ни",
+    "нельзя",
+    "hech",
+    "ҳеч",
+];
+const FILLERS: [&str; 30] = [
+    "please",
+    "thanks",
+    "thank",
+    "you",
+    "i",
+    "do",
+    "it",
+    "go",
+    "ahead",
+    "pay",
+    "proceed",
+    "now",
+    "iltimos",
+    "rahmat",
+    "men",
+    "to'la",
+    "to'layman",
+    "илтимос",
+    "раҳмат",
+    "мен",
+    "тўла",
+    "тўлайман",
+    "пожалуйста",
+    "спасибо",
+    "давай",
+    "я",
+    "оплати",
+    "оплатить",
+    "оплачиваю",
+    "плати",
+];
+const UZ_NEGATIVE_ENDINGS: [&str; 30] = [
+    "mayman",
+    "maymiz",
+    "maysan",
+    "maysiz",
+    "maydi",
+    "maydilar",
+    "madim",
+    "madik",
+    "madingiz",
+    "madi",
+    "mang",
+    "mangiz",
+    "manglar",
+    "masin",
+    "magan",
+    "masdan",
+    "майман",
+    "маймиз",
+    "майсан",
+    "майсиз",
+    "майди",
+    "майдилар",
+    "мадим",
+    "мадик",
+    "мадингиз",
+    "мади",
+    "манг",
+    "мангиз",
+    "масин",
+    "маган",
+];
+pub const MAX_ANSWER_WORDS: usize = 6;
+const MIN_VERB_STEM_CHARS: usize = 2;
 
 fn matches_word(token: &str, word: &str) -> bool {
     token == normalize(word)
@@ -301,13 +381,51 @@ pub fn ordinal(tokens: &[&str]) -> Option<Ordinal> {
     None
 }
 
+fn is_uzbek_negative_verb(token: &str) -> bool {
+    UZ_NEGATIVE_ENDINGS.iter().any(|ending| {
+        token
+            .strip_suffix(normalize(ending).as_str())
+            .is_some_and(|stem| stem.chars().count() >= MIN_VERB_STEM_CHARS)
+    })
+}
+
+enum AnswerWord {
+    Yes,
+    No,
+    Negation,
+    Filler,
+    Other,
+}
+
+fn answer_word(token: &str) -> AnswerWord {
+    let listed = |words: &[&str]| words.iter().any(|word| matches_word(token, word));
+    if listed(&YES_WORDS) {
+        AnswerWord::Yes
+    } else if listed(&NO_WORDS) {
+        AnswerWord::No
+    } else if listed(&NEGATORS) || is_uzbek_negative_verb(token) {
+        AnswerWord::Negation
+    } else if listed(&FILLERS) {
+        AnswerWord::Filler
+    } else {
+        AnswerWord::Other
+    }
+}
+
 pub fn yes_no(tokens: &[&str]) -> Option<bool> {
-    let yes = tokens
-        .iter()
-        .any(|token| YES_WORDS.iter().any(|word| matches_word(token, word)));
-    let no = tokens
-        .iter()
-        .any(|token| NO_WORDS.iter().any(|word| matches_word(token, word)));
+    if tokens.is_empty() || tokens.len() > MAX_ANSWER_WORDS {
+        return None;
+    }
+    let mut yes = false;
+    let mut no = false;
+    for token in tokens {
+        match answer_word(token) {
+            AnswerWord::Yes => yes = true,
+            AnswerWord::No | AnswerWord::Negation => no = true,
+            AnswerWord::Filler => {}
+            AnswerWord::Other => return None,
+        }
+    }
     match (yes, no) {
         (true, false) => Some(true),
         (false, true) => Some(false),
@@ -434,6 +552,15 @@ mod tests {
         assert_eq!(answer("no"), Some(false));
         assert_eq!(answer("yes no"), None);
         assert_eq!(answer("maybe"), None);
+        assert_eq!(answer("don't confirm"), None);
+        assert_eq!(answer("не подтверждаю"), None);
+        assert_eq!(answer("tasdiqlamayman"), Some(false));
+        assert_eq!(answer("тасдиқламайман"), Some(false));
+        assert_eq!(answer("to'lamang"), Some(false));
+        assert_eq!(answer("ha, tasdiqlayman"), Some(true));
+        assert_eq!(answer("да, подтверждаю"), Some(true));
+        assert_eq!(answer("yes I think the second one is fine"), None);
+        assert_eq!(answer("mayli"), Some(true));
     }
 
     #[test]

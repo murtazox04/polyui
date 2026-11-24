@@ -1,5 +1,6 @@
 use polyui_core::Client;
 use polyui_core::protocol::{self, Hello};
+use polyui_core::tools::{STRICT_LIMITS, StrictCost};
 use polyui_server::bills::{BillsHost, SERVICES, mask};
 use polyui_server::{Agent, AgentConfig, ScriptedProvider, ScriptedReply, Session, StopReason};
 use serde_json::{Value, json};
@@ -173,12 +174,17 @@ async fn valid_show_ui_becomes_ui_open() {
         "{summary}"
     );
     assert_eq!(requests[1].messages[1]["role"], "assistant");
-    assert!(
-        requests[0]
-            .tools
-            .iter()
-            .any(|tool| tool["name"] == "show_ui" && tool["strict"] == true)
-    );
+    let strict: Vec<&Value> = requests[0]
+        .tools
+        .iter()
+        .filter(|tool| tool["strict"] == true)
+        .collect();
+    assert!(strict.iter().any(|tool| tool["name"] == "close_ui"));
+    let cost = strict
+        .iter()
+        .map(|tool| StrictCost::of_tool(tool))
+        .fold(StrictCost::default(), StrictCost::plus);
+    assert!(cost.within(STRICT_LIMITS), "{cost:?}");
 }
 
 #[tokio::test]
@@ -539,4 +545,52 @@ async fn bad_input_is_answered_with_ui_error() {
     harness.session.receive(r#"{"v":2,"t":"ui.action"}"#).await;
     assert_eq!(harness.next().await["reason"], "unsupported_version");
     assert!(harness.provider.requests().is_empty());
+}
+
+#[tokio::test]
+async fn downgraded_parents_do_not_leave_orphans() {
+    let mut harness = start_with(ScriptedProvider::new(), AgentConfig::default(), &["core@1"]);
+    harness.provider.reply(ScriptedReply::new().tool(
+        "t1",
+        "show_ui",
+        json!({ "root": "board", "components": [
+            { "id": "board", "type": "chart:Dashboard", "props": { "title": "Gas" }, "children": ["due"] },
+            { "id": "due", "type": "Stat", "props": { "label": "Due", "value": "29 322" } }
+        ] }),
+    ));
+    harness.provider.reply(ScriptedReply::new());
+    harness.say("dashboard").await;
+    let messages = harness.until_end().await;
+    let open = of_type(&messages, "ui.open")[0];
+    let ids: Vec<&str> = open["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|component| component["id"].as_str())
+        .collect();
+    assert_eq!(ids, vec!["board"], "{open}");
+    assert_eq!(open["components"][0]["type"], "Text");
+}
+
+#[tokio::test]
+async fn surfaces_too_large_for_one_message_are_rejected() {
+    let mut harness = start(ScriptedProvider::new());
+    let mut components = vec![
+        json!({ "id": "card", "type": "Card", "children": (0..60).map(|index| format!("t{index}")).collect::<Vec<_>>() }),
+    ];
+    for index in 0..60 {
+        components.push(json!({ "id": format!("t{index}"), "type": "Text", "props": { "text": "x".repeat(3000) } }));
+    }
+    let input = json!({ "root": "card", "components": components });
+    assert!(input.to_string().len() < 256 * 1024);
+    harness
+        .provider
+        .reply(ScriptedReply::new().tool("t1", "show_ui", input));
+    harness.provider.reply(ScriptedReply::new());
+    harness.say("long").await;
+    let messages = harness.until_end().await;
+    assert!(of_type(&messages, "ui.open").is_empty());
+    let requests = harness.provider.requests();
+    let results = tool_results(&requests[1].messages);
+    assert_eq!(results[0]["is_error"], true, "{}", results[0]["content"]);
 }

@@ -114,11 +114,13 @@ The model rarely needs to write `alt`, `say` or `voice`. The catalog fills them 
 |---|---|
 | One message, serialized | 256 KiB |
 | One string prop | 4 KiB, or the catalog's own `max` |
-| Data model, serialized | 1 MiB |
+| Data model, serialized | 128 KiB |
 | Array length in props or data | 1000 |
 | JSON nesting depth | 32 |
 
 A server rejects anything above these limits before parsing the rest.
+
+The data model limit is half the message limit because the whole data model travels in one `ui.open` or `ui.snapshot` together with the components. After every `show_ui`, every `update_ui` and every action that stores form values, the server checks the data model as it would sit in that envelope: nesting is counted from the envelope (so the data model itself can be at most 31 levels deep), every array holds at most 1000 items, every string and key holds at most 4 KiB, and the serialized data model is at most 128 KiB. The server also checks the whole `ui.open`, `ui.patch`, `ui.data` and `ui.snapshot` it is about to send against the client limits and rejects the tool call when one would not fit, so a client never has to refuse a message and ask for a resync that would fail again.
 
 ## 6. Bindings and references
 
@@ -131,7 +133,8 @@ A prop value can be a literal or one of two objects.
 Rules for `$ref`:
 
 - `source` must be a registered source. Anything else is a validation error returned to the model.
-- The resolver gets the session's user and the key, and returns a value or a refusal. A refusal is a validation error.
+- Every source declares up front the kind of value it gives, using the prop kinds of the catalog format, for example `{"kind": "string", "max": 16}`. When the model calls `show_ui` or `update_ui`, a `$ref` is checked against the prop using the declared kind only: the prop must accept every value of that kind (a string prop must allow the declared length, an enum must contain every declared value, a number range must contain the declared range, a URL prop must allow every declared scheme). The resolved value is never used to answer this check.
+- The resolver gets the session's user and the key, and returns a value or a refusal. A refusal, an unknown key, or a value that does not fit the declared kind or the prop all produce the same problem text, `$ref could not be resolved.`, with no detail, so the model cannot learn anything about a value from the error.
 - The UI summary sent back to the model (section 10) shows `$ref` props as `[ref]`, never as values.
 
 ## 7. Actions
@@ -267,7 +270,9 @@ The server generates the JSON Schema for these tools from the catalogs the clien
 
 In tool input, `data` is not a free-form object. It is a list of `{ "path": "/bills/0/amount", "value": ... }` entries where `value` is a string, number or bool. The server builds the data model from them. This keeps every object in the schema closed (`additionalProperties: false`), which strict tool use and grammar-based decoders need, and it is easier for small models than writing nested JSON.
 
-There is a strict mode for providers that enforce the schema while decoding (for example `strict: true` on Anthropic tools). In strict mode the schema leaves out length and range limits, because those providers do not support them. The server still checks every limit after the call.
+There is a strict mode for providers that enforce the schema while decoding (for example `strict: true` on Anthropic tools). In strict mode the schema leaves out length and range limits, because those providers do not support them, and every property of every object is listed in `required`. A property that may be left out accepts `null` instead (an `enum` gets `null` as one more value, a boolean becomes `{"enum": [true, false, null]}`, anything else becomes `anyOf` with `{"type": "null"}`). Lists that may be left out (`children`, `with`, `data`, `upsert`, `remove`) stay required and take `[]` for none. The validator treats `null` in any object field exactly like a missing field, in both modes. The server still checks every limit after the call.
+
+Providers also limit how complex strict schemas may be. The Anthropic API allows at most 20 strict tools, 24 optional parameters and 16 parameters with union types (`anyOf` or type arrays) across all strict tools in one request. A tool is marked `strict` only when its strict schema fits what is left of these limits; the others are sent in the normal form. With the built-in catalogs every component prop that accepts `$bind` or `$ref` is a union, so `show_ui` and `update_ui` exceed the union limit (the API counted 116 union parameters for the two) and are sent without `strict`, while `close_ui` is strict.
 
 ### Tool results
 
@@ -296,6 +301,8 @@ When the user speaks, the client matches the words against the surface before se
 - ordinals in the client's locale ("ikkinchisi", "второй", "the second one"),
 - labels and `voice.synonyms`,
 - yes and no for confirm sheets.
+
+A yes or no for a confirm sheet must be the whole utterance, at most 6 words: yes or no words plus polite fillers ("yes please", "ha, tasdiqlayman", "да, подтверждаю"). A negation anywhere ("not", "don't", "не", "emas", an Uzbek verb in the negative form such as "tasdiqlamayman"), a word that is neither, or an utterance with both a yes and a no word is never a yes. A negation with no yes word is a no. Anything else is not an answer, and the confirm sheet stays open.
 
 Words that match nothing go to the model as ordinary user speech.
 

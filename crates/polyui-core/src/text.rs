@@ -143,8 +143,8 @@ pub fn join_ordinals(items: &[String], locale: Locale) -> String {
     items
         .iter()
         .map(|item| item.trim())
-        .filter(|item| !item.is_empty())
         .enumerate()
+        .filter(|(_, item)| !item.is_empty())
         .map(|(index, item)| format!("{}, {item}", locale.ordinal(index + 1)))
         .collect::<Vec<_>>()
         .join("; ")

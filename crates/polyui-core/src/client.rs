@@ -234,6 +234,7 @@ pub struct Client {
     session: Option<String>,
     surfaces: Surfaces,
     reported_types: Vec<String>,
+    allow_http: bool,
 }
 
 fn first_path_prop(definition: &TypeDef) -> Option<&str> {
@@ -271,6 +272,7 @@ fn render(
     data: &Value,
     catalogs: &CatalogSet,
     locale: Locale,
+    allow_http: bool,
 ) -> Rendered {
     let tree = view::build_tree(Some(root), components);
     let count = components.len();
@@ -280,7 +282,9 @@ fn render(
         let component = &components[position];
         let definition = catalogs.get(&component.type_name);
         let resolved = definition
-            .map(|definition| view::resolve(component, definition, data, RefMode::Missing))
+            .map(|definition| {
+                view::resolve(component, definition, data, RefMode::Missing, allow_http)
+            })
             .unwrap_or_default();
         let values = definition
             .map(|definition| view::template_values(definition, &resolved))
@@ -404,12 +408,21 @@ fn render(
     }
 }
 
+fn is_replaced(old: &[Node], node: &Node) -> bool {
+    old.iter()
+        .any(|previous| previous.id == node.id && previous.type_name != node.type_name)
+}
+
 fn diff(old: &[Node], new: &[Node]) -> Vec<RenderOp> {
     let mut replaced = Vec::new();
     let mut creates = Vec::new();
     let mut updates = Vec::new();
     let mut children = Vec::new();
     for node in new {
+        let reattach = node.children.iter().any(|child| {
+            new.iter()
+                .any(|kid| kid.id == *child && is_replaced(old, kid))
+        });
         match old.iter().find(|previous| previous.id == node.id) {
             None => {
                 creates.push(node.create_op());
@@ -433,7 +446,7 @@ fn diff(old: &[Node], new: &[Node]) -> Vec<RenderOp> {
                 {
                     updates.push(node.update_op());
                 }
-                if previous.children != node.children {
+                if previous.children != node.children || reattach {
                     children.push(node.children_op());
                 }
             }
@@ -500,7 +513,13 @@ impl Client {
             session: None,
             surfaces: Surfaces::default(),
             reported_types: Vec::new(),
+            allow_http: false,
         })
+    }
+
+    pub fn with_allow_http(mut self, allow: bool) -> Self {
+        self.allow_http = allow;
+        self
     }
 
     pub fn hello(&self) -> &Hello {
@@ -704,21 +723,7 @@ impl Client {
     }
 
     fn check_data(&self, data: &Value) -> Result<(), String> {
-        let depth = limits::json_depth(data);
-        if depth > self.limits.max_depth {
-            return Err(format!(
-                "data model nesting is deeper than {}",
-                self.limits.max_depth
-            ));
-        }
-        let size = limits::json_size(data);
-        if size > self.limits.max_data_bytes {
-            return Err(format!(
-                "data model is {size} bytes, max is {}",
-                self.limits.max_data_bytes
-            ));
-        }
-        Ok(())
+        limits::check_data_model(data, &self.limits).map_err(|error| error.to_string())
     }
 
     fn open(
@@ -848,11 +853,14 @@ impl Client {
             &state.data,
             &self.catalogs,
             self.locale,
+            self.allow_http,
         );
         let mut ops = diff(&old_nodes, &rendered.nodes);
-        let root_rendered = rendered.nodes.iter().any(|node| node.id == state.root);
+        let root_node = rendered.nodes.iter().find(|node| node.id == state.root);
+        let root_replaced = root_node.is_some_and(|node| is_replaced(&old_nodes, node));
+        let root_rendered = root_node.is_some();
         state.rendered_root = root_rendered.then(|| state.root.clone());
-        if root_rendered && old_root.as_deref() != Some(state.root.as_str()) {
+        if root_rendered && (root_replaced || old_root.as_deref() != Some(state.root.as_str())) {
             ops.push(RenderOp::Root {
                 id: state.root.clone(),
             });

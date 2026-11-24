@@ -31,7 +31,7 @@ fn node_line(component: &Component, child_count: usize, context: &Context<'_>) -
     let Some(definition) = definition else {
         return line;
     };
-    let resolved = view::resolve(component, definition, context.data, RefMode::Marked);
+    let resolved = view::resolve(component, definition, context.data, RefMode::Marked, true);
     let values = view::template_values(definition, &resolved);
     let alt = view::component_text(
         component,

@@ -62,6 +62,8 @@ Every spec can also have:
 - `bindable`: whether `{"$bind": ...}` and `{"$ref": ...}` are allowed. Default `true` for every kind except `action` and `path`.
 - `description`: a short hint for the model.
 
+A string field named `label` inside an `object` prop (for example a ChoiceGroup option) must not be blank or only whitespace, whether it is written directly or comes from `$bind` or `$ref`. Voice matching numbers options by position, so every option needs a label to read.
+
 ## Templates
 
 `alt` and `say` are strings with placeholders.
@@ -70,7 +72,7 @@ Every spec can also have:
 |---|---|
 | `{name}` | The prop value as text. Missing props become an empty string. |
 | `{name|list}` | An array prop joined as "a, b and c" in the client's locale. |
-| `{name|ordinals}` | An array prop read with ordinals: "first, a; second, b". Items that are objects use their `label` field. |
+| `{name|ordinals}` | An array prop read with ordinals: "first, a; second, b". Items that are objects use their `label` field. Each item keeps its position, so an empty item is skipped but does not shift the numbers after it. |
 | `{children}` | The `alt` (or `say`) of every child, in order, joined with ". ". |
 
 Ordinal words and list joiners come from the locale table in `polyui-core`. Version 1 ships `en`, `uz-Latn`, `uz-Cyrl` and `ru`.

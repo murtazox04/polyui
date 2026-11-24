@@ -511,6 +511,10 @@ pub fn action_value(action: &Action) -> Value {
     envelope("ui.action", action)
 }
 
+pub fn check_for_client(message: &Value, limits: &Limits) -> Result<(), LimitError> {
+    crate::decode::check_outgoing(message, limits)
+}
+
 pub fn parse(input: &str) -> Result<Incoming, ProtocolError> {
     parse_with(input, &Limits::default())
 }
