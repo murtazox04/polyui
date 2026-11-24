@@ -29,7 +29,7 @@ sequenceDiagram
 |---|---|
 | surface | One piece of UI the agent opened. A chat answer usually has one surface. Surfaces have ids like `s1`. |
 | component | One node in a surface: a button, a card, a list. |
-| catalog | A named set of component types with the rules for their props. `core` and `chart` ship with PolyUI. Hosts can add their own. |
+| catalog | A named set of component types with the rules for their props. `core`, `chart` and `embed` ship with PolyUI; `embed` is only offered when the host turns it on. Hosts can add their own. |
 | data model | A JSON document that belongs to a surface. Components read from it through bindings. |
 | host | The application that embeds PolyUI: it owns the model, the users, and the actions. |
 | renderer | The client code that draws components for one platform. |
@@ -323,6 +323,7 @@ If the user talks over the assistant (barge-in), the client stops speech and kee
 5. `$ref` values are resolved on the server, per user, and never enter the model's context.
 6. Actions run on the server, from handles, with server-built confirm text when the host marks them risky.
 7. Limits in section 5.2 are checked before full parsing.
+8. The one place HTML reaches a client is `embed:Embed`, and the model does not write it. The model names a `ui://` resource; the server asks the host for that resource and puts the host's answer in the server-only `app` prop, which the model cannot set. The HTML runs only in a sandbox on an origin separate from the client's, with scripts allowed and same-origin access denied, under a CSP built from the resource's `_meta.ui.csp` with a restrictive default. A client with no such sandbox shows the component's `title` instead. Details are in [Embedding MCP Apps](../docs/embed.md).
 
 ## 14. Chat extras used by the reference server
 

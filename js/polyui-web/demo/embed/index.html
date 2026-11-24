@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:4191">
+    <title>PolyUI embed check</title>
+    <link rel="stylesheet" href="../../dist/polyui.css">
+    <style>
+      :root { color-scheme: light; --pui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      body { margin: 0; padding: 28px; background: #eef2f5; font-family: var(--pui-font); }
+      main { display: grid; gap: 18px; max-width: 640px; margin: 0 auto; }
+      h2 { margin: 0; font-size: 14px; color: #4b5563; }
+      #wire { margin: 0; padding: 12px 14px 12px 32px; border-radius: 12px; background: #1d2433; color: #e5e7eb; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    </style>
+    <script type="module" src="./main.js"></script>
+  </head>
+  <body>
+    <main>
+      <div id="stage"></div>
+      <h2>Messages the client sends to the server</h2>
+      <ol id="wire"></ol>
+    </main>
+  </body>
+</html>

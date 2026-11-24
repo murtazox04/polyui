@@ -127,6 +127,8 @@ export interface Labels {
   readonly cancel: string;
   readonly expired: string;
   readonly chartUnavailable: string;
+  readonly openLinkTitle: string;
+  readonly openLink: string;
 }
 
 export interface RendererOptions {
@@ -137,6 +139,8 @@ export interface RendererOptions {
   readonly allowHttp?: boolean;
   readonly confirmDelayMs?: number;
   readonly labels?: Partial<Labels>;
+  readonly embedOrigin?: string;
+  readonly openLink?: (url: string) => void;
 }
 
 export type ChartColor = string;

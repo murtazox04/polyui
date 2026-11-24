@@ -20,6 +20,24 @@ pub const MAX_SCENE_ITEMS: usize = 20_000;
 pub const MAX_SCENE_STRING_CHARS: usize = 16_384;
 pub(crate) const CHART_TYPE: &str = "chart:Chart";
 pub(crate) const SCENE_PROP: &str = "scene";
+pub const MAX_APP_STRING_CHARS: usize = 200 * 1024;
+pub const MCP_APP_MIME_TYPE: &str = "text/html;profile=mcp-app";
+pub(crate) const EMBED_TYPE: &str = "embed:Embed";
+pub(crate) const APP_PROP: &str = "app";
+const APP_TOOL_FIELDS: [&str; 2] = ["tool_input", "tool_result"];
+
+fn checked_app<'a>(app: &'a Value, resource: Option<&Value>) -> Option<&'a Value> {
+    let content = app.get("resource")?;
+    let uri = content.get("uri")?.as_str()?;
+    let fits = app.is_object()
+        && content.get("mimeType")?.as_str()? == MCP_APP_MIME_TYPE
+        && content.get("text").is_some_and(Value::is_string)
+        && resource.and_then(Value::as_str) == Some(uri)
+        && APP_TOOL_FIELDS
+            .iter()
+            .all(|field| app.get(field).is_none_or(Value::is_object));
+    fits.then_some(app)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct A11y {
@@ -481,6 +499,14 @@ fn render(
                 {
                     props.insert(SCENE_PROP.into(), scene.clone());
                 }
+                if definition.qualified == EMBED_TYPE
+                    && let Some(app) = component
+                        .props
+                        .get(APP_PROP)
+                        .and_then(|app| checked_app(app, props.get("resource")))
+                {
+                    props.insert(APP_PROP.into(), app.clone());
+                }
                 let value = first_path_prop(definition)
                     .map(|name| resolved.values.get(name).cloned().unwrap_or(Value::Null));
                 let label_alt = view::component_text(
@@ -633,7 +659,7 @@ fn dedupe(components: Vec<Component>) -> Vec<Component> {
 
 impl Client {
     pub fn new(hello_json: &str) -> Result<Self, ProtocolError> {
-        Self::with_catalogs(hello_json, CatalogSet::builtin())
+        Self::with_catalogs(hello_json, CatalogSet::builtin().with_embed())
     }
 
     pub fn with_catalogs(

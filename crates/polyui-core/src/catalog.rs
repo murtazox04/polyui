@@ -5,6 +5,8 @@ use std::fmt;
 
 pub const CORE_JSON: &str = include_str!("../../../spec/catalogs/core.json");
 pub const CHART_JSON: &str = include_str!("../../../spec/catalogs/chart.json");
+pub const EMBED_JSON: &str = include_str!("../../../spec/catalogs/embed.json");
+pub const EMBED_ID: &str = "embed";
 
 pub const ROLES: [&str; 11] = [
     "text",
@@ -20,7 +22,7 @@ pub const ROLES: [&str; 11] = [
     "status",
 ];
 
-const RESERVED_IDS: [&str; 2] = ["core", "chart"];
+const RESERVED_IDS: [&str; 3] = ["core", "chart", EMBED_ID];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogError {
@@ -711,6 +713,15 @@ impl CatalogSet {
         }
     }
 
+    pub fn with_embed(mut self) -> Self {
+        if !self.catalogs.iter().any(|catalog| catalog.id == EMBED_ID)
+            && let Some(embed) = builtin::catalog(EMBED_JSON)
+        {
+            self.catalogs.push(embed);
+        }
+        self
+    }
+
     pub fn with(mut self, catalog: Catalog) -> Result<Self, CatalogError> {
         if RESERVED_IDS.contains(&catalog.id.as_str()) {
             return Err(CatalogError::new(
@@ -823,9 +834,38 @@ mod tests {
 
     #[test]
     fn builtin_shortcut_matches_the_checked_parser() {
-        for json in [CORE_JSON, CHART_JSON] {
+        for json in [CORE_JSON, CHART_JSON, EMBED_JSON] {
             assert_eq!(builtin::catalog(json), Catalog::from_json(json).ok());
         }
+    }
+
+    #[test]
+    fn embed_is_offered_only_when_the_host_turns_it_on() {
+        let default = CatalogSet::builtin();
+        assert!(default.get("embed:Embed").is_none());
+        assert_eq!(
+            default.negotiate(&["core@1".into(), "chart@1".into(), "embed@1".into()]),
+            vec!["core@1", "chart@1"]
+        );
+        let enabled = CatalogSet::builtin().with_embed().with_embed();
+        assert_eq!(enabled.catalogs().len(), 3);
+        let embed = enabled.get("embed:Embed").unwrap();
+        assert_eq!(embed.role, "figure");
+        assert!(!embed.prop("resource").unwrap().bindable);
+        assert_eq!(
+            embed.prop("resource").unwrap().kind,
+            PropKind::Url {
+                schemes: vec!["ui".to_string()]
+            }
+        );
+        assert_eq!(embed.action_props().collect::<Vec<_>>(), vec!["on_message"]);
+        assert_eq!(
+            enabled.negotiate(&["embed@1".into()]),
+            vec!["embed@1".to_string()]
+        );
+        let fake =
+            Catalog::from_value(&json!({ "id": "embed", "version": 1, "types": {} })).unwrap();
+        assert!(CatalogSet::builtin().with(fake).is_err());
     }
 
     #[test]

@@ -50,6 +50,7 @@ Rules the core guarantees, so renderers do not have to check:
 - When a component is replaced (its type changes, or it falls back to a muted `Text`), the batch has `remove` and `create` for it, then a `children` op for its parent, and a `root` op when it is the root. A renderer that detaches a node on `remove` attaches the new one again from these ops; a renderer that swaps the node in place can apply them as no-ops.
 - Components with a `path` prop (Input, ChoiceGroup) also carry an op-level `value`: the current data model value at that path, or `null`.
 - `chart:Chart` props carry a `scene` object built by the server with `polyui-chart`. The client core never compiles charts, which keeps the wasm small.
+- `embed:Embed` props may carry an `app` object that the server filled from the host's `resources/read` result. The core passes it on only when its `resource.mimeType` is exactly `text/html;profile=mcp-app`, `resource.text` is a string and `resource.uri` equals the `resource` prop. Without a valid `app` the renderer shows the `title`.
 - `update` carries all props of the component, not a delta. Renderers replace, they do not merge.
 - Ops for one batch are applied together. A renderer should apply a whole batch in one frame.
 - A component whose required prop resolved to nothing arrives as `{ "op": "create", "type": "Text", "props": { "text": "<its alt>", "style": "muted" } }` instead.
@@ -81,3 +82,4 @@ When the match selects an option, the core has already written it to the data mo
 3. Never put any prop into HTML, a URL handler or a style without going through the platform's safe API. On the web that means `textContent` and attribute setters, never `innerHTML`.
 4. Draw the `confirm` op in its own sheet that the surface cannot style or cover.
 5. Animate changes, but respect the platform's reduced motion setting.
+6. Draw `embed:Embed` only inside a sandbox the host set up on a separate origin, with scripts allowed and same-origin access never allowed, and refuse (show the `title`) when there is none. Check the source of every message from the frame, send `ui/message` only through `fire` on `on_message`, and open links only for `https` URLs the user confirmed in the renderer's own sheet. [Embedding MCP Apps](../docs/embed.md) has the full rules.

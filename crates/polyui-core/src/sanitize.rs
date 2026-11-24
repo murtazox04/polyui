@@ -94,6 +94,16 @@ pub fn check_url<S: AsRef<str>>(url: &str, allowed: &[S]) -> Result<(), UrlProbl
     }
     if matches!(scheme.as_str(), "http" | "https" | "ws" | "wss" | "ftp") {
         check_authority(rest)?;
+    } else if scheme == "ui" {
+        let name = rest.strip_prefix("//").ok_or(UrlProblem::NotAbsolute)?;
+        if name
+            .split(['/', '?', '#'])
+            .next()
+            .unwrap_or_default()
+            .is_empty()
+        {
+            return Err(UrlProblem::MissingHost);
+        }
     } else if rest.is_empty() {
         return Err(UrlProblem::NotAbsolute);
     }
@@ -225,5 +235,26 @@ mod tests {
             Err(UrlProblem::BlockedScheme("javascript".into()))
         );
         assert!(is_safe_url("mailto:a@b.c", &["mailto"]));
+    }
+
+    #[test]
+    fn ui_resources_need_the_double_slash_and_a_name() {
+        for url in [
+            "ui://weather",
+            "ui://weather-server/dashboard-template",
+            "UI://Weather/x?y=1",
+        ] {
+            assert!(is_safe_url(url, &["ui"]), "{url}");
+        }
+        for url in [
+            "ui:weather",
+            "ui:/weather",
+            "ui://",
+            "ui:///x",
+            "ui://a b",
+            "https://example.com",
+        ] {
+            assert!(!is_safe_url(url, &["ui"]), "{url:?}");
+        }
     }
 }

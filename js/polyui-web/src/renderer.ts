@@ -2,6 +2,7 @@ import { createChartRenderer, renderDashboard } from "./chart";
 import { coreRenderers } from "./components";
 import { openConfirm, type ConfirmHandle } from "./confirm";
 import { isRecord } from "./dom";
+import { createEmbedRenderer, embedSandbox } from "./embed";
 import { PolyuiSurface, defineSurfaceElement, surfaceTag, type SurfaceHost } from "./surface";
 import { safeUrl } from "./url";
 import type {
@@ -21,6 +22,8 @@ const defaultLabels: Labels = {
   cancel: "Cancel",
   expired: "This request expired. Ask again to continue.",
   chartUnavailable: "Chart unavailable",
+  openLinkTitle: "Open this link?",
+  openLink: "Open",
 };
 
 function parse(raw: string | null): Json | undefined {
@@ -72,6 +75,19 @@ export class Renderer implements SurfaceHost {
     this.#labels = { ...defaultLabels, ...options.labels };
     this.#registry.set("chart:Chart", createChartRenderer(() => this.#labels.chartUnavailable));
     this.#registry.set("chart:Dashboard", renderDashboard);
+    const openLink = options.openLink ?? ((url: string) => void window.open(url, "_blank", "noopener,noreferrer"));
+    this.#registry.set(
+      "embed:Embed",
+      createEmbedRenderer({
+        sandbox: embedSandbox(options.embedOrigin, this.#allowHttp, location.origin),
+        confirmLink: (url, done) =>
+          openConfirm(
+            { op: "confirm", action_id: "", nonce: "", title: this.#labels.openLinkTitle, body: url, confirm_label: this.#labels.openLink },
+            { labels: this.#labels, delayMs: this.#confirmDelayMs, onConfirm: () => done(true), onDismiss: () => done(false) },
+          ),
+        openLink,
+      }),
+    );
   }
 
   define(type: string, renderer: ComponentRenderer): this {

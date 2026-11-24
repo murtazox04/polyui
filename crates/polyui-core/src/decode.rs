@@ -1,4 +1,7 @@
-use crate::client::{CHART_TYPE, MAX_SCENE_ITEMS, MAX_SCENE_STRING_CHARS, SCENE_PROP};
+use crate::client::{
+    APP_PROP, CHART_TYPE, EMBED_TYPE, MAX_APP_STRING_CHARS, MAX_SCENE_ITEMS,
+    MAX_SCENE_STRING_CHARS, SCENE_PROP,
+};
 use crate::codec;
 use crate::limits::{self, LimitError, Limits};
 use crate::protocol::{
@@ -302,15 +305,41 @@ fn server_message(message_type: &str, map: Map<String, Value>) -> Option<Decoded
     Some(decode(Fields(map)))
 }
 
-fn is_chart(component: &Map<String, Value>) -> bool {
-    component.get("type").and_then(Value::as_str) == Some(CHART_TYPE)
+#[derive(Debug, Clone, Copy)]
+struct Relaxed {
+    scene: Limits,
+    app: Limits,
+    any: Limits,
 }
 
-fn check_components(
-    items: &[Value],
-    limits: &Limits,
-    scene_limits: &Limits,
-) -> Result<(), LimitError> {
+impl Relaxed {
+    fn new(limits: &Limits) -> Self {
+        let scene = Limits {
+            max_array_len: limits.max_array_len.max(MAX_SCENE_ITEMS),
+            max_string_chars: limits.max_string_chars.max(MAX_SCENE_STRING_CHARS),
+            ..*limits
+        };
+        let app = Limits {
+            max_string_chars: limits.max_string_chars.max(MAX_APP_STRING_CHARS),
+            ..scene
+        };
+        Self {
+            scene,
+            app,
+            any: app,
+        }
+    }
+
+    fn for_prop(&self, component_type: Option<&str>, prop: &str) -> Option<&Limits> {
+        match (component_type, prop) {
+            (Some(CHART_TYPE), SCENE_PROP) => Some(&self.scene),
+            (Some(EMBED_TYPE), APP_PROP) => Some(&self.app),
+            _ => None,
+        }
+    }
+}
+
+fn check_components(items: &[Value], limits: &Limits, relaxed: &Relaxed) -> Result<(), LimitError> {
     if items.len() > limits.max_array_len {
         return Err(LimitError::ArrayTooLong {
             limit: limits.max_array_len,
@@ -321,17 +350,14 @@ fn check_components(
             limits::walk(item, 2, limits)?;
             continue;
         };
+        let component_type = component.get("type").and_then(Value::as_str);
         for (key, field) in component {
             limits::check_key(key, 3, limits)?;
             match field {
-                Value::Object(props) if key == "props" && is_chart(component) => {
+                Value::Object(props) if key == "props" => {
                     for (name, prop) in props {
                         limits::check_key(name, 4, limits)?;
-                        let applied = if name == SCENE_PROP {
-                            scene_limits
-                        } else {
-                            limits
-                        };
+                        let applied = relaxed.for_prop(component_type, name).unwrap_or(limits);
                         limits::walk(prop, 4, applied)?;
                     }
                 }
@@ -345,25 +371,17 @@ fn check_components(
 fn check_message(
     map: &Map<String, Value>,
     limits: &Limits,
-    scene_limits: &Limits,
+    relaxed: &Relaxed,
 ) -> Result<(), LimitError> {
     for (key, item) in map {
         match item {
             Value::Array(items) if key == "components" || key == "upsert" => {
-                check_components(items, limits, scene_limits)?;
+                check_components(items, limits, relaxed)?;
             }
             other => limits::walk(other, 1, limits)?,
         }
     }
     Ok(())
-}
-
-fn scene_limits(limits: &Limits) -> Limits {
-    Limits {
-        max_array_len: limits.max_array_len.max(MAX_SCENE_ITEMS),
-        max_string_chars: limits.max_string_chars.max(MAX_SCENE_STRING_CHARS),
-        ..*limits
-    }
 }
 
 #[cfg(not(feature = "client-lite"))]
@@ -375,7 +393,7 @@ pub(crate) fn check_outgoing(message: &Value, limits: &Limits) -> Result<(), Lim
             limit: limits.max_message_bytes,
         });
     }
-    let relaxed = scene_limits(limits);
+    let relaxed = Relaxed::new(limits);
     match message {
         Value::Object(map) => check_message(map, limits, &relaxed),
         other => limits::walk(other, 0, limits),
@@ -388,8 +406,8 @@ fn read(input: &str, limits: &Limits) -> Result<Value, ProtocolError> {
 }
 
 pub(crate) fn from_server(input: &str, limits: &Limits) -> Result<Incoming, ProtocolError> {
-    let relaxed = scene_limits(limits);
-    let value = read(input, &relaxed)?;
+    let relaxed = Relaxed::new(limits);
+    let value = read(input, &relaxed.any)?;
     let Value::Object(map) = value else {
         limits::walk(&value, 0, limits)?;
         return Err(ProtocolError::NotAnObject);

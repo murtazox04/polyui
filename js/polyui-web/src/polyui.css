@@ -765,6 +765,30 @@ textarea.pui-control {
   text-align: center;
 }
 
+.pui-embed {
+  margin: 0;
+  min-width: 0;
+}
+
+.pui-embed-frame {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--pui-border);
+  border-radius: var(--pui-radius-inner);
+  background: var(--pui-bg-raised);
+  transition: height 160ms ease;
+}
+
+.pui-embed-alt {
+  margin: 0;
+  padding: var(--pui-space-6) var(--pui-space-4);
+  border-radius: var(--pui-radius-inner);
+  background: var(--pui-bg-sunken);
+  color: var(--pui-fg-muted);
+  font-size: var(--pui-text-sm);
+  text-align: center;
+}
+
 .pui-legend {
   display: flex;
   flex-wrap: wrap;

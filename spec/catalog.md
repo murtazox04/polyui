@@ -2,7 +2,7 @@
 
 A catalog is one JSON file. It lists component types and the rules for their props. The server uses it to check model output and to generate tool schemas. Renderers use it to know what they must draw. The same file is the source of truth in every language, so there is nothing to keep in sync by hand.
 
-PolyUI ships two catalogs: [`core`](catalogs/core.json) and [`chart`](catalogs/chart.json). Hosts add their own with a namespace, for example `acme`.
+PolyUI ships three catalogs: [`core`](catalogs/core.json), [`chart`](catalogs/chart.json) and [`embed`](catalogs/embed.json). `embed` is off unless the host turns it on (see [Embedding MCP Apps](../docs/embed.md)), so the catalogs offered to a model by default are `core` and `chart`. Hosts add their own with a namespace, for example `acme`.
 
 ## Shape
 
@@ -29,7 +29,7 @@ PolyUI ships two catalogs: [`core`](catalogs/core.json) and [`chart`](catalogs/c
 
 | Field | Meaning |
 |---|---|
-| `id` | Catalog id. `core` and `chart` are reserved. Extension ids are lowercase letters and digits. |
+| `id` | Catalog id. `core`, `chart` and `embed` are reserved. Extension ids are lowercase letters and digits. |
 | `version` | Major version. Bump it only for breaking changes. |
 | `types` | Map from type name to definition. Names are `PascalCase`. Extension types are referenced as `id:Name`. |
 | `description` | One sentence shown to the model in the tool schema. Keep it short, small models read every word. |
@@ -49,7 +49,7 @@ PolyUI ships two catalogs: [`core`](catalogs/core.json) and [`chart`](catalogs/c
 | `bool` | | `true` or `false`. |
 | `scalar` | | A string, a finite number, or a bool. |
 | `enum` | `values` | One of `values`. |
-| `url` | `schemes` (default `["https"]`) | An absolute URL with an allowed scheme. |
+| `url` | `schemes` (default `["https"]`) | An absolute URL with an allowed scheme. A `ui` URL must start with `ui://` followed by a name. |
 | `action` | | An action object (protocol section 7). |
 | `path` | | A JSON Pointer into the surface data model. Used by inputs to say where they write. |
 | `array` | `of` (a prop spec), `max` | A list. |
