@@ -19,6 +19,14 @@ impl ToolProfile {
             Self::Compact => "compact",
         }
     }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "full" => Some(Self::Full),
+            "compact" => Some(Self::Compact),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

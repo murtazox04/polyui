@@ -164,7 +164,7 @@ test('charts are downgraded for clients without the chart catalog', () => {
 
 test('tool definitions have the Anthropic shape', () => {
   const catalogs = polyui.Catalogs.builtin()
-  const tools = polyui.toolDefinitions(catalogs, ACTIONS)
+  const tools = polyui.toolDefinitions(catalogs, ACTIONS, false, 'full')
   assert.deepEqual(
     tools.map((tool) => tool.name),
     ['show_ui', 'update_ui', 'close_ui'],
@@ -176,13 +176,60 @@ test('tool definitions have the Anthropic shape', () => {
     assert.equal(tool.strict, undefined)
   }
   assert.deepEqual(tools[0].input_schema.required, ['root', 'components'])
-  const strict = polyui.toolDefinitions(catalogs, ACTIONS, true)
+  const strict = polyui.toolDefinitions(catalogs, ACTIONS, true, 'full')
   assert.ok(strict.some((tool) => tool.strict === true))
   assert.ok(JSON.stringify(tools[0]).includes('chart:Chart'))
   assert.ok(JSON.stringify(tools[0]).includes('pay_bill'))
-  const coreOnly = polyui.toolDefinitions(catalogs.restrict(['core@1']), ACTIONS)
+  const coreOnly = polyui.toolDefinitions(catalogs.restrict(['core@1']), ACTIONS, false, 'full')
   assert.ok(!JSON.stringify(coreOnly[0]).includes('chart:Chart'))
-  assert.deepEqual(makeValidator().toolDefinitions(['core@1']), coreOnly)
+  assert.deepEqual(makeValidator().toolDefinitions(['core@1'], false, 'full'), coreOnly)
+})
+
+test('compact is the default tool profile and much smaller', () => {
+  const catalogs = polyui.Catalogs.builtin()
+  const compact = polyui.toolDefinitions(catalogs, ACTIONS)
+  const full = polyui.toolDefinitions(catalogs, ACTIONS, false, 'full')
+  assert.deepEqual(compact, polyui.toolDefinitions(catalogs, ACTIONS, false, 'compact'))
+  assert.deepEqual(compact[0].input_schema.required, ['root', 'components'])
+  assert.ok(compact[0].description.includes('chart:Chart'))
+  assert.ok(JSON.stringify(compact).length * 4 < JSON.stringify(full).length)
+  assert.throws(() => polyui.toolDefinitions(catalogs, ACTIONS, false, 'tiny'), /compact/)
+  assert.throws(() => polyui.toolDefinitions(catalogs, ACTIONS, true), /full profile/)
+  assert.throws(() => makeValidator().toolDefinitions(undefined, true, 'compact'), /full profile/)
+})
+
+test('refKeys lists the declared refs to fetch', () => {
+  const validator = makeValidator()
+  assert.deepEqual(validator.refKeys(billsCard()), ['account:power'])
+  assert.deepEqual(validator.refKeys(JSON.stringify(billsCard())), ['account:power'])
+  const components = [
+    { id: 't', type: 'Text', props: { text: { $ref: 'secret:x' } } },
+    { id: 'u', type: 'Text', props: { text: { $ref: 'account:gas' } } },
+    { id: 'v', type: 'Text', props: { text: { $ref: 'account:gas' } } },
+  ]
+  assert.deepEqual(validator.refKeys({ root: 't', components }), ['account:gas'])
+  assert.deepEqual(validator.refKeys({ surface: 's1', upsert: components }), ['account:gas'])
+  assert.deepEqual(validator.refKeys('not json'), [])
+})
+
+test('refs fetched with await replace the resolver', async () => {
+  const calls = []
+  const validator = makeValidator((user, source, key) => {
+    calls.push([source, key])
+    return 'wrong'
+  })
+  const fetch = async (ref) => ({ 'account:power': '**** 4471' })[ref]
+  const wanted = validator.refKeys(billsCard())
+  const values = await Promise.all(wanted.map(fetch))
+  const refs = Object.fromEntries(wanted.map((ref, index) => [ref, values[index]]))
+  const prepared = validator.prepareShow(billsCard(), { user: USER, nextId: counter(), refs })
+  assert.deepEqual(calls, [])
+  assert.equal(prepared.client.get('power').props.label, '**** 4471')
+  assert.deepEqual(prepared.model.get('power').props.label, { $ref: 'account:power' })
+  const resolved = validator.resolveRefs(validator.showUi(billsCard()), USER, refs)
+  assert.equal(resolved.get('power').props.label, '**** 4471')
+  assert.throws(() => validator.prepareShow(billsCard(), { user: USER, refs: {} }), polyui.ValidationError)
+  assert.throws(() => validator.prepareShow(billsCard(), { user: USER, refs: ['account:power'] }), /refs must be/)
 })
 
 test('message builders', () => {

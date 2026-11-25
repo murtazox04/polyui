@@ -7,8 +7,8 @@ use polyui_chart::ChartSpec;
 use polyui_chart::{Palette, compile, describe, to_svg};
 use polyui_core::protocol::Component;
 use polyui_core::summary;
-use polyui_core::tools::{self, ToolOptions};
-use pyo3::exceptions::PyTypeError;
+use polyui_core::tools;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use serde_json::Value;
 
@@ -18,25 +18,20 @@ fn spec(props: &Bound<'_, PyAny>) -> PyResult<ChartSpec> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (catalogs, actions=None, strict=false))]
+#[pyo3(signature = (catalogs, actions=None, strict=false, profile=None))]
 pub fn tool_definitions<'py>(
     py: Python<'py>,
     catalogs: &PyCatalogs,
     actions: Option<&Bound<'py, PyAny>>,
     strict: bool,
+    profile: Option<&str>,
 ) -> PyResult<Bound<'py, PyAny>> {
+    let options = host::tool_options(strict, profile).map_err(PyValueError::new_err)?;
     let spec = actions.map(to_json).transpose()?.unwrap_or(Value::Null);
     let table = host::action_table(&spec).map_err(|failure| catalog_error(py, &failure))?;
     to_py(
         py,
-        &tools::tool_definitions(
-            &catalogs.inner,
-            &table,
-            ToolOptions {
-                strict,
-                ..ToolOptions::default()
-            },
-        ),
+        &tools::tool_definitions(&catalogs.inner, &table, options),
     )
 }
 

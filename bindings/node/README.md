@@ -57,7 +57,8 @@ try {
 | `validator.prepareShow` / `prepareUpdate` | The whole server pipeline in one call. Returns a `Prepared` with `model`, `client`, `messages`, `summary`, `actions`, `seq` and `touched`. |
 | `validator.resolveRefs`, `compileCharts`, `attachApps`, `sealActions`, `downgrade`, `summary`, `fallback` | The same steps one at a time. |
 | `Surface`, `Update` | Validated results. `JSON.stringify(surface)` and `Surface.fromJSON()` let you keep a surface in a session store. |
-| `toolDefinitions(catalogs, actions, strict)` | The Anthropic tool JSON for the three UI tools. |
+| `toolDefinitions(catalogs, actions, strict, profile)` | The Anthropic tool JSON for the three UI tools. `profile` is `'compact'` (default) or `'full'`; `strict` needs `'full'`. |
+| `validator.refKeys(payload)` | The declared `source:key` refs a tool call uses, to fetch before `prepareShow(payload, { refs })`. |
 | `openMessage`, `patchMessage`, `closeMessage`, `closedSummary` | Protocol messages and the close summary. |
 | `compileChart`, `chartSvg`, `describeChart` | Chart scene, standalone SVG and the spoken summary. |
 | `new Client(hello)` | The client core: `receive`, `setValue`, `fire`, `confirm`, `say`, `matchVoice`. |
@@ -69,6 +70,8 @@ Method names are camelCase. Data that mirrors the protocol keeps the wire names,
 ### Refs and the resolver
 
 Each ref source declares the kind of value it gives, in the catalog prop spec format. The resolver is called as `resolver(user, source, key)` with the `user` you passed to `prepareShow` or `resolveRefs`. Return the value, return `null` when there is nothing, or throw `polyui.RefRefusedError` when this user may not see it. The model only learns that the ref could not be resolved. Anything else the resolver throws is rethrown as is.
+
+For async lookups, call `validator.refKeys(toolInput)`, await the values, and pass them as `refs: { 'source:key': value }` to `prepareShow`, `prepareUpdate` or `resolveRefs`; the resolver is then not called and a missing key is refused. See [Async lookups](https://github.com/murtazox04/polyui/blob/main/docs/bindings.md#async-lookups).
 
 Only `prepared.client` and the messages carry resolved values. `prepared.model` keeps the `$ref` objects, and its summary shows them as `[ref]`.
 
@@ -82,4 +85,4 @@ Action objects become handles like `{ action_id: 'act_3f2a...', confirm: true }`
 
 ## Not there yet
 
-The resolver and `uiResource` are called synchronously, so they cannot return a Promise. Load what it needs before calling `prepareShow`. Prebuilt per-platform npm packages are not published yet; build locally with `npm run build`.
+The resolver and `uiResource` are called synchronously, so they cannot return a Promise. For refs, use `refKeys` and `refs` (above); load MCP App resources before calling `prepareShow`. Prebuilt per-platform npm packages are not published yet; build locally with `npm run build`.

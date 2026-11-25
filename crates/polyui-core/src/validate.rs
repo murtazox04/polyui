@@ -2078,6 +2078,35 @@ fn seal_value(
     }
 }
 
+pub fn ref_keys(payload: &Value) -> Vec<String> {
+    let mut keys = Vec::new();
+    for list in ["components", "upsert"] {
+        let Some(components) = payload.get(list).and_then(Value::as_array) else {
+            continue;
+        };
+        for component in components {
+            if let Some(props) = component.get("props") {
+                collect_refs(props, &mut keys);
+            }
+        }
+    }
+    keys
+}
+
+fn collect_refs(value: &Value, keys: &mut Vec<String>) {
+    if let Some(reference) = ref_value(value) {
+        if split_ref(reference).is_some() && !keys.iter().any(|known| known == reference) {
+            keys.push(reference.to_string());
+        }
+        return;
+    }
+    match value {
+        Value::Array(items) => items.iter().for_each(|item| collect_refs(item, keys)),
+        Value::Object(map) => map.values().for_each(|item| collect_refs(item, keys)),
+        _ => {}
+    }
+}
+
 fn ref_value(value: &Value) -> Option<&str> {
     value
         .as_object()
@@ -2380,6 +2409,28 @@ mod tests {
         assert_eq!(split_ref("account:"), None);
         assert_eq!(split_ref("account:a b"), None);
         assert_eq!(split_ref("nocolon"), None);
+    }
+
+    #[test]
+    fn ref_keys_lists_each_valid_reference_once_in_order() {
+        let payload = json!({
+            "root": "card",
+            "components": [
+                {"id": "card", "type": "Card", "props": {"title": {"$ref": "home:name"}}},
+                {"id": "list", "type": "List", "props": {"items": [
+                    {"label": {"$ref": "account:card_1"}},
+                    {"label": {"$ref": "home:name"}},
+                    {"label": {"$ref": "Bad:key"}},
+                    {"label": {"$ref": "account:x", "extra": 1}}
+                ]}}
+            ]
+        });
+        assert_eq!(ref_keys(&payload), ["home:name", "account:card_1"]);
+        let update = json!({"surface": "s1", "upsert": [
+            {"id": "stat", "type": "Stat", "props": {"value": {"$ref": "account:balance"}}}
+        ]});
+        assert_eq!(ref_keys(&update), ["account:balance"]);
+        assert!(ref_keys(&json!({"root": "x"})).is_empty());
     }
 
     #[test]
