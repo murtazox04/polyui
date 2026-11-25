@@ -1,8 +1,9 @@
+import asyncio
 import json
 from itertools import count
 
 import pytest
-from conftest import ACTIONS, lookup
+from conftest import ACTIONS, SECRETS, lookup
 
 import polyui
 
@@ -193,7 +194,7 @@ def test_downgrade_for_a_client_without_charts(validator):
 
 
 def test_tool_definitions_shape(catalogs):
-    tools = polyui.tool_definitions(catalogs, ACTIONS)
+    tools = polyui.tool_definitions(catalogs, ACTIONS, profile="full")
     assert [tool["name"] for tool in tools] == ["show_ui", "update_ui", "close_ui"]
     for tool in tools:
         assert set(tool) >= {"name", "description", "input_schema"}
@@ -201,13 +202,34 @@ def test_tool_definitions_shape(catalogs):
         assert tool["input_schema"]["additionalProperties"] is False
         assert "strict" not in tool
     assert tools[0]["input_schema"]["required"] == ["root", "components"]
-    strict = polyui.tool_definitions(catalogs, ACTIONS, strict=True)
+    strict = polyui.tool_definitions(catalogs, ACTIONS, strict=True, profile="full")
     assert [tool["name"] for tool in strict] == ["show_ui", "update_ui", "close_ui"]
     assert any(tool.get("strict") is True for tool in strict)
     assert "chart:Chart" in json.dumps(tools[0])
-    core_only = polyui.tool_definitions(catalogs.restrict(["core@1"]), ACTIONS)
+    core_only = polyui.tool_definitions(catalogs.restrict(["core@1"]), ACTIONS, profile="full")
     assert "chart:Chart" not in json.dumps(core_only[0])
     assert "pay_bill" in json.dumps(tools[0])
+
+
+def test_compact_is_the_default_profile_and_much_smaller(catalogs):
+    compact = polyui.tool_definitions(catalogs, ACTIONS)
+    full = polyui.tool_definitions(catalogs, ACTIONS, profile="full")
+    assert compact == polyui.tool_definitions(catalogs, ACTIONS, profile="compact")
+    assert [tool["name"] for tool in compact] == ["show_ui", "update_ui", "close_ui"]
+    assert compact[0]["input_schema"]["additionalProperties"] is False
+    assert compact[0]["input_schema"]["required"] == ["root", "components"]
+    assert "chart:Chart" in compact[0]["description"]
+    assert "pay_bill" in json.dumps(compact[0])
+    assert len(json.dumps(compact)) * 4 < len(json.dumps(full))
+
+
+def test_bad_profiles_are_refused(catalogs, validator):
+    with pytest.raises(ValueError, match="compact"):
+        polyui.tool_definitions(catalogs, profile="tiny")
+    with pytest.raises(ValueError, match="full profile"):
+        polyui.tool_definitions(catalogs, strict=True)
+    with pytest.raises(ValueError, match="full profile"):
+        validator.tool_definitions(strict=True, profile="compact")
 
 
 def test_validator_tool_definitions_match_module_function(validator, catalogs):
@@ -248,3 +270,66 @@ def test_async_resolvers_are_rejected(catalogs):
     }
     with pytest.raises(TypeError, match="awaitable"):
         validator.prepare_show(payload)
+
+
+def test_ref_keys_lists_the_declared_refs_to_fetch(validator, bills_card):
+    assert validator.ref_keys(bills_card) == ["account:power"]
+    assert validator.ref_keys(json.dumps(bills_card)) == ["account:power"]
+    undeclared = {
+        "root": "t",
+        "components": [
+            {"id": "t", "type": "Text", "props": {"text": {"$ref": "secret:x"}}},
+            {"id": "u", "type": "Text", "props": {"text": {"$ref": "account:gas"}}},
+            {"id": "v", "type": "Text", "props": {"text": {"$ref": "account:gas"}}},
+        ],
+    }
+    assert validator.ref_keys(undeclared) == ["account:gas"]
+    assert validator.ref_keys({"surface": "s1", "upsert": undeclared["components"]}) == [
+        "account:gas"
+    ]
+    assert validator.ref_keys("not json") == []
+
+
+def test_refs_fetched_with_asyncio_replace_the_resolver(catalogs, bills_card):
+    calls = []
+
+    def never(user, source, key):
+        calls.append((source, key))
+        return "wrong"
+
+    hosted = polyui.Validator(
+        catalogs,
+        actions=ACTIONS,
+        ref_sources={"account": {"kind": "string", "max": 40}},
+        resolver=never,
+    )
+
+    async def fetch(ref):
+        await asyncio.sleep(0)
+        source, key = ref.split(":", 1)
+        return SECRETS.get((source, key))
+
+    async def turn():
+        wanted = hosted.ref_keys(bills_card)
+        values = await asyncio.gather(*(fetch(ref) for ref in wanted))
+        return hosted.prepare_show(
+            bills_card, user=USER, next_id=ids(), refs=dict(zip(wanted, values, strict=True))
+        )
+
+    prepared = asyncio.run(turn())
+    assert calls == []
+    assert prepared.client.get("power")["props"]["label"] == "**** 4471"
+    assert prepared.model.get("power")["props"]["label"] == {"$ref": "account:power"}
+    surface = hosted.show_ui(bills_card)
+    resolved = hosted.resolve_refs(surface, refs={"account:power": "**** 4471"})
+    assert resolved.get("power")["props"]["label"] == "**** 4471"
+
+
+def test_refs_missing_from_the_mapping_are_refused(validator, bills_card):
+    with pytest.raises(polyui.ValidationError) as caught:
+        validator.prepare_show(bills_card, user=USER, refs={})
+    assert caught.value.problems[0]["id"] == "power"
+    with pytest.raises(polyui.ValidationError):
+        validator.prepare_show(bills_card, user=USER, refs={"account:power": None})
+    with pytest.raises(TypeError, match="mapping"):
+        validator.prepare_show(bills_card, user=USER, refs=["account:power"])

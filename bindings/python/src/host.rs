@@ -3,6 +3,7 @@ use polyui_core::catalog::EMBED_ID;
 use polyui_core::embed::{self, UiResource};
 use polyui_core::pointer;
 use polyui_core::protocol::{Close, Component, DataUpdate, Message, Open, Patch};
+use polyui_core::tools::{ToolOptions, ToolProfile};
 use polyui_core::validate::{
     self, Location, Operation, Problem, Problems, SealedAction, Surface, Update, Validator,
 };
@@ -53,6 +54,23 @@ where
     fn resolve(&self, source: &str, key: &str) -> Result<Value, String> {
         (self.lookup)(source, key)
     }
+}
+
+pub fn given_ref(given: &Map<String, Value>, source: &str, key: &str) -> Result<Value, String> {
+    match given.get(&format!("{source}:{key}")) {
+        None | Some(Value::Null) => Err("no value".into()),
+        Some(value) => Ok(value.clone()),
+    }
+}
+
+pub fn tool_options(strict: bool, profile: Option<&str>) -> Result<ToolOptions, String> {
+    let name = profile.unwrap_or(ToolProfile::Compact.name());
+    let profile = ToolProfile::from_name(name)
+        .ok_or_else(|| format!("profile must be \"compact\" or \"full\", not {name:?}"))?;
+    if strict && profile == ToolProfile::Compact {
+        return Err("strict applies to the full profile; pass profile=\"full\" with it".into());
+    }
+    Ok(ToolOptions { strict, profile })
 }
 
 pub fn unresolved(source: &str, key: &str) -> Result<Value, String> {
@@ -127,6 +145,27 @@ pub struct Settings {
 }
 
 impl Settings {
+    pub fn ref_keys(&self, input: &Input) -> Vec<String> {
+        let parsed;
+        let payload = match input {
+            Input::Json(value) => value,
+            Input::Text(text) => match serde_json::from_str(text) {
+                Ok(value) => {
+                    parsed = value;
+                    &parsed
+                }
+                Err(_) => return Vec::new(),
+            },
+        };
+        validate::ref_keys(payload)
+            .into_iter()
+            .filter(|reference| {
+                validate::split_ref(reference)
+                    .is_some_and(|(source, _)| self.sources.iter().any(|(name, _)| name == source))
+            })
+            .collect()
+    }
+
     pub fn validator<'a>(&'a self, refs: &'a dyn RefResolver) -> Validator<'a> {
         Validator::new(&self.catalogs, &self.actions, refs).allow_http(self.allow_http)
     }

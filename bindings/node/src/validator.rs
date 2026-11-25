@@ -9,10 +9,10 @@ use napi::bindgen_prelude::{FnArgs, Function, FunctionRef, Unknown};
 use napi::{Env, Error, JsError, Result, Status, ValueType};
 use napi_derive::napi;
 use polyui_core::embed::UiResource;
-use polyui_core::tools::{self, ToolOptions};
+use polyui_core::tools;
 use polyui_core::validate::{Operation, Problems, is_valid_id};
 use polyui_core::{Locale, RefResolver};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::cell::RefCell;
 
 type ResolverArgs<'a> = FnArgs<(Option<Unknown<'a>>, String, String)>;
@@ -36,6 +36,7 @@ pub struct PrepareOptions<'a> {
     pub declared: Option<Vec<String>>,
     pub locale: Option<String>,
     pub next_id: Option<Function<'a, (), String>>,
+    pub refs: Option<Value>,
 }
 
 #[napi(object, object_to_js = false)]
@@ -54,6 +55,7 @@ pub struct Sealed {
 struct Lookup<'a> {
     env: &'a Env,
     resolver: Option<Function<'a, ResolverArgs<'a>, Unknown<'a>>>,
+    given: Option<&'a Map<String, Value>>,
     user: Option<Unknown<'a>>,
     failure: RefCell<Option<Error>>,
 }
@@ -62,6 +64,7 @@ impl<'a> Lookup<'a> {
     fn new(
         env: &'a Env,
         stored: Option<&StoredResolver>,
+        given: Option<&'a Map<String, Value>>,
         user: Option<Unknown<'a>>,
     ) -> Result<Self> {
         let resolver = match stored {
@@ -75,6 +78,7 @@ impl<'a> Lookup<'a> {
         Ok(Self {
             env,
             resolver,
+            given,
             user,
             failure: RefCell::new(None),
         })
@@ -85,6 +89,9 @@ impl<'a> Lookup<'a> {
     }
 
     fn find(&self, source: &str, key: &str) -> std::result::Result<Value, String> {
+        if let Some(given) = self.given {
+            return host::given_ref(given, source, key);
+        }
         let Some(resolver) = &self.resolver else {
             return Err("no resolver is configured".into());
         };
@@ -257,9 +264,10 @@ impl Validator {
         &self,
         env: &'a Env,
         user: Option<Unknown<'a>>,
+        given: Option<&'a Map<String, Value>>,
         run: impl FnOnce(&dyn RefResolver) -> std::result::Result<T, Problems>,
     ) -> Result<T> {
-        let lookup = Lookup::new(env, self.resolver.as_ref(), user)?;
+        let lookup = Lookup::new(env, self.resolver.as_ref(), given, user)?;
         let outcome = {
             let refs = SourceRefs::new(&self.settings.sources, |source, key| {
                 lookup.find(source, key)
@@ -267,6 +275,17 @@ impl Validator {
             run(&refs)
         };
         lookup.finish(outcome)
+    }
+}
+
+fn given(refs: Option<Value>) -> Result<Option<Map<String, Value>>> {
+    match refs {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Object(map)) => Ok(Some(map)),
+        Some(_) => Err(Error::new(
+            Status::InvalidArg,
+            "refs must be an object from \"source:key\" to a value",
+        )),
     }
 }
 
@@ -342,8 +361,10 @@ impl Validator {
         env: &'a Env,
         surface: &Surface,
         user: Option<Unknown<'a>>,
+        refs: Option<Value>,
     ) -> Result<Surface> {
-        let components = self.with_refs(env, user, |refs| {
+        let given = given(refs)?;
+        let components = self.with_refs(env, user, given.as_ref(), |refs| {
             self.settings
                 .resolve(&surface.inner.components, refs, Operation::Show)
         })?;
@@ -483,14 +504,16 @@ impl Validator {
             declared: None,
             locale: None,
             next_id: None,
+            refs: None,
         });
         let payload = input(payload);
+        let given = given(options.refs)?;
         let locale = options.locale.unwrap_or_else(|| "en".into());
         let view = View::new(options.declared.as_deref(), &locale);
         let mut ids = Ids::new(options.next_id);
         let surface_id = options.surface_id;
         let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
-        let prepared = self.with_refs(env, options.user, |refs| {
+        let prepared = self.with_refs(env, options.user, given.as_ref(), |refs| {
             host::prepare_show(
                 &self.settings,
                 &payload,
@@ -523,8 +546,10 @@ impl Validator {
             declared: None,
             locale: None,
             next_id: None,
+            refs: None,
         });
         let payload = input(payload);
+        let given = given(options.refs)?;
         let locale = options.locale.unwrap_or_else(|| "en".into());
         let view = View::new(options.declared.as_deref(), &locale);
         let mut ids = Ids::new(options.next_id);
@@ -534,7 +559,7 @@ impl Validator {
             seq: u64::from(seq),
         };
         let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
-        let prepared = self.with_refs(env, options.user, |refs| {
+        let prepared = self.with_refs(env, options.user, given.as_ref(), |refs| {
             host::prepare_update(
                 &self.settings,
                 &payload,
@@ -552,18 +577,27 @@ impl Validator {
     }
 
     #[napi]
-    pub fn tool_definitions(&self, declared: Option<Vec<String>>, strict: Option<bool>) -> Value {
+    pub fn ref_keys(&self, payload: Value) -> Vec<String> {
+        self.settings.ref_keys(&input(payload))
+    }
+
+    #[napi]
+    pub fn tool_definitions(
+        &self,
+        declared: Option<Vec<String>>,
+        strict: Option<bool>,
+        profile: Option<String>,
+    ) -> Result<Value> {
+        let options = host::tool_options(strict.unwrap_or(false), profile.as_deref())
+            .map_err(|message| Error::new(Status::InvalidArg, message))?;
         let catalogs = match declared {
             Some(declared) => self.settings.catalogs.restrict(&declared),
             None => self.settings.catalogs.clone(),
         };
-        tools::tool_definitions(
+        Ok(tools::tool_definitions(
             &catalogs,
             &self.settings.actions,
-            ToolOptions {
-                strict: strict.unwrap_or(false),
-                ..ToolOptions::default()
-            },
-        )
+            options,
+        ))
     }
 }

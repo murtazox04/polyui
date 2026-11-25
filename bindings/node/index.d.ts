@@ -84,7 +84,10 @@ export interface PrepareOptions {
   declared?: string[]
   locale?: string
   nextId?: IdFactory
+  refs?: Record<string, unknown>
 }
+
+export type ToolProfile = 'compact' | 'full'
 
 export interface ChartOptions {
   locale?: string
@@ -182,7 +185,7 @@ export declare class Validator {
   showUi(payload: Payload): Surface
   updateUi(payload: Payload, current: Surface): Update
   closeUi(payload: Payload): string
-  resolveRefs(surface: Surface, user?: unknown): Surface
+  resolveRefs(surface: Surface, user?: unknown, refs?: Record<string, unknown>): Surface
   sealActions(surface: Surface, nextId?: IdFactory): { surface: Surface; actions: SealedAction[] }
   compileCharts(surface: Surface, options?: Omit<ChartOptions, 'dark'>): Surface
   attachApps(surface: Surface, user?: unknown): Surface
@@ -197,7 +200,8 @@ export declare class Validator {
     seq: number,
     options?: Omit<PrepareOptions, 'surfaceId'>,
   ): Prepared
-  toolDefinitions(declared?: string[], strict?: boolean): Tool[]
+  refKeys(payload: Payload): string[]
+  toolDefinitions(declared?: string[], strict?: boolean, profile?: ToolProfile): Tool[]
 }
 
 export declare class Client {
@@ -219,6 +223,7 @@ export declare function toolDefinitions(
   catalogs: Catalogs,
   actions?: Record<string, ActionSpec>,
   strict?: boolean,
+  profile?: ToolProfile,
 ): Tool[]
 export declare function openMessage(
   surfaceId: string,

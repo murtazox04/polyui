@@ -9,6 +9,7 @@ Json: TypeAlias = dict[str, Any]
 Payload: TypeAlias = Mapping[str, Any] | str
 Operation: TypeAlias = Literal["show", "update", "close"]
 Resolver: TypeAlias = Callable[[Any, str, str], Any]
+ToolProfile: TypeAlias = Literal["compact", "full"]
 UiResourceReader: TypeAlias = Callable[[Any, str], Mapping[str, Any] | None]
 IdFactory: TypeAlias = Callable[[], str]
 
@@ -159,7 +160,9 @@ class Validator:
     def show_ui(self, payload: Payload) -> Surface: ...
     def update_ui(self, payload: Payload, current: Surface) -> Update: ...
     def close_ui(self, payload: Payload) -> str: ...
-    def resolve_refs(self, surface: Surface, user: Any = None) -> Surface: ...
+    def resolve_refs(
+        self, surface: Surface, user: Any = None, refs: Mapping[str, Any] | None = None
+    ) -> Surface: ...
     def seal_actions(
         self, surface: Surface, next_id: IdFactory | None = None
     ) -> tuple[Surface, list[SealedAction]]: ...
@@ -186,6 +189,7 @@ class Validator:
         declared: Sequence[str] | None = None,
         locale: str = "en",
         next_id: IdFactory | None = None,
+        refs: Mapping[str, Any] | None = None,
     ) -> Prepared: ...
     def prepare_update(
         self,
@@ -197,9 +201,14 @@ class Validator:
         declared: Sequence[str] | None = None,
         locale: str = "en",
         next_id: IdFactory | None = None,
+        refs: Mapping[str, Any] | None = None,
     ) -> Prepared: ...
+    def ref_keys(self, payload: Payload) -> list[str]: ...
     def tool_definitions(
-        self, declared: Sequence[str] | None = None, strict: bool = False
+        self,
+        declared: Sequence[str] | None = None,
+        strict: bool = False,
+        profile: ToolProfile | None = None,
     ) -> list[Json]: ...
 
 @final
@@ -235,6 +244,7 @@ def tool_definitions(
     catalogs: Catalogs,
     actions: Mapping[str, ActionSpec] | None = None,
     strict: bool = False,
+    profile: ToolProfile | None = None,
 ) -> list[Json]: ...
 def open_message(
     surface_id: str, surface: Surface, seq: int = 1, fallback: str | None = None

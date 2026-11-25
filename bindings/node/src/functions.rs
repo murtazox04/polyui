@@ -7,7 +7,7 @@ use napi_derive::napi;
 use polyui_chart::{ChartScene, ChartSpec, Palette, compile, describe, to_svg};
 use polyui_core::protocol::Component;
 use polyui_core::summary;
-use polyui_core::tools::{self, ToolOptions};
+use polyui_core::tools;
 use serde_json::Value;
 
 #[napi(object)]
@@ -48,17 +48,13 @@ pub fn tool_definitions(
     catalogs: &Catalogs,
     actions: Option<Value>,
     strict: Option<bool>,
+    profile: Option<String>,
 ) -> Result<Value> {
     let table = host::action_table(&actions.unwrap_or_default())
         .map_err(|failure| catalog_error(&env, &failure))?;
-    Ok(tools::tool_definitions(
-        &catalogs.inner,
-        &table,
-        ToolOptions {
-            strict: strict.unwrap_or(false),
-            ..ToolOptions::default()
-        },
-    ))
+    let options = host::tool_options(strict.unwrap_or(false), profile.as_deref())
+        .map_err(|message| Error::new(Status::InvalidArg, message))?;
+    Ok(tools::tool_definitions(&catalogs.inner, &table, options))
 }
 
 #[napi]

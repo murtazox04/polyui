@@ -59,7 +59,8 @@ What you get:
 | `Validator.prepare_show` / `prepare_update` | The whole server pipeline in one call. Returns `Prepared` with `model`, `client`, `messages`, `summary`, `actions`, `seq` and `touched`. |
 | `Validator.resolve_refs`, `compile_charts`, `attach_apps`, `seal_actions`, `downgrade`, `summary`, `fallback` | The same steps one at a time, if you want to run them yourself. |
 | `Surface`, `Update` | Validated results. `to_dict()` and `Surface.from_dict()` let you keep them in a session store. |
-| `tool_definitions(catalogs, actions, strict=False)` | The Anthropic tool JSON for `show_ui`, `update_ui` and `close_ui`. |
+| `tool_definitions(catalogs, actions, strict=False, profile="compact")` | The Anthropic tool JSON for `show_ui`, `update_ui` and `close_ui`. `profile="full"` puts every prop in the schema and is needed for `strict`. |
+| `Validator.ref_keys(payload)` | The declared `source:key` refs a tool call uses, to fetch before `prepare_show(..., refs=...)`. |
 | `open_message`, `patch_message`, `close_message`, `closed_summary` | Protocol messages and the close summary. |
 | `compile_chart`, `chart_svg`, `describe_chart` | Chart scene, standalone SVG and the spoken summary. |
 | `Client(hello)` | The client core: `receive`, `set_value`, `fire`, `confirm`, `say`, `match_voice`. Handy for tests and server side rendering checks. |
@@ -69,6 +70,8 @@ Errors all derive from `PolyUIError`: `ValidationError`, `CatalogError` (bad cat
 ### Refs and the resolver
 
 Every ref source declares the kind of value it gives, using the same prop spec format as the catalogs. The validator uses it to check that a `$ref` fits the prop before anything is resolved. The resolver is called as `resolver(user, source, key)` with whatever you passed as `user`. Return the value, return `None` when there is nothing, or raise `polyui.RefRefusedError` when this user may not see it. The model only ever learns that the ref could not be resolved. Any other exception from the resolver is raised again unchanged, so a database error does not turn into a validation problem.
+
+For async lookups, call `validator.ref_keys(tool_input)`, await the values, and pass them as `refs={"source:key": value}` to `prepare_show`, `prepare_update` or `resolve_refs`; the resolver is then not called and a missing key is refused. See [Async lookups](https://github.com/murtazox04/polyui/blob/main/docs/bindings.md#async-lookups).
 
 The model's copy of a surface (`prepared.model`) keeps the `$ref` objects, and its summary shows them as `[ref]`. Only `prepared.client` and the messages carry the resolved values.
 
@@ -100,4 +103,4 @@ The client tests replay every fixture in `tests/conformance/client`, so the bind
 
 ## Not there yet
 
-The resolver and `ui_resource` are synchronous. Async callbacks for asyncio code are not supported yet; look the values up before the call or run the call in a worker thread.
+`ui_resource` is synchronous; read MCP App resources before the call or run it in a worker thread. Async ref lookups go through `ref_keys` and `refs` (above).

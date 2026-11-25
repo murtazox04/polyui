@@ -7,25 +7,31 @@ use crate::host::{
 };
 use crate::surface::{PyPrepared, PySurface, PyUpdate, sealed_list};
 use polyui_core::embed::UiResource;
-use polyui_core::tools::{self, ToolOptions};
+use polyui_core::tools;
 use polyui_core::validate::{Operation, Problems, is_valid_id};
 use polyui_core::{Locale, RefResolver};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::cell::RefCell;
 
 struct Lookup<'a, 'py> {
     resolver: Option<&'a Bound<'py, PyAny>>,
+    given: Option<&'a Map<String, Value>>,
     user: &'a Bound<'py, PyAny>,
     failure: RefCell<Option<PyErr>>,
 }
 
 impl<'a, 'py> Lookup<'a, 'py> {
-    fn new(resolver: Option<&'a Bound<'py, PyAny>>, user: &'a Bound<'py, PyAny>) -> Self {
+    fn new(
+        resolver: Option<&'a Bound<'py, PyAny>>,
+        given: Option<&'a Map<String, Value>>,
+        user: &'a Bound<'py, PyAny>,
+    ) -> Self {
         Self {
             resolver,
+            given,
             user,
             failure: RefCell::new(None),
         }
@@ -36,6 +42,9 @@ impl<'a, 'py> Lookup<'a, 'py> {
     }
 
     fn find(&self, source: &str, key: &str) -> Result<Value, String> {
+        if let Some(given) = self.given {
+            return host::given_ref(given, source, key);
+        }
         let Some(resolver) = self.resolver else {
             return Err("no resolver is configured".into());
         };
@@ -179,10 +188,11 @@ impl PyValidator {
         &self,
         py: Python<'py>,
         user: &Bound<'py, PyAny>,
+        given: Option<&Map<String, Value>>,
         run: impl FnOnce(&dyn RefResolver) -> Result<T, Problems>,
     ) -> PyResult<T> {
         let resolver = self.resolver.as_ref().map(|resolver| resolver.bind(py));
-        let lookup = Lookup::new(resolver, user);
+        let lookup = Lookup::new(resolver, given, user);
         let outcome = {
             let refs = SourceRefs::new(&self.settings.sources, |source, key| {
                 lookup.find(source, key)
@@ -190,6 +200,16 @@ impl PyValidator {
             run(&refs)
         };
         lookup.finish(py, outcome)
+    }
+
+    fn given(refs: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Map<String, Value>>> {
+        match refs.map(to_json).transpose()? {
+            None => Ok(None),
+            Some(Value::Object(map)) => Ok(Some(map)),
+            Some(_) => Err(PyTypeError::new_err(
+                "refs must be a mapping from \"source:key\" to a value",
+            )),
+        }
     }
 
     fn surface_id(surface: &PySurface, surface_id: Option<&str>) -> String {
@@ -286,15 +306,17 @@ impl PyValidator {
             .map_err(|problems| validation_error(py, &problems))
     }
 
-    #[pyo3(signature = (surface, user=None))]
+    #[pyo3(signature = (surface, user=None, refs=None))]
     fn resolve_refs(
         &self,
         py: Python<'_>,
         surface: &PySurface,
         user: Option<&Bound<'_, PyAny>>,
+        refs: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PySurface> {
         let none = py.None().into_bound(py);
-        let components = self.with_refs(py, user.unwrap_or(&none), |refs| {
+        let given = Self::given(refs)?;
+        let components = self.with_refs(py, user.unwrap_or(&none), given.as_ref(), |refs| {
             self.settings
                 .resolve(&surface.inner.components, refs, Operation::Show)
         })?;
@@ -407,7 +429,7 @@ impl PyValidator {
             .fallback(&self.settings.catalogs, Locale::from_tag(locale))
     }
 
-    #[pyo3(signature = (payload, user=None, surface_id=None, declared=None, locale="en", next_id=None))]
+    #[pyo3(signature = (payload, user=None, surface_id=None, declared=None, locale="en", next_id=None, refs=None))]
     #[allow(clippy::too_many_arguments)]
     fn prepare_show(
         &self,
@@ -418,15 +440,17 @@ impl PyValidator {
         declared: Option<Vec<String>>,
         locale: &str,
         next_id: Option<&Bound<'_, PyAny>>,
+        refs: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyPrepared> {
         let payload = input(payload)?;
+        let given = Self::given(refs)?;
         let view = View::new(declared.as_deref(), locale);
         let none = py.None().into_bound(py);
         let mut ids = Ids::new(next_id);
         let user = user.unwrap_or(&none);
         let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
         let mut apps = Apps::new(callback, user);
-        let prepared = self.with_refs(py, user, |refs| {
+        let prepared = self.with_refs(py, user, given.as_ref(), |refs| {
             host::prepare_show(
                 &self.settings,
                 &payload,
@@ -443,7 +467,7 @@ impl PyValidator {
         Ok(PyPrepared { inner: prepared })
     }
 
-    #[pyo3(signature = (payload, model, client, seq, user=None, declared=None, locale="en", next_id=None))]
+    #[pyo3(signature = (payload, model, client, seq, user=None, declared=None, locale="en", next_id=None, refs=None))]
     #[allow(clippy::too_many_arguments)]
     fn prepare_update(
         &self,
@@ -456,8 +480,10 @@ impl PyValidator {
         declared: Option<Vec<String>>,
         locale: &str,
         next_id: Option<&Bound<'_, PyAny>>,
+        refs: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyPrepared> {
         let payload: Input = input(payload)?;
+        let given = Self::given(refs)?;
         let view = View::new(declared.as_deref(), locale);
         let none = py.None().into_bound(py);
         let mut ids = Ids::new(next_id);
@@ -469,7 +495,7 @@ impl PyValidator {
         let user = user.unwrap_or(&none);
         let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
         let mut apps = Apps::new(callback, user);
-        let prepared = self.with_refs(py, user, |refs| {
+        let prepared = self.with_refs(py, user, given.as_ref(), |refs| {
             host::prepare_update(
                 &self.settings,
                 &payload,
@@ -486,27 +512,26 @@ impl PyValidator {
         Ok(PyPrepared { inner: prepared })
     }
 
-    #[pyo3(signature = (declared=None, strict=false))]
+    fn ref_keys(&self, payload: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+        Ok(self.settings.ref_keys(&input(payload)?))
+    }
+
+    #[pyo3(signature = (declared=None, strict=false, profile=None))]
     fn tool_definitions<'py>(
         &self,
         py: Python<'py>,
         declared: Option<Vec<String>>,
         strict: bool,
+        profile: Option<&str>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let options = host::tool_options(strict, profile).map_err(PyValueError::new_err)?;
         let catalogs = match declared {
             Some(declared) => self.settings.catalogs.restrict(&declared),
             None => self.settings.catalogs.clone(),
         };
         to_py(
             py,
-            &tools::tool_definitions(
-                &catalogs,
-                &self.settings.actions,
-                ToolOptions {
-                    strict,
-                    ..ToolOptions::default()
-                },
-            ),
+            &tools::tool_definitions(&catalogs, &self.settings.actions, options),
         )
     }
 

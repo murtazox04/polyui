@@ -22,7 +22,7 @@ What the bindings do not do: run the model, keep sessions, or talk to clients. Y
 | Tests | `pytest`, including every client fixture in `tests/conformance` | `npm test` |
 | Full reference | [bindings/python/README.md](https://github.com/murtazox04/polyui/blob/main/bindings/python/README.md) | [bindings/node/README.md](https://github.com/murtazox04/polyui/blob/main/bindings/node/README.md) |
 
-The binding tests are run by hand today; CI runs the Rust, wasm and web tests.
+CI runs `cargo clippy` on both bindings. The release checks build every wheel and addon and run `pytest` and `npm test` on Linux, macOS and Windows whenever a pull request touches the release workflow or a package manifest; otherwise run the tests by hand.
 
 ## Python
 
@@ -86,12 +86,51 @@ try {
 
 Method names are camelCase; data that mirrors the protocol keeps the wire names, so sealed actions look like `{ action_id, component, prop, action, args, with, requires_confirm }`.
 
+## Tool profiles
+
+`tool_definitions` / `toolDefinitions` takes a `profile`. `"compact"`, the default and the same as the Rust server, keeps a closed generic schema and lists each type as one line in the `show_ui` description: with the built-in catalogs and one action it is about 5 KB of JSON. `"full"` puts every prop of every type into the schema, about 31 KB, and is the only profile that supports `strict`; asking for `strict` with `"compact"` raises an error instead of silently dropping it. On Haiku the compact profile drew a form for a phone number request less often than full ([benchmark](benchmark.md#compact-tool-profile-2026-11-24)), so a host whose answers are mostly forms may prefer `"full"`.
+
+```python
+tools = validator.tool_definitions(["core@1", "chart@1"])
+tools = validator.tool_definitions(strict=True, profile="full")
+```
+
+```js
+const tools = validator.toolDefinitions(['core@1', 'chart@1'])
+const strict = validator.toolDefinitions(undefined, true, 'full')
+```
+
+## Async lookups
+
+The resolver passed to the validator is called synchronously, in the middle of validation. If your lookups are async (a database driver, an HTTP service), fetch them first and pass the values in:
+
+1. `ref_keys(payload)` / `refKeys(payload)` returns the `source:key` strings the tool call uses, in order and without duplicates, only for sources declared in `ref_sources`.
+2. Await your lookups however your runtime does it.
+3. Pass the results as `refs`, a mapping from `source:key` to value, to `prepare_show`, `prepare_update` or `resolve_refs`. When `refs` is given the resolver is not called. A key missing from the mapping, or mapped to `None` / `null`, is refused like a resolver refusal, and the model gets a problem for that prop.
+
+```python
+wanted = validator.ref_keys(tool_input)
+values = await asyncio.gather(*(lookup(user, ref) for ref in wanted))
+prepared = validator.prepare_show(
+    tool_input, user=user, refs=dict(zip(wanted, values, strict=True))
+)
+```
+
+```js
+const wanted = validator.refKeys(toolInput)
+const values = await Promise.all(wanted.map((ref) => lookup(user, ref)))
+const refs = Object.fromEntries(wanted.map((ref, index) => [ref, values[index]]))
+const prepared = validator.prepareShow(toolInput, { user, refs })
+```
+
+This works with asyncio, trio, AnyIO or any Node code, because the binding never runs an event loop of its own. Only fetch what `ref_keys` returns: the values still go through the declared kind of each source and the prop's own rules before they reach a client, exactly as with a resolver.
+
 ## Keep two copies
 
 Both bindings return two versions of a surface. `prepared.model` is what the model wrote, with `$ref` objects still in place; build summaries from it. `prepared.client` and the messages carry the resolved values, chart scenes and handles; send them to the client and use them for `ui.snapshot`. Keep `prepared.actions` on the server and look the handle up when a `ui.action` arrives. Never put the client copy in front of the model.
 
 ## Limits today
 
-- The resolver and the `ui_resource` / `uiResource` callback are synchronous. Look values up before the call, or run it in a worker thread.
+- The `ui_resource` / `uiResource` callback is synchronous. For refs, see [Async lookups](#async-lookups).
 - There is no async agent loop and no transport in either binding; that part is yours.
 - `Client` is also exposed in both, which is handy for tests and for server-side checks of what a renderer would get.
