@@ -69,7 +69,7 @@ jobs:
     name: polyui CLI for ${{ matrix.target }}
     needs: version
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -77,9 +77,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-22.04-arm
           - target: aarch64-apple-darwin
-            runner: macos-15
+            runner: macos-26
           - target: x86_64-apple-darwin
-            runner: macos-15
+            runner: macos-26
           - target: x86_64-pc-windows-msvc
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
@@ -129,7 +129,7 @@ jobs:
     name: Python wheel for ${{ matrix.name }}
     needs: version
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - name: manylinux x86_64
@@ -150,11 +150,11 @@ jobs:
             target: aarch64
             manylinux: musllinux_1_2
           - name: macOS arm64
-            runner: macos-15
+            runner: macos-26
             target: aarch64
             test: true
           - name: macOS x86_64
-            runner: macos-15
+            runner: macos-26
             target: x86_64
           - name: Windows x64
             runner: windows-2025
@@ -209,7 +209,7 @@ jobs:
     name: Node addon for ${{ matrix.target }}
     needs: version
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -224,10 +224,10 @@ jobs:
             flags: --cross-compile
             zig: true
           - target: aarch64-apple-darwin
-            runner: macos-15
+            runner: macos-26
             test: true
           - target: x86_64-apple-darwin
-            runner: macos-15
+            runner: macos-26
           - target: x86_64-pc-windows-msvc
             runner: windows-2025
             test: true
