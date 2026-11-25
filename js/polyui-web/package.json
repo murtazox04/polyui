@@ -1,6 +1,6 @@
 {
   "name": "@polyui/web",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Framework free web renderer for PolyUI surfaces",
   "type": "module",
   "license": "Apache-2.0",
