@@ -2,9 +2,9 @@ use crate::Map;
 use crate::Value;
 use std::fmt;
 
-pub const CORE_JSON: &str = include_str!("../../../spec/catalogs/core.json");
-pub const CHART_JSON: &str = include_str!("../../../spec/catalogs/chart.json");
-pub const EMBED_JSON: &str = include_str!("../../../spec/catalogs/embed.json");
+pub const CORE_JSON: &str = include_str!("../catalogs/core.json");
+pub const CHART_JSON: &str = include_str!("../catalogs/chart.json");
+pub const EMBED_JSON: &str = include_str!("../catalogs/embed.json");
 pub const EMBED_ID: &str = "embed";
 
 pub const ROLES: [&str; 11] = [
