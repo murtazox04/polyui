@@ -1,7 +1,15 @@
 name: polyui
 description: Flutter renderer for PolyUI surfaces, drawn through the Rust client core over dart:ffi.
 version: 0.1.0
-publish_to: none
+homepage: https://murtazox04.github.io/polyui/
+repository: https://github.com/murtazox04/polyui/tree/main/flutter/polyui
+issue_tracker: https://github.com/murtazox04/polyui/issues
+topics:
+  - generative-ui
+  - llm
+  - agents
+  - mcp
+  - ffi
 
 environment:
   sdk: ^3.11.0
@@ -9,6 +17,7 @@ environment:
 
 dependencies:
   code_assets: ^1.0.0
+  crypto: ^3.0.6
   ffi: ^2.1.4
   flutter:
     sdk: flutter

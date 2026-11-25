@@ -10,9 +10,9 @@ The light screenshot shows the July bar after it was selected. The dark one come
 ## Requirements
 
 - Flutter 3.41 or later (it ships Dart 3.11). The package was built and tested with Flutter 3.41.9 on the stable channel.
-- rustup and cargo on `PATH`. The build compiles the core from this repository on every platform you build for.
+- Inside this repository: rustup and cargo on `PATH`, because the build compiles the core from source on every platform you build for. An app that gets the package from pub.dev needs no Rust at all (see [Using the package outside this repository](#using-the-package-outside-this-repository)).
 - For iOS: Xcode and CocoaPods. Xcode 27 needs an iOS deployment target of 15.0 or later, so the example app and its Podfile use 15.0. CocoaPods is there for the plugins the package now uses (`webview_flutter`, `url_launcher`) and the ones the example adds (`flutter_tts`, `speech_to_text`); the PolyUI core itself still needs no podspec.
-- For Android: the Android NDK that Flutter is configured with, the four Android Rust targets (`rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android`), and `cargo install cargo-ndk`.
+- For Android, when building from source: the Android NDK that Flutter is configured with, the four Android Rust targets (`rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android`), and `cargo install cargo-ndk`.
 
 ## How the native library gets into the app
 
@@ -55,14 +55,32 @@ Flutter builds an APK for `android-arm`, `android-arm64` and `android-x64` by de
 
 ### Using the package outside this repository
 
-The hook looks for the Rust workspace two folders above the package (`flutter/polyui/../..`). If you copy the package somewhere else, point it at the workspace from your app's `pubspec.yaml`:
+The hook first looks for the Rust workspace two folders above the package (`flutter/polyui/../..`). That is where it is in this repository, so here it always builds from source.
+
+A copy from pub.dev has no workspace next to it. There the hook downloads the prebuilt `libpolyui_ffi-<rust target>` for the build's target from the GitHub release of the same version, for example `https://github.com/murtazox04/polyui/releases/download/v0.1.0/libpolyui_ffi-aarch64-apple-ios.dylib`. `hook/prebuilt.dart` pins the SHA-256 of every file of that release, and the hook refuses a file whose hash differs, so a changed release asset never reaches an app. The release workflow writes those pins (see [Releasing](releasing.md)). Prebuilt files exist for iOS (device, Apple silicon and Intel simulators), Android (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`), macOS (Apple silicon and Intel) and Linux (x86_64 and arm64). Windows is not supported.
+
+```mermaid
+flowchart TD
+    A[flutter build] --> B{bindings/ffi two folders up,<br/>or rust_workspace set?}
+    B -- yes --> C[cargo build for the target]
+    B -- no --> D[fetch libpolyui_ffi-target<br/>from the release or prebuilt_url]
+    D --> E{SHA-256 equals<br/>the pin in hook/prebuilt.dart?}
+    E -- yes --> F[bundle the library]
+    E -- no --> G[stop the build]
+    C --> F
+```
+
+Two settings in your app's `pubspec.yaml` change this. `rust_workspace` builds from a clone instead of downloading. `prebuilt_url` downloads from your own mirror (an `https` or `file` URL of a folder that holds the release's `libpolyui_ffi-*` files); the pins still apply.
 
 ```yaml
 hooks:
   user_defines:
     polyui:
       rust_workspace: ../path/to/polyui
+      prebuilt_url: https://mirror.example.com/polyui/v0.1.0/
 ```
+
+Both paths were tried on a Mac. With the package copied out of the repository, no cargo on `PATH` and `prebuilt_url` pointing at a local folder, `flutter test` fetched `libpolyui_ffi-aarch64-apple-darwin.dylib`, checked it and passed every test that does not read fixtures from the repository. With one byte appended to that file the build stopped with `polyui fetched ... but its SHA-256 is ..., expected .... The file was not used.`
 
 ## Using it
 

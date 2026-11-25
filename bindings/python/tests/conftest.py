@@ -19,7 +19,7 @@ SECRETS = {("account", "gas"): "**** 0083", ("account", "power"): "**** 4471"}
 
 
 def load_fixture(kind: str, name: str) -> dict:
-    return json.loads((FIXTURES / kind / name).read_text())
+    return json.loads((FIXTURES / kind / name).read_text(encoding="utf-8"))
 
 
 def lookup(user, source, key):

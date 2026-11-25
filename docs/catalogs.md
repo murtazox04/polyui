@@ -1,6 +1,6 @@
 # The catalogs
 
-PolyUI ships three catalogs. This page lists every type, prop, limit and default in them. It is generated from the JSON files in [`spec/catalogs`](https://github.com/murtazox04/polyui/tree/main/spec/catalogs), which are the source of truth; the [catalog format](../spec/catalog.md) explains the fields.
+PolyUI ships three catalogs. This page lists every type, prop, limit and default in them. It is generated from the JSON files in [`crates/polyui-core/catalogs`](https://github.com/murtazox04/polyui/tree/main/crates/polyui-core/catalogs), which are the source of truth; the [catalog format](../spec/catalog.md) explains the fields.
 
 A few rules apply to every type:
 

@@ -7,6 +7,10 @@ rust-version = "1.95"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 datafusion = { version = "56.0.0", default-features = false, features = ["sql", "parquet", "datetime_expressions", "string_expressions", "unicode_expressions"] }

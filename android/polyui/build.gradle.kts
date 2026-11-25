@@ -1,6 +1,11 @@
+import com.vanniktech.maven.publish.AndroidSingleVariantLibrary
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.SourcesJar
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.maven.publish)
 }
 
 val repositoryRoot: File = rootProject.projectDir.parentFile
@@ -126,4 +131,44 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.uiautomator)
     debugImplementation(libs.compose.ui.test.manifest)
+}
+
+mavenPublishing {
+    configure(
+        AndroidSingleVariantLibrary(
+            javadocJar = JavadocJar.Empty(),
+            sourcesJar = SourcesJar.Sources(),
+            variant = "release",
+        ),
+    )
+    coordinates("io.github.murtazox04", "polyui-android", providers.gradleProperty("VERSION_NAME").get())
+    publishToMavenCentral(automaticRelease = true)
+    if (providers.gradleProperty("signingInMemoryKey").isPresent) {
+        signAllPublications()
+    }
+    pom {
+        name.set("PolyUI for Android")
+        description.set("Jetpack Compose renderer for PolyUI surfaces, drawn through the Rust client core over JNI.")
+        url.set("https://github.com/murtazox04/polyui")
+        inceptionYear.set("2026")
+        licenses {
+            license {
+                name.set("Apache-2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                distribution.set("repo")
+            }
+        }
+        developers {
+            developer {
+                id.set("murtazox04")
+                name.set("Murtazo Xurramov")
+                url.set("https://github.com/murtazox04")
+            }
+        }
+        scm {
+            url.set("https://github.com/murtazox04/polyui")
+            connection.set("scm:git:https://github.com/murtazox04/polyui.git")
+            developerConnection.set("scm:git:ssh://git@github.com/murtazox04/polyui.git")
+        }
+    }
 }

@@ -704,7 +704,7 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut files = Vec::new();
         json_files(&root.join("tests/conformance"), &mut files);
-        json_files(&root.join("spec/catalogs"), &mut files);
+        json_files(&root.join("crates/polyui-core/catalogs"), &mut files);
         assert!(files.len() > 30, "expected the conformance fixtures");
         files
             .iter()

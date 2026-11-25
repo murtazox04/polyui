@@ -1,9 +1,24 @@
 {
-  "name": "polyui-web",
+  "name": "@polyui/web",
   "version": "0.1.0",
   "description": "Framework free web renderer for PolyUI surfaces",
   "type": "module",
   "license": "Apache-2.0",
+  "author": "Murtazo Xurramov",
+  "homepage": "https://murtazox04.github.io/polyui/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/murtazox04/polyui.git",
+    "directory": "js/polyui-web"
+  },
+  "bugs": "https://github.com/murtazox04/polyui/issues",
+  "keywords": [
+    "generative-ui",
+    "llm",
+    "agents",
+    "mcp",
+    "wasm"
+  ],
   "sideEffects": false,
   "main": "./dist/polyui.js",
   "module": "./dist/polyui.js",
@@ -14,10 +29,15 @@
       "import": "./dist/polyui.js"
     },
     "./polyui.css": "./dist/polyui.css",
-    "./polyui_core_bg.wasm": "./dist/polyui_core_bg.wasm"
+    "./polyui_core_bg.wasm": "./dist/polyui_core_bg.wasm",
+    "./embed-sandbox.html": "./embed-sandbox/index.html"
   },
   "files": [
-    "dist"
+    "dist/polyui.js",
+    "dist/polyui.css",
+    "dist/polyui_core_bg.wasm",
+    "dist/*.d.ts",
+    "embed-sandbox/index.html"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -32,5 +52,8 @@
     "happy-dom": "^21.0.4",
     "typescript": "^7.0.2",
     "vitest": "^5.1.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

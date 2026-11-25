@@ -11,6 +11,16 @@ The iOS side has three layers. At the bottom is `polyui-ffi`, a small C ABI over
 
 The light screenshot shows the July bar after a tap. The confirm sheet and the dark screenshot come from the same run: the Visa card was picked, a phone number typed into the receipt field, Pay pressed and confirmed, and the server's patch turned the button into Paid. These three were taken before the microphone button was added to the composer. The two embed screenshots are newer: they show the forecast app from `js/polyui-web/demo/embed` running inside the iOS renderer, with the tool result drawn and its fetch blocked by the app's CSP.
 
+## Adding it to an app
+
+From a release, add the package in Xcode (File, Add Package Dependencies) or in `Package.swift`:
+
+```swift
+.package(url: "https://github.com/murtazox04/polyui", from: "0.1.0")
+```
+
+and depend on the `PolyUI` product. The `Package.swift` at the root of the repository is written by the release workflow: it points at `PolyUICore.xcframework.zip` on the GitHub release and pins its checksum, so SwiftPM refuses a changed file. The Swift sources come from `swift/PolyUI/Sources/PolyUI` in the same tag. See [Releasing](releasing.md).
+
 ## Building
 
 You need Xcode 26 or later and rustup. The build script adds the Rust targets it needs if they are missing.
@@ -76,7 +86,7 @@ What each call returns is described in [the renderer contract](../spec/renderer.
 
 ### Extension catalogs
 
-`polyui_client_new` knows only the built-in catalogs (`core`, `chart`, `embed`). A component of any other type, such as `acme:Map`, reaches the renderer as a plain `Text` with its alt text, and the core reports `unknown_component` to the server. To render extension types, start the client with `polyui_client_new_with_catalogs` and pass your catalogs as a JSON array, each item in the same format as `spec/catalogs/core.json`:
+`polyui_client_new` knows only the built-in catalogs (`core`, `chart`, `embed`). A component of any other type, such as `acme:Map`, reaches the renderer as a plain `Text` with its alt text, and the core reports `unknown_component` to the server. To render extension types, start the client with `polyui_client_new_with_catalogs` and pass your catalogs as a JSON array, each item in the same format as `crates/polyui-core/catalogs/core.json`:
 
 ```c
 const char *catalogs =
