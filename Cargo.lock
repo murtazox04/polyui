@@ -2746,7 +2746,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "polyui"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "polyui-core",
@@ -2757,7 +2757,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-bench"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "futures-util",
@@ -2771,7 +2771,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-chart"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2779,7 +2779,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -2789,7 +2789,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-decode"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "llguidance",
@@ -2799,7 +2799,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-ffi"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "polyui-core",
  "serde_json",
@@ -2807,7 +2807,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-node"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "getrandom 0.4.3",
  "napi",
@@ -2821,7 +2821,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-python"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "getrandom 0.4.3",
  "polyui-chart",
@@ -2834,7 +2834,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-query"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "datafusion",
  "serde",
@@ -2844,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-server"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "futures-util",
@@ -2863,7 +2863,7 @@ dependencies = [
 
 [[package]]
 name = "polyui-wasm"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "polyui-core",
  "serde_json",
