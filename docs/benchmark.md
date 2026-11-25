@@ -6,6 +6,8 @@ The short version for the run on 2026-11-24 with `claude-haiku-5-5`: every UI th
 
 The same day we cut the tool definitions from about 20 000 tokens to about 2 400 with a compact tool profile and ran the 32 prompts again with tools. Every UI call was still valid on the first try, the run cost $0.033 instead of $0.104, and the first `ui.open` came sooner. The model drew a form for the phone number request less often, which is the one difference we saw. See [Compact tool profile](#compact-tool-profile-2026-11-24).
 
+On 2026-11-25 we found why: the bills host had no action that could save a phone number, so a form would have been a dead end, and compact read that correctly. With a `save_phone` action added, compact drew the form in 12 of 12 phone turns, and one clearer sentence about data paths made every one of them valid on the first try. See [Forms with the compact profile](#forms-with-the-compact-profile-2026-11-25).
+
 A small self-hosted model is where we expect the settings to differ. The first attempt with `ember:chat` (Gemma, about 12B) on the same day produced no numbers. A second run later that day measured 8 prompts and gave very little. The model tried to draw UI in 7 turns and one was valid, from inline JSON. The tool and constrained settings each stopped after two provider errors in a row. The hypothesis that tool calls plus constrained decoding beat inline JSON on a 12B model is still not tested in a way that can decide it. See [Ember, 8 prompts](#ember-8-prompts-2026-11-24).
 
 ## What is measured
@@ -176,6 +178,32 @@ The smoke run (4 prompts, 9 calls), the main run (63 calls) and the phone number
 In the first ember smoke test the model's `show_ui` call had 5 components that could not be reached from the root and 4 unknown props on `Card`. The compact description never said what `root` is, and the type lines write `[children]` right after the props, so a model can read `children` as one more prop. We changed the first line of the `show_ui` description to say that each component is `{id, type, props, children}`, that `root` is the id of the top component, that a parent lists its children in its own `children` next to `props` and never inside them, and that every component must be reachable from `root` that way. `polyui tools` now prints 8 051 bytes instead of 7 843; we did not count the tokens again.
 
 To check that this does not hurt Haiku we ran the 8 prompts of the ember run below in the tool setting (16 calls, $0.0093, `bench/results/2026-11-24-claude-haiku-5-5-compact-wording.json`). The result matches the compact run above for the same 8 prompts: 6 turns with a UI call, all 6 valid on the first try, the phone number request answered in text again, and no UI for the thank you. One turn, the Uzbek chart, followed its valid `show_ui` with a valid `update_ui`. Eight prompts can show a regression, not prove an improvement, and we did not see one.
+
+## Forms with the compact profile, 2026-11-25
+
+The compact run above drew a form for the phone number request in 7 of 12 tries, against 8 of 8 for full. The cause was the test host, not the profile.
+
+The bills host registers `pay_bill`, `pick_offer` and `show_usage`. None of them can save a phone number, and a value typed into an `Input` only reaches the host when an action fires with that path in `with`. So a phone form on this host could never do anything. The full profile drew one anyway in every try; compact lists the actions in one short line next to the types, saw that none fits, and usually asked in text, which for this host was the honest answer. In the earlier text replies the model even told the user to type the number into the field and then say it again.
+
+We added a `save_phone` action to the bills host (no arguments; it takes the number from the `with` values, checks that it looks like a phone number and stores it) and ran the four phone prompts three times with each profile (`bench/results/2026-11-25-claude-haiku-5-5-phone-*.json`):
+
+| Profile | Phone turns with a form | Valid on the first try | Cost |
+|---|---|---|---|
+| full | 12 of 12 | 12 of 12 | $0.020 |
+| compact | 12 of 12 | 6 of 12 (all fixed by the retry) | $0.0095 |
+
+Every rejected compact call had the same problem: "`$bind` and `$ref` are not allowed here". The bench records the problem, not the payload, but the only `path` props in these forms are `Input.value` and `ChoiceGroup.value`, and `{"$bind": "/phone"}` on `Input.value` gives exactly that message. The compact legend said `path: data pointer like /form/name`, and the next line says that other props may be `{"$bind": "/path"}`, so writing the path as a binding is an easy misreading. We changed the legend to `path: a data pointer written as a plain string like "/form/name", never as {"$bind": ...}` and ran compact three more times: 12 of 12 forms, 12 of 12 valid on the first try, $0.0069.
+
+Then the whole 32 prompt set with compact, to check that nothing else moved (`bench/results/2026-11-25-claude-haiku-5-5-compact-forms.json`):
+
+| Profile | Turns with a UI call | Valid on the first try | UI shown when expected | No UI when none expected | Mean time to `ui.open` | Cost |
+|---|---|---|---|---|---|---|
+| compact, 2026-11-24 | 26 of 32 | 26 of 26 | 22 of 24 | 4 of 4 | 4.5 s | $0.0325 |
+| compact, 2026-11-25 | 28 of 32 | 27 of 28 | 24 of 24 | 4 of 4 | 4.6 s | $0.0349 |
+
+The one first call that failed was an Uzbek Cyrillic answer to the ambiguous prompt that gave one component two parents; the retry fixed it. It is unrelated to forms, and one case in 28 is within what we saw before. The full profile was not run again on the whole set, so its 24 of 24 is still from 2026-11-24, on the host without `save_phone`.
+
+What we conclude: compact does not avoid forms. It avoids forms the host cannot use, which full did not. A host that wants forms needs an action that takes the values, and it should have one anyway. The earlier advice to use `full` for form-heavy hosts no longer holds. The phone reruns and the full run used 146 Haiku calls and cost about $0.072.
 
 ## Ember, first attempt, 2026-11-24
 

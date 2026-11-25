@@ -1,0 +1,228 @@
+{
+  "date": "2026-11-25",
+  "model": "claude-haiku-5-5",
+  "tools": {
+    "profile": "compact",
+    "catalog_subset": []
+  },
+  "prices": {
+    "input_per_million": 0.1,
+    "output_per_million": 0.5,
+    "cache_write_factor": 1.25,
+    "cache_read_factor": 0.1
+  },
+  "prompts": 4,
+  "total_model_calls": 8,
+  "provider_requests": null,
+  "stopped_early": false,
+  "total_cost_usd": 0.0016162700000000002,
+  "variants": [
+    {
+      "variant": "tools",
+      "overall": {
+        "runs": 4,
+        "ui_runs": 4,
+        "first_try_valid": 4,
+        "valid_after_one_retry": 4,
+        "valid_after_two_retries": 4,
+        "ui_expected": 4,
+        "ui_shown_when_expected": 4,
+        "no_ui_expected": 0,
+        "no_ui_when_not_expected": 0,
+        "mean_ms_to_open": 2598.0,
+        "model_calls": 8,
+        "input_tokens": 24,
+        "output_tokens": 1910,
+        "cache_write_tokens": 2838,
+        "cache_read_tokens": 30412,
+        "cost_usd": 0.0016162700000000002,
+        "budget_cut": 0,
+        "problem_kinds": []
+      },
+      "per_locale": {
+        "en": {
+          "runs": 1,
+          "ui_runs": 1,
+          "first_try_valid": 1,
+          "valid_after_one_retry": 1,
+          "valid_after_two_retries": 1,
+          "ui_expected": 1,
+          "ui_shown_when_expected": 1,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": 2419.0,
+          "model_calls": 2,
+          "input_tokens": 6,
+          "output_tokens": 438,
+          "cache_write_tokens": 505,
+          "cache_read_tokens": 7562,
+          "cost_usd": 0.00035834500000000004,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "ru": {
+          "runs": 1,
+          "ui_runs": 1,
+          "first_try_valid": 1,
+          "valid_after_one_retry": 1,
+          "valid_after_two_retries": 1,
+          "ui_expected": 1,
+          "ui_shown_when_expected": 1,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": 2662.0,
+          "model_calls": 2,
+          "input_tokens": 6,
+          "output_tokens": 505,
+          "cache_write_tokens": 994,
+          "cache_read_tokens": 7588,
+          "cost_usd": 0.00045323,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "uz-Cyrl": {
+          "runs": 1,
+          "ui_runs": 1,
+          "first_try_valid": 1,
+          "valid_after_one_retry": 1,
+          "valid_after_two_retries": 1,
+          "ui_expected": 1,
+          "ui_shown_when_expected": 1,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": 3028.0,
+          "model_calls": 2,
+          "input_tokens": 6,
+          "output_tokens": 538,
+          "cache_write_tokens": 861,
+          "cache_read_tokens": 7634,
+          "cost_usd": 0.00045356500000000007,
+          "budget_cut": 0,
+          "problem_kinds": []
+        },
+        "uz-Latn": {
+          "runs": 1,
+          "ui_runs": 1,
+          "first_try_valid": 1,
+          "valid_after_one_retry": 1,
+          "valid_after_two_retries": 1,
+          "ui_expected": 1,
+          "ui_shown_when_expected": 1,
+          "no_ui_expected": 0,
+          "no_ui_when_not_expected": 0,
+          "mean_ms_to_open": 2283.0,
+          "model_calls": 2,
+          "input_tokens": 6,
+          "output_tokens": 429,
+          "cache_write_tokens": 478,
+          "cache_read_tokens": 7628,
+          "cost_usd": 0.00035113,
+          "budget_cut": 0,
+          "problem_kinds": []
+        }
+      }
+    }
+  ],
+  "runs": [
+    {
+      "prompt": "en-phone-form",
+      "locale": "en",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"root\":\"card\",\"surface\":\"phone\",\"components\":[{\"id\":\"card\",\"type\":\"Card\",\"props\":{\"title\":\"Payment notification phone\",\"tone\":\"plain\"},\"children\":[\"intro\",\"phone\",\"save\"]},{\"id\":\"intro\",\"type\":\"Text\",\"props\":{\"text\":\"Enter the new phone number that should receive payment notifications.\",\"style\":\"body\"}},{\"id\":\"phone\",\"type\":\"Input\",\"props\":{\"label\":\"New phone number\",\"value\":\"/phone/new\",\"input\":\"phone\",\"placeholder\":\"+998 90 123 45 67\",\"required\":true}},{\"id\":\"save\",\"type\":\"Button\",\"props\":{\"label\":\"Save number\",\"tone\":\"primary\",\"on_press\":{\"action\":\"save_phone\"}}}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 2419,
+      "ms_total": 3978,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 438,
+      "cache_write_tokens": 505,
+      "cache_read_tokens": 7562,
+      "ending": "done",
+      "text": "Please enter the new phone number in the field above, then tap **Save number**."
+    },
+    {
+      "prompt": "ru-phone-form",
+      "locale": "ru",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"root\":\"card\",\"surface\":\"phone\",\"components\":[{\"id\":\"card\",\"type\":\"Card\",\"props\":{\"title\":\"Номер для уведомлений\",\"tone\":\"plain\"},\"children\":[\"text\",\"phone\",\"save\"]},{\"id\":\"text\",\"type\":\"Text\",\"props\":{\"text\":\"Введите новый номер телефона, на который будут приходить уведомления об оплате.\",\"style\":\"body\"},\"children\":[]},{\"id\":\"phone\",\"type\":\"Input\",\"props\":{\"label\":\"Новый номер телефона\",\"value\":\"/phone/new\",\"input\":\"phone\",\"placeholder\":\"+998 90 123 45 67\",\"required\":true},\"children\":[]},{\"id\":\"save\",\"type\":\"Button\",\"props\":{\"label\":\"Сохранить\",\"tone\":\"primary\",\"on_press\":{\"action\":\"save_phone\"}},\"children\":[]}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 2662,
+      "ms_total": 3477,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 505,
+      "cache_write_tokens": 994,
+      "cache_read_tokens": 7588,
+      "ending": "done",
+      "text": "Введите новый номер телефона в поле на экране и нажмите «Сохранить»."
+    },
+    {
+      "prompt": "uz-cyrl-phone-form",
+      "locale": "uz-Cyrl",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"root\":\"card_phone\",\"surface\":\"phone_change\",\"components\":[{\"id\":\"card_phone\",\"type\":\"Card\",\"props\":{\"title\":\"Телефон рақамини ўзгартириш\",\"subtitle\":\"Тўлов хабарлари шу рақамга юборилади\",\"tone\":\"info\"},\"children\":[\"in_phone\",\"btn_save\"]},{\"id\":\"in_phone\",\"type\":\"Input\",\"props\":{\"label\":\"Янги телефон рақам\",\"value\":\"/phone/new\",\"input\":\"phone\",\"placeholder\":\"+998 90 123 45 67\",\"required\":true,\"max_length\":20}},{\"id\":\"btn_save\",\"type\":\"Button\",\"props\":{\"label\":\"Сақлаш\",\"tone\":\"primary\",\"on_press\":{\"action\":\"save_phone\"}}}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 3028,
+      "ms_total": 4226,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 538,
+      "cache_write_tokens": 861,
+      "cache_read_tokens": 7634,
+      "ending": "done",
+      "text": "Янги телефон рақамини киритинг ва «Сақлаш» тугмасини босинг."
+    },
+    {
+      "prompt": "uz-latn-phone-form",
+      "locale": "uz-Latn",
+      "category": "phone-form",
+      "expect": "ui",
+      "variant": "tools",
+      "attempts": [
+        {
+          "tool": "show_ui",
+          "ok": true,
+          "problems": [],
+          "call": "{\"root\":\"card\",\"surface\":\"phone\",\"components\":[{\"id\":\"card\",\"type\":\"Card\",\"props\":{\"title\":\"Telefon raqamini o'zgartirish\",\"subtitle\":\"To'lov xabarlari shu raqamga yuboriladi\",\"tone\":\"info\"},\"children\":[\"phone_in\",\"save_btn\"]},{\"id\":\"phone_in\",\"type\":\"Input\",\"props\":{\"label\":\"Yangi telefon raqami\",\"value\":\"/phone\",\"input\":\"phone\",\"placeholder\":\"+998 90 123 45 67\",\"required\":true}},{\"id\":\"save_btn\",\"type\":\"Button\",\"props\":{\"label\":\"Saqlash\",\"tone\":\"primary\",\"on_press\":{\"action\":\"save_phone\"}}}]}"
+        }
+      ],
+      "opened": true,
+      "ms_to_open": 2283,
+      "ms_total": 3120,
+      "model_calls": 2,
+      "input_tokens": 6,
+      "output_tokens": 429,
+      "cache_write_tokens": 478,
+      "cache_read_tokens": 7628,
+      "ending": "done",
+      "text": "Yangi telefon raqamini kiriting va \"Saqlash\" tugmasini bosing."
+    }
+  ]
+}
