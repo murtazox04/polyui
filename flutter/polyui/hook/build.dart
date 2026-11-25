@@ -1,7 +1,10 @@
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
+import 'package:crypto/crypto.dart';
 import 'package:hooks/hooks.dart';
+
+import 'prebuilt.dart';
 
 const libraryName = 'polyui_ffi';
 const assetName = 'polyui_ffi';
@@ -13,22 +16,25 @@ void main(List<String> arguments) async {
       return;
     }
     final code = input.config.code;
-    final workspace = rustWorkspace(input);
     final target = RustTarget.of(code);
-    final cargo = findCargo();
-    await ensureRustTarget(cargo, target.triple);
-
-    final built = await runCargo(
-      cargo: cargo,
-      workspace: workspace,
-      target: target,
-      code: code,
-    );
-
     final bundled = input.outputDirectory.resolve(
       code.targetOS.dylibFileName(libraryName),
     );
-    await File.fromUri(built).copy(bundled.toFilePath());
+    final workspace = rustWorkspace(input);
+    if (workspace == null) {
+      await downloadPrebuilt(input, target, bundled);
+    } else {
+      final cargo = findCargo();
+      await ensureRustTarget(cargo, target.triple);
+      final built = await runCargo(
+        cargo: cargo,
+        workspace: workspace,
+        target: target,
+        code: code,
+      );
+      await File.fromUri(built).copy(bundled.toFilePath());
+      output.dependencies.addAll(rustSources(workspace));
+    }
 
     output.assets.code.add(
       CodeAsset(
@@ -38,25 +44,102 @@ void main(List<String> arguments) async {
         file: bundled,
       ),
     );
-    output.dependencies.addAll(rustSources(workspace));
   });
 }
 
-Uri rustWorkspace(BuildInput input) {
+Uri? rustWorkspace(BuildInput input) {
   final configured = input.userDefines.path('rust_workspace');
   final candidate = configured ?? input.packageRoot.resolve('../../');
   final directory = candidate.path.endsWith('/')
       ? candidate
       : Uri.directory(candidate.toFilePath());
   final manifest = File.fromUri(directory.resolve('bindings/ffi/Cargo.toml'));
-  if (!manifest.existsSync()) {
+  if (manifest.existsSync()) {
+    return directory;
+  }
+  if (configured != null) {
     throw StateError(
       'polyui could not find the Rust workspace at ${directory.toFilePath()}. '
-      'Set hooks.user_defines.polyui.rust_workspace in your app pubspec to '
-      'the folder that holds bindings/ffi.',
+      'hooks.user_defines.polyui.rust_workspace must point to the folder '
+      'that holds bindings/ffi.',
     );
   }
-  return directory;
+  return null;
+}
+
+String prebuiltFileName(RustTarget target, OS os) =>
+    os.dylibFileName('$libraryName-${target.triple}');
+
+Uri prebuiltBase(BuildInput input) {
+  final configured = input.userDefines['prebuilt_url'];
+  if (configured == null) {
+    return Uri.parse(
+      'https://github.com/murtazox04/polyui/releases/download/'
+      'v$prebuiltVersion/',
+    );
+  }
+  final text = configured is String ? configured.trim() : '';
+  final base = Uri.tryParse(text.endsWith('/') ? text : '$text/');
+  if (base == null || (base.scheme != 'https' && base.scheme != 'file')) {
+    throw StateError(
+      'hooks.user_defines.polyui.prebuilt_url must be an https or file URL '
+      'of a folder that holds the libpolyui_ffi files of a PolyUI release.',
+    );
+  }
+  return base;
+}
+
+Future<void> downloadPrebuilt(
+  BuildInput input,
+  RustTarget target,
+  Uri bundled,
+) async {
+  final fileName = prebuiltFileName(target, input.config.code.targetOS);
+  final expected = prebuiltHashes[fileName];
+  if (expected == null) {
+    throw StateError(
+      'polyui $prebuiltVersion has no prebuilt library for ${target.triple}. '
+      'Build it from source by cloning https://github.com/murtazox04/polyui '
+      'and setting hooks.user_defines.polyui.rust_workspace in your app '
+      'pubspec to that folder.',
+    );
+  }
+  final file = File.fromUri(bundled);
+  if (file.existsSync() &&
+      sha256.convert(await file.readAsBytes()).toString() == expected) {
+    return;
+  }
+  final uri = prebuiltBase(input).resolve(fileName);
+  final bytes = await fetch(uri);
+  final actual = sha256.convert(bytes).toString();
+  if (actual != expected) {
+    throw StateError(
+      'polyui fetched $uri but its SHA-256 is $actual, '
+      'expected $expected. The file was not used.',
+    );
+  }
+  await file.writeAsBytes(bytes, flush: true);
+}
+
+Future<List<int>> fetch(Uri uri) async {
+  if (uri.scheme == 'file') {
+    return File.fromUri(uri).readAsBytes();
+  }
+  final client = HttpClient()..findProxy = HttpClient.findProxyFromEnvironment;
+  try {
+    final response = await (await client.getUrl(uri)).close();
+    if (response.statusCode != HttpStatus.ok) {
+      throw HttpException(
+        'polyui could not download $uri (HTTP ${response.statusCode})',
+        uri: uri,
+      );
+    }
+    final bytes = <int>[];
+    await response.forEach(bytes.addAll);
+    return bytes;
+  } finally {
+    client.close(force: true);
+  }
 }
 
 String findCargo() {
@@ -286,11 +369,7 @@ List<Uri> rustSources(Uri workspace) {
     workspace.resolve('Cargo.lock'),
     workspace.resolve('rust-toolchain.toml'),
   ];
-  for (final folder in [
-    'bindings/ffi',
-    'crates/polyui-core',
-    'spec/catalogs',
-  ]) {
+  for (final folder in ['bindings/ffi', 'crates/polyui-core']) {
     final directory = Directory.fromUri(workspace.resolve('$folder/'));
     if (!directory.existsSync()) {
       continue;
