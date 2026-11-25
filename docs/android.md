@@ -46,7 +46,7 @@ Measured on this machine, Rust 1.100, release profile (fat LTO, one codegen unit
 | armeabi-v7a | 411 kB | 465 kB |
 | x86_64 | 666 kB | 779 kB |
 
-The numbers are the stripped `libpolyui_jni.so` inside the release APK of the example, which holds the JNI shim and the whole core. `lite` saves about 95 kB on arm64, so the build uses it. The release APK of the example, with Compose and all three ABIs, is 3.4 MB.
+The numbers are the stripped `libpolyui_jni.so` inside the release APK of the example, which holds the JNI shim and the whole core. `lite` saves about 95 kB on arm64, so the build uses it. The release APK of the example, with Compose and all three ABIs, was 3.4 MB before MCP Apps, live mode and listening, and is 3.7 MB now.
 
 ## Why the JNI shim is C
 
@@ -307,6 +307,6 @@ The embed screenshots at the top of [Embedded MCP Apps](#embedded-mcp-apps) come
 - The forecast and tariff apps keep their own light colors in dark mode. The page does not pass the host's theme to the app yet.
 - `tools/call`, `resources/read` and `ui/update-model-context` from an app are refused by the page, the same as on the web.
 - The live mode does not reconnect by itself. Choose "Connect to polyui serve" again after the server restarts.
-- The release build of the example was not built again after these changes (it was stopped while Gradle was downloading the release tooling on a slow connection), so R8 rules for OkHttp and AndroidX WebKit were not checked.
+- The release build with R8 was built and run on the emulator: the forecast app drew in the WebView, its button reached the replay as a `ui.action` and the reply came back, with no missing-class errors in logcat. Live mode was not tried in the release build, so OkHttp under R8 is only covered by its own shipped rules.
 - No x86 (32-bit) ABI.
 - The emulator runs Android 15 (API 35) with WebView 124. Nothing was run on Android 16 or 17 or on a physical phone.
