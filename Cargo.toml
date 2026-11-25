@@ -31,6 +31,10 @@ rust-version = "1.88"
 license = "Apache-2.0"
 repository = "https://github.com/murtazox04/polyui"
 authors = ["Murtazo Xurramov"]
+homepage = "https://murtazox04.github.io/polyui/"
+readme = "README.md"
+keywords = ["llm", "agents", "generative-ui", "mcp", "tool-use"]
+categories = ["gui", "web-programming"]
 
 [workspace.dependencies]
 polyui-core = { path = "crates/polyui-core", version = "0.1.0" }

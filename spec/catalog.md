@@ -2,7 +2,7 @@
 
 A catalog is one JSON file. It lists component types and the rules for their props. The server uses it to check model output and to generate tool schemas. Renderers use it to know what they must draw. The same file is the source of truth in every language, so there is nothing to keep in sync by hand.
 
-PolyUI ships three catalogs: [`core`](catalogs/core.json), [`chart`](catalogs/chart.json) and [`embed`](catalogs/embed.json). `embed` is off unless the host turns it on (see [Embedding MCP Apps](../docs/embed.md)), so the catalogs offered to a model by default are `core` and `chart`. Hosts add their own with a namespace, for example `acme`.
+PolyUI ships three catalogs: [`core`](https://github.com/murtazox04/polyui/blob/main/crates/polyui-core/catalogs/core.json), [`chart`](https://github.com/murtazox04/polyui/blob/main/crates/polyui-core/catalogs/chart.json) and [`embed`](https://github.com/murtazox04/polyui/blob/main/crates/polyui-core/catalogs/embed.json). `embed` is off unless the host turns it on (see [Embedding MCP Apps](../docs/embed.md)), so the catalogs offered to a model by default are `core` and `chart`. Hosts add their own with a namespace, for example `acme`.
 
 ## Shape
 

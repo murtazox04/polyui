@@ -16,6 +16,7 @@
 - [iOS](docs/ios.md)
 - [Android](docs/android.md)
 - [Flutter](docs/flutter.md)
+- [Releasing](docs/releasing.md)
 
 # Reference
 
