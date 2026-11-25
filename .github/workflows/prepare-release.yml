@@ -1,0 +1,226 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to prepare, without the v (for example 0.1.0)
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - .github/workflows/prepare-release.yml
+      - scripts/release/**
+      - swift/build-xcframework.sh
+      - swift/release-manifest.sh
+      - flutter/polyui/hook/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepare-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_RELEASE_STRIP: debuginfo
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read the version and check every manifest carries it
+        id: version
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          version="${REQUESTED:-$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)}"
+          bash scripts/release/check-versions.sh "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Refuse a version that is already tagged
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "Prepare a release from main, not $GITHUB_REF" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already tagged" >&2
+            exit 1
+          fi
+
+  apple:
+    name: Apple libraries and PolyUICore.xcframework
+    needs: version
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the toolchain and the Apple targets
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios \
+            aarch64-apple-ios-macabi x86_64-apple-ios-macabi aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build PolyUICore.xcframework for the Swift package
+        run: bash swift/build-xcframework.sh
+      - name: Check the release Package.swift builds for iOS and Mac Catalyst
+        run: |
+          bash swift/release-manifest.sh --local swift/PolyUI/PolyUICore.xcframework
+          xcodebuild -scheme PolyUI -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/spm" build -quiet
+          xcodebuild -scheme PolyUI -destination 'generic/platform=macOS,variant=Mac Catalyst' -derivedDataPath "$RUNNER_TEMP/spm" build -quiet
+          rm Package.swift
+      - name: Zip the xcframework and compute its SwiftPM checksum
+        run: |
+          mkdir -p out
+          (cd swift/PolyUI && ditto -c -k --sequesterRsrc --keepParent PolyUICore.xcframework "$GITHUB_WORKSPACE/out/PolyUICore.xcframework.zip")
+          (cd swift/PolyUI && swift package compute-checksum "$GITHUB_WORKSPACE/out/PolyUICore.xcframework.zip") > out/PolyUICore.xcframework.zip.checksum
+          cat out/PolyUICore.xcframework.zip.checksum
+      - name: Build the Flutter libraries for iOS and macOS
+        env:
+          CARGO_TARGET_DIR: target/flutter
+          IPHONEOS_DEPLOYMENT_TARGET: "13.0"
+          MACOSX_DEPLOYMENT_TARGET: "10.15"
+        run: |
+          for triple in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --release --locked --lib -p polyui-ffi --features lite --target "$triple"
+            cp "target/flutter/$triple/release/libpolyui_ffi.dylib" "out/libpolyui_ffi-$triple.dylib"
+          done
+          ls -l out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: prepared-apple
+          path: out/
+          if-no-files-found: error
+
+  linux:
+    name: Flutter library for ${{ matrix.triple }}
+    needs: version
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - triple: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - triple: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - name: Build the Flutter library
+        run: |
+          cargo build --release --locked --lib -p polyui-ffi --features lite --target "${{ matrix.triple }}"
+          mkdir -p out
+          cp "target/${{ matrix.triple }}/release/libpolyui_ffi.so" "out/libpolyui_ffi-${{ matrix.triple }}.so"
+          ls -l out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: prepared-${{ matrix.triple }}
+          path: out/
+          if-no-files-found: error
+
+  android:
+    name: Flutter libraries for Android
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the toolchain, the Android targets and cargo-ndk
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+          cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Build the Flutter libraries
+        env:
+          ANDROID_MIN_API: "21"
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          mkdir -p out
+          for pair in arm64-v8a:aarch64-linux-android armeabi-v7a:armv7-linux-androideabi x86_64:x86_64-linux-android x86:i686-linux-android; do
+            abi="${pair%%:*}"
+            triple="${pair##*:}"
+            cargo ndk --target "$abi" --platform "$ANDROID_MIN_API" build --release --locked --lib -p polyui-ffi --features lite
+            cp "target/$triple/release/libpolyui_ffi.so" "out/libpolyui_ffi-$triple.so"
+          done
+          ls -l out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: prepared-android
+          path: out/
+          if-no-files-found: error
+
+  draft:
+    name: Pin the binaries and draft the GitHub release
+    needs: [version, apple, linux, android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: prepared-*
+          path: release
+          merge-multiple: true
+      - name: Pin the Flutter libraries and write the release Package.swift
+        run: |
+          checksum="$(tr -d '[:space:]' < release/PolyUICore.xcframework.zip.checksum)"
+          rm release/PolyUICore.xcframework.zip.checksum
+          bash scripts/release/pin-flutter-prebuilt.sh "$VERSION" release
+          bash swift/release-manifest.sh "$VERSION" "$checksum"
+          (cd release && sha256sum -- * > SHA256SUMS)
+          cat release/SHA256SUMS
+          git add Package.swift flutter/polyui/hook/prebuilt.dart
+          git diff --cached --stat
+          git diff --cached -- flutter/polyui/hook/prebuilt.dart Package.swift
+      - uses: actions/attest-build-provenance@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          subject-path: release/*
+      - name: Commit the pins to main
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          name="$(gh api "users/$ACTOR" --jq '.name // .login')"
+          git config user.name "$name"
+          git config user.email "$ACTOR_ID+$ACTOR@users.noreply.github.com"
+          git commit -m "Pin the binaries for release $VERSION"
+          git push origin HEAD:main
+          echo "PINNED=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Draft the GitHub release with the binaries
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release delete "v$VERSION" --yes
+          fi
+          bash scripts/release/notes.sh "$VERSION" > "$RUNNER_TEMP/notes.md"
+          gh release create "v$VERSION" release/* --draft --target "$PINNED" \
+            --title "PolyUI $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          {
+            echo "### Release $VERSION is prepared"
+            echo
+            echo "The pins are on main at \`$PINNED\` and the draft release holds the binaries."
+            echo "Publish by tagging that commit:"
+            echo
+            echo '```sh'
+            echo "git fetch origin && git tag v$VERSION $PINNED && git push origin v$VERSION"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
