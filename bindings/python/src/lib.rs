@@ -4,6 +4,7 @@ mod convert;
 mod errors;
 mod functions;
 mod host;
+mod stream;
 mod surface;
 mod validator;
 
@@ -19,6 +20,7 @@ fn polyui(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<surface::PyUpdate>()?;
     module.add_class::<surface::PyPrepared>()?;
     module.add_class::<client::PyClient>()?;
+    module.add_class::<stream::PyShowStream>()?;
     module.add_function(wrap_pyfunction!(functions::tool_definitions, module)?)?;
     module.add_function(wrap_pyfunction!(functions::open_message, module)?)?;
     module.add_function(wrap_pyfunction!(functions::patch_message, module)?)?;

@@ -2,7 +2,8 @@ use polyui_chart::{ChartOptions, ChartSpec};
 use polyui_core::catalog::EMBED_ID;
 use polyui_core::embed::{self, UiResource};
 use polyui_core::pointer;
-use polyui_core::protocol::{Close, Component, DataUpdate, Message, Open, Patch};
+use polyui_core::protocol::{Close, Component, DataOp, DataUpdate, Message, Open, Patch};
+use polyui_core::stream::{ShowUiStream, StreamEvent};
 use polyui_core::tools::{ToolOptions, ToolProfile};
 use polyui_core::validate::{
     self, Location, Operation, Problem, Problems, SealedAction, Surface, Update, Validator,
@@ -414,6 +415,352 @@ pub fn prepare_show(
         seq: 1,
         touched: Vec::new(),
     })
+}
+
+pub struct ShowStream {
+    stream: ShowUiStream,
+    dead: bool,
+    named: Option<String>,
+    root: Option<String>,
+    model: Vec<Component>,
+    prepared: Vec<Component>,
+    actions: Vec<SealedAction>,
+    opened: Option<Opened>,
+}
+
+#[derive(Clone)]
+struct Opened {
+    client: Surface,
+    seq: u64,
+}
+
+impl Default for ShowStream {
+    fn default() -> Self {
+        Self {
+            stream: ShowUiStream::new(Limits::default()),
+            dead: false,
+            named: None,
+            root: None,
+            model: Vec::new(),
+            prepared: Vec::new(),
+            actions: Vec::new(),
+            opened: None,
+        }
+    }
+}
+
+fn reachable(root: &str, components: &[Component]) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    let mut pending = vec![root.to_string()];
+    while let Some(id) = pending.pop() {
+        if seen.contains(&id) {
+            continue;
+        }
+        if let Some(component) = components.iter().find(|component| component.id == id) {
+            pending.extend(component.children.iter().cloned());
+        }
+        seen.push(id);
+    }
+    seen
+}
+
+fn data_changes(before: &Map<String, Value>, after: &Map<String, Value>) -> Vec<DataOp> {
+    let removed = before
+        .keys()
+        .filter(|key| !after.contains_key(*key))
+        .map(|key| DataOp::Remove {
+            path: format!("/{}", pointer::escape_token(key)),
+        });
+    let changed = after
+        .iter()
+        .filter(|(key, value)| before.get(*key) != Some(*value))
+        .map(|(key, value)| DataOp::Set {
+            path: format!("/{}", pointer::escape_token(key)),
+            value: value.clone(),
+        });
+    removed.chain(changed).collect()
+}
+
+pub struct StreamContext<'a, 'b> {
+    pub settings: &'a Settings,
+    pub refs: &'a dyn RefResolver,
+    pub surface_id: Option<&'a str>,
+    pub view: &'a View<'a>,
+    pub next_id: &'b mut dyn FnMut() -> String,
+    pub read: &'b mut ReadApp<'b>,
+}
+
+impl ShowStream {
+    pub fn opened(&self) -> Option<&str> {
+        self.opened
+            .as_ref()
+            .and_then(|opened| opened.client.id.as_deref())
+    }
+
+    pub fn seq(&self) -> u64 {
+        self.opened.as_ref().map_or(0, |opened| opened.seq)
+    }
+
+    pub fn stopped(&self) -> bool {
+        self.dead
+    }
+
+    pub fn text(&self) -> &str {
+        self.stream.text()
+    }
+
+    pub fn close_message(&self) -> Option<Value> {
+        let opened = self.opened.as_ref()?;
+        let id = opened.client.id.as_deref()?;
+        Some(close_message(id, opened.seq + 1))
+    }
+
+    pub fn feed(&mut self, context: &mut StreamContext<'_, '_>, chunk: &str) -> Vec<Value> {
+        if self.dead {
+            return Vec::new();
+        }
+        let validator = context.settings.validator(context.refs);
+        let mut fresh = Vec::new();
+        for event in self.stream.feed(&validator, chunk) {
+            match event {
+                StreamEvent::Surface(id) => self.named = Some(id),
+                StreamEvent::Root(id) => self.root = Some(id),
+                StreamEvent::Component { component, .. } => fresh.push(component),
+                StreamEvent::Rejected { .. } | StreamEvent::Invalid(_) => {
+                    self.dead = true;
+                    return Vec::new();
+                }
+                StreamEvent::Data(_) => {}
+            }
+        }
+        if !fresh.is_empty() && !self.accept(context, fresh) {
+            self.dead = true;
+            return Vec::new();
+        }
+        self.publish(context)
+    }
+
+    fn accept(&mut self, context: &mut StreamContext<'_, '_>, fresh: Vec<Component>) -> bool {
+        let Ok(mut prepared) = context
+            .settings
+            .resolve(&fresh, context.refs, Operation::Show)
+        else {
+            return false;
+        };
+        let empty = Value::Object(Map::new());
+        let mut problems = attach_scenes(&mut prepared, &empty, "components", &context.view.chart);
+        if context.view.draws_embeds() {
+            problems.extend(attach_apps(&mut prepared, "components", context.read));
+        }
+        if !problems.is_empty() {
+            return false;
+        }
+        let sealed = context.settings.seal(&mut prepared, context.next_id);
+        self.model.extend(fresh);
+        self.prepared.extend(prepared);
+        self.actions.extend(sealed);
+        true
+    }
+
+    fn publish(&mut self, context: &StreamContext<'_, '_>) -> Vec<Value> {
+        let locale = context.view.locale();
+        let Some(opened) = self.opened.as_mut() else {
+            let Some(root) = self.root.clone() else {
+                return Vec::new();
+            };
+            if !self.model.iter().any(|component| component.id == root) {
+                return Vec::new();
+            }
+            let id = self
+                .named
+                .clone()
+                .or_else(|| context.surface_id.map(str::to_string))
+                .unwrap_or_else(|| DEFAULT_SURFACE.to_string());
+            let shown = reachable(&root, &self.prepared);
+            let client = Surface {
+                id: Some(id.clone()),
+                root,
+                components: self
+                    .prepared
+                    .iter()
+                    .filter(|component| shown.contains(&component.id))
+                    .cloned()
+                    .collect(),
+                data: Map::new(),
+            };
+            let view = context
+                .settings
+                .client_view(&client, context.view.declared, locale);
+            let fallback = client.fallback(&context.settings.catalogs, locale);
+            let message = open_message(&id, &view, 1, Some(fallback));
+            self.opened = Some(Opened { client, seq: 1 });
+            return vec![message];
+        };
+        let fresh: Vec<Component> = self
+            .prepared
+            .iter()
+            .filter(|component| opened.client.get(&component.id).is_none())
+            .cloned()
+            .collect();
+        if fresh.is_empty() {
+            return Vec::new();
+        }
+        opened.client.components.extend(fresh.iter().cloned());
+        let view = context
+            .settings
+            .client_view(&opened.client, context.view.declared, locale);
+        let upsert: Vec<Component> = view
+            .components
+            .iter()
+            .filter(|component| fresh.iter().any(|added| added.id == component.id))
+            .cloned()
+            .collect();
+        opened.seq += 1;
+        let id = opened.client.id.clone().unwrap_or_default();
+        vec![patch_message(&id, opened.seq, upsert, Vec::new(), None)]
+    }
+
+    pub fn finish(
+        &self,
+        context: &mut StreamContext<'_, '_>,
+        input: Option<&Input>,
+    ) -> Result<Prepared, Problems> {
+        let streamed_text;
+        let input = match input {
+            Some(input) => input,
+            None => {
+                streamed_text = Input::Text(self.stream.text().to_string());
+                &streamed_text
+            }
+        };
+        let Some(opened) = self.opened.clone() else {
+            return prepare_show(
+                context.settings,
+                input,
+                context.refs,
+                context.surface_id,
+                context.view,
+                context.next_id,
+                context.read,
+            );
+        };
+        let mut model = context.settings.show_ui(input)?;
+        let id = opened.client.id.clone().unwrap_or_default();
+        if model.id.as_deref().is_some_and(|named| named != id) {
+            return Err(Problems {
+                operation: Operation::Show,
+                items: vec![Problem::new(
+                    Location::Field("surface".into()),
+                    format!("The surface id changed from \"{id}\" while streaming."),
+                )],
+            });
+        }
+        let data = model.data_value();
+        let mut client = model.clone();
+        let mut actions = Vec::new();
+        let mut positions = Vec::new();
+        let mut fresh = Vec::new();
+        for (index, component) in model.components.iter().enumerate() {
+            let earlier = self
+                .model
+                .iter()
+                .position(|seen| seen == component)
+                .filter(|_| component.type_name != CHART_TYPE || model.data.is_empty());
+            match earlier {
+                Some(at) => {
+                    client.components[index] = self.prepared[at].clone();
+                    actions.extend(
+                        self.actions
+                            .iter()
+                            .filter(|action| action.component == component.id)
+                            .cloned(),
+                    );
+                }
+                None => {
+                    positions.push(index);
+                    fresh.push(component.clone());
+                }
+            }
+        }
+        if !fresh.is_empty() {
+            let mut prepared = context
+                .settings
+                .resolve(&fresh, context.refs, Operation::Show)
+                .map_err(|problems| reindex(problems, &positions))?;
+            let mut problems =
+                attach_scenes(&mut prepared, &data, "components", &context.view.chart);
+            if context.view.draws_embeds() {
+                problems.extend(attach_apps(&mut prepared, "components", context.read));
+            }
+            fail(Operation::Show, problems).map_err(|problems| reindex(problems, &positions))?;
+            actions.extend(context.settings.seal(&mut prepared, context.next_id));
+            for (index, component) in positions.into_iter().zip(prepared) {
+                client.components[index] = component;
+            }
+        }
+        model.id = Some(id.clone());
+        client.id = Some(id.clone());
+        let locale = context.view.locale();
+        let before = context
+            .settings
+            .client_view(&opened.client, context.view.declared, locale);
+        let after = context
+            .settings
+            .client_view(&client, context.view.declared, locale);
+        let mut seq = opened.seq;
+        let mut messages = Vec::new();
+        let ops = data_changes(&before.data, &after.data);
+        if !ops.is_empty() {
+            seq += 1;
+            messages.push(
+                Message::Data(DataUpdate {
+                    surface: id.clone(),
+                    seq,
+                    ops,
+                })
+                .to_value(),
+            );
+        }
+        let upsert: Vec<Component> = after
+            .components
+            .iter()
+            .filter(|component| before.get(&component.id) != Some(*component))
+            .cloned()
+            .collect();
+        let remove: Vec<String> = before
+            .components
+            .iter()
+            .filter(|component| after.get(&component.id).is_none())
+            .map(|component| component.id.clone())
+            .collect();
+        let root = (after.root != before.root).then(|| after.root.clone());
+        if !upsert.is_empty() || !remove.is_empty() || root.is_some() {
+            seq += 1;
+            messages.push(patch_message(&id, seq, upsert, remove, root));
+        }
+        let summary = model.summary(&id, &context.settings.catalogs, locale);
+        Ok(Prepared {
+            surface_id: id,
+            model,
+            client,
+            messages,
+            summary,
+            actions,
+            seq,
+            touched: Vec::new(),
+        })
+    }
+}
+
+fn reindex(mut problems: Problems, positions: &[usize]) -> Problems {
+    for problem in &mut problems.items {
+        if let Location::Item { index, .. } = &mut problem.location
+            && let Some(position) = positions.get(*index)
+        {
+            *index = *position;
+        }
+    }
+    problems
 }
 
 pub struct Current<'a> {

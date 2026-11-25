@@ -1,9 +1,10 @@
 use crate::catalogs::Catalogs;
 use crate::errors::{catalog_error, is_refusal, is_thenable, validation_error};
 use crate::host::{
-    self, Current, Input, Settings, SourceRefs, View, action_id, attach_apps, attach_scenes,
-    chart_options,
+    self, Current, Input, Settings, SourceRefs, StreamContext, View, action_id, attach_apps,
+    attach_scenes, chart_options,
 };
+use crate::stream::ShowStream;
 use crate::surface::{Prepared, Surface, Update, sealed_list};
 use napi::bindgen_prelude::{FnArgs, Function, FunctionRef, Unknown};
 use napi::{Env, Error, JsError, Result, Status, ValueType};
@@ -570,6 +571,101 @@ impl Validator {
                 &mut |uri| apps.read(uri),
             )
         });
+        apps.finish()?;
+        let prepared = prepared?;
+        ids.finish()?;
+        Ok(Prepared { inner: prepared })
+    }
+
+    #[napi]
+    pub fn feed_show<'a>(
+        &self,
+        env: &'a Env,
+        stream: &mut ShowStream,
+        chunk: String,
+        options: Option<PrepareOptions<'a>>,
+    ) -> Result<Vec<Value>> {
+        if stream.finished {
+            return Err(Error::new(
+                Status::GenericFailure,
+                "this stream is already finished",
+            ));
+        }
+        let options = options.unwrap_or(PrepareOptions {
+            user: None,
+            surface_id: None,
+            declared: None,
+            locale: None,
+            next_id: None,
+            refs: None,
+        });
+        let given = given(options.refs)?;
+        let locale = options.locale.unwrap_or_else(|| "en".into());
+        let view = View::new(options.declared.as_deref(), &locale);
+        let mut ids = Ids::new(options.next_id);
+        let surface_id = options.surface_id;
+        let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
+        let messages = self.with_refs(env, options.user, given.as_ref(), |refs| {
+            let mut next = || ids.next();
+            let mut read = |uri: &str| apps.read(uri);
+            let mut context = StreamContext {
+                settings: &self.settings,
+                refs,
+                surface_id: surface_id.as_deref(),
+                view: &view,
+                next_id: &mut next,
+                read: &mut read,
+            };
+            Ok(stream.inner.feed(&mut context, &chunk))
+        })?;
+        apps.finish()?;
+        ids.finish()?;
+        Ok(messages)
+    }
+
+    #[napi]
+    pub fn finish_show<'a>(
+        &self,
+        env: &'a Env,
+        stream: &mut ShowStream,
+        payload: Option<Value>,
+        options: Option<PrepareOptions<'a>>,
+    ) -> Result<Prepared> {
+        if stream.finished {
+            return Err(Error::new(
+                Status::GenericFailure,
+                "this stream is already finished",
+            ));
+        }
+        let options = options.unwrap_or(PrepareOptions {
+            user: None,
+            surface_id: None,
+            declared: None,
+            locale: None,
+            next_id: None,
+            refs: None,
+        });
+        let payload = payload.filter(|value| !value.is_null()).map(input);
+        let given = given(options.refs)?;
+        let locale = options.locale.unwrap_or_else(|| "en".into());
+        let view = View::new(options.declared.as_deref(), &locale);
+        let mut ids = Ids::new(options.next_id);
+        let surface_id = options.surface_id;
+        let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
+        let prepared = self.with_refs(env, options.user, given.as_ref(), |refs| {
+            let mut next = || ids.next();
+            let mut read = |uri: &str| apps.read(uri);
+            let mut context = StreamContext {
+                settings: &self.settings,
+                refs,
+                surface_id: surface_id.as_deref(),
+                view: &view,
+                next_id: &mut next,
+                read: &mut read,
+            };
+            stream.inner.finish(&mut context, payload.as_ref())
+        });
+        stream.finished = true;
         apps.finish()?;
         let prepared = prepared?;
         ids.finish()?;
