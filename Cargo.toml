@@ -25,7 +25,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -37,10 +37,10 @@ keywords = ["llm", "agents", "generative-ui", "mcp", "tool-use"]
 categories = ["gui", "web-programming"]
 
 [workspace.dependencies]
-polyui-core = { path = "crates/polyui-core", version = "0.1.0" }
-polyui-chart = { path = "crates/polyui-chart", version = "0.1.0" }
-polyui-server = { path = "crates/polyui-server", version = "0.1.0" }
-polyui-query = { path = "crates/polyui-query", version = "0.1.0" }
+polyui-core = { path = "crates/polyui-core", version = "0.1.1" }
+polyui-chart = { path = "crates/polyui-chart", version = "0.1.1" }
+polyui-server = { path = "crates/polyui-server", version = "0.1.1" }
+polyui-query = { path = "crates/polyui-query", version = "0.1.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 

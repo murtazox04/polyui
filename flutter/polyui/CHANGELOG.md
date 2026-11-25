@@ -1,3 +1,7 @@
+## 0.1.1
+
+- Built from the same core as PolyUI 0.1.1. No change to the Flutter API.
+
 ## 0.1.0
 
 First release.
