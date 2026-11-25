@@ -231,6 +231,20 @@ JNIEXPORT jbyteArray JNICALL POLYUI_JNI(matchVoice)(JNIEnv *env, jclass type, jl
     return finish(env, result, error, slot);
 }
 
+JNIEXPORT jbyteArray JNICALL POLYUI_JNI(embedPage)(JNIEnv *env, jclass type, jbyteArray props,
+                                                    jbyteArray nonce, jobjectArray slot) {
+    (void)type;
+    jbyteArray inputs[] = {props, nonce};
+    char *texts[2];
+    if (!copy_all(env, inputs, texts, 2)) {
+        return NULL;
+    }
+    char *error = NULL;
+    char *result = polyui_embed_page(texts[0], texts[1], &error);
+    free_all(texts, 2);
+    return finish(env, result, error, slot);
+}
+
 JNIEXPORT void JNICALL POLYUI_JNI(clientFree)(JNIEnv *env, jclass type, jlong handle) {
     (void)env;
     (void)type;

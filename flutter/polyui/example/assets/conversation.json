@@ -6,7 +6,8 @@
     "session": "sess_example",
     "catalogs": [
       "core@1",
-      "chart@1"
+      "chart@1",
+      "embed@1"
     ]
   },
   "question": "What do we owe this month?",

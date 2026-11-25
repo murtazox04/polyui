@@ -23,6 +23,9 @@ class PolyuiSurfaceModel(
     var pendingConfirm: ConfirmRequest? by mutableStateOf(null)
         internal set
 
+    var pendingLink: PolyuiLinkRequest? by mutableStateOf(null)
+        private set
+
     var isClosed: Boolean by mutableStateOf(false)
         private set
 
@@ -101,6 +104,25 @@ class PolyuiSurfaceModel(
         if (structural) structureRevision += 1
     }
 
+    internal fun askLink(request: PolyuiLinkRequest): Boolean {
+        if (pendingLink != null || isClosed) {
+            request.settle(false)
+            return false
+        }
+        pendingLink = request
+        return true
+    }
+
+    internal fun answerLink(accepted: Boolean) {
+        val request = pendingLink ?: return
+        pendingLink = null
+        request.settle(accepted)
+    }
+
+    internal fun dropLinks(owner: Any) {
+        if (pendingLink?.owner === owner) answerLink(false)
+    }
+
     internal fun highlight(id: String?) {
         if (highlightedId == id) return
         highlightedId?.let { nodes[it]?.isHighlighted = false }
@@ -133,5 +155,6 @@ class PolyuiSurfaceModel(
         highlightedId = null
         pendingConfirm = null
         isClosed = true
+        answerLink(false)
     }
 }

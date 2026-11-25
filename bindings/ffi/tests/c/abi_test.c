@@ -108,6 +108,18 @@ int main(void) {
     check(contains(matched, "\"option\":\"visa\""), "match_voice picks the second option");
     polyui_string_free(matched);
 
+    char *page = polyui_embed_page("{\"resource\":\"ui://a/b\",\"title\":\"</script>\"}",
+                                   "abcdefghijklmnop0123", &error);
+    check(contains(page, "const nonce = \"abcdefghijklmnop0123\""), "embed_page puts the nonce in");
+    check(contains(page, "\\u003c/script\\u003e"), "embed_page escapes the props for a script");
+    polyui_string_free(page);
+
+    char *bad_page = polyui_embed_page("{}", "short", &error);
+    check(bad_page == NULL, "a short nonce gives no page");
+    check(contains(error, "nonce"), "a short nonce is named");
+    polyui_string_free(error);
+    error = NULL;
+
     char *null_client = polyui_client_say(NULL, "s1", &error);
     check(null_client == NULL, "a null client gives no result");
     check(contains(error, "the client is null"), "a null client is named");

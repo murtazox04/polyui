@@ -118,6 +118,47 @@ npx -y -p playwright node scripts/embed-check.mjs
 
 It launches the installed Google Chrome by default; set `PLAYWRIGHT_CHANNEL` to use another channel.
 
+## Native renderers
+
+iOS, Android and Flutter do not each rebuild the sandbox. They all load one page that the C ABI builds, `polyui_embed_page(props_json, nonce)`, into a web view. The page is `bindings/ffi/src/embed-page.html` with the component's props and a nonce filled in.
+
+```mermaid
+sequenceDiagram
+    participant N as Native renderer
+    participant P as Embed page (web view, main frame)
+    participant V as MCP App (inner frame)
+    N->>N: new random nonce for this page
+    N->>P: load polyui_embed_page(props, nonce)
+    P->>V: srcdoc with a CSP meta tag, sandbox=allow-scripts
+    V->>P: ui/initialize
+    P-->>V: protocol version, host info, host context
+    V->>P: ui/notifications/initialized
+    P-->>V: tool-input, then tool-result
+    P->>N: ready, height, message, open-link (each with the nonce)
+    N->>P: polyuiHost.update, answerLink, teardown
+```
+
+The page does the same work as the web sandbox page and the web renderer together:
+
+- The app runs in an inner frame with `sandbox="allow-scripts"` and the CSP from rule 4, built by the same code as the web sandbox page.
+- The page answers `ui/initialize`, `ping` and `ui/request-display-mode` itself, sends `tool-input` and `tool-result`, refuses everything else with `-32601`, and drops `ui/notifications/sandbox-*` methods.
+- It checks `ui/message` the same way the web renderer does (`on_message` present, text only, 4096 bytes, one per second) and clamps `size-changed` to the height hint.
+- It accepts `ui/open-link` only for `https` URLs without credentials, and only one at a time.
+
+What reaches the native side is a JSON string with `kind` set to `ready`, `height`, `message`, `open-link` or `unavailable`, sent through `window.webkit.messageHandlers.polyui` on iOS and `window.polyui` elsewhere. Every event carries the nonce. The app's frame can see the same bridge object on some platforms, but it cannot read the page's script, so it cannot know the nonce. The native side drops any event without it, and where the platform says which frame sent it, also any event that is not from the main frame.
+
+The native side still does the parts that need the person or the core: it fires `on_message` through the core `fire`, shows `open-link` URLs in its own confirm sheet before opening them outside the app and then calls `polyuiHost.answerLink`, and sizes the view from `height` after clamping it again. Props are put into the page's script as JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped, so a title like `</script>` cannot end the script.
+
+Where the web view is Chromium, load the page with a fixed `https` base URL such as `https://embed.polyui.invalid/`, not as `about:blank` content: desktop Chrome stopped with a failed check when the page came in that way. Android and Flutter do this. iOS loads it with no base URL, and WebKit draws the inner frame fine that way.
+
+`bindings/ffi/tests/embed/check.mjs` loads the page in Chromium with a fake bridge and checks the sandbox attribute, that the tool input reaches the app, that the app's `fetch` is blocked by `connect-src`, the clamped height, the message and its one-per-second limit, the link round trip, that plain `http` links are refused, that the app cannot forge an event with the nonce and that it cannot reach `polyuiHost`. CI runs it next to the C test.
+
+```sh
+cargo build -p polyui-ffi --example embed_page
+npx -y playwright@1.65.1 install chromium
+PLAYWRIGHT_CHANNEL=chromium npx -y -p playwright@1.65.1 node bindings/ffi/tests/embed/check.mjs
+```
+
 ## Server side
 
 `polyui-server` reads the app, checks it and fills `app`. Your host only has to say what a `ui://` URI stands for.

@@ -5,6 +5,31 @@ import 'package:flutter/material.dart';
 import '../core/render_batch.dart';
 import 'theme.dart';
 
+ModalBottomSheetRoute<bool> polyuiConfirmRoute(
+  BuildContext context, {
+  required ConfirmRequest request,
+  required PolyuiLabels labels,
+  required Duration delay,
+}) {
+  final localizations = MaterialLocalizations.of(context);
+  final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+  return ModalBottomSheetRoute<bool>(
+    builder: (context) => PolyuiConfirmRequestSheet(
+      request: request,
+      labels: labels,
+      delay: delay,
+    ),
+    isScrollControlled: true,
+    showDragHandle: true,
+    useSafeArea: true,
+    barrierLabel: localizations.scrimLabel,
+    barrierOnTapHint: localizations.scrimOnTapHint(
+      localizations.bottomSheetLabel,
+    ),
+    sheetAnimationStyle: reduce ? AnimationStyle.noAnimation : null,
+  );
+}
+
 class PolyuiConfirmRequestSheet extends StatefulWidget {
   const PolyuiConfirmRequestSheet({
     super.key,
@@ -83,7 +108,7 @@ class PolyuiConfirmRequestSheetState extends State<PolyuiConfirmRequestSheet>
     final request = widget.request;
     final body = request.body;
     final label = request.confirmLabel;
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,

@@ -261,10 +261,14 @@ class PolyuiLabels {
     this.confirmFallback = 'OK',
     this.expired = 'This request expired. Ask again to continue.',
     this.chartUnavailable = 'Chart unavailable',
+    this.openLinkTitle = 'Open this link?',
+    this.openLinkConfirm = 'Open link',
   });
 
   final String cancel;
   final String confirmFallback;
   final String expired;
   final String chartUnavailable;
+  final String openLinkTitle;
+  final String openLinkConfirm;
 }

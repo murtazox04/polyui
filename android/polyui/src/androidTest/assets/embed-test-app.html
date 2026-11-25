@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Embed test app</title>
+    <style>
+      html, body { margin: 0; height: 200px; overflow: hidden; font: 16px/1.4 sans-serif; background: #ffffff; color: #111111; }
+      p { margin: 4px 8px; }
+      button { margin: 4px 8px; padding: 8px 12px; font: inherit; }
+    </style>
+  </head>
+  <body>
+    <p>Embedded test app</p>
+    <p id="city">Waiting for the tool input</p>
+    <p id="summary">Waiting for the tool result.</p>
+    <button id="ask" type="button">Ask the assistant</button>
+    <button id="docs" type="button">Open the docs</button>
+    <p id="status">Nothing yet</p>
+    <script>
+      (() => {
+        const pending = new Map();
+        let nextId = 1;
+        const byId = (id) => document.getElementById(id);
+        const request = (method, params) => new Promise((resolve, reject) => {
+          const id = nextId++;
+          pending.set(id, { resolve, reject });
+          window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+        });
+        const notify = (method, params) => window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+        window.addEventListener("message", (event) => {
+          if (event.source !== window.parent) return;
+          const message = event.data;
+          if (!message || message.jsonrpc !== "2.0") return;
+          if (message.id !== undefined && pending.has(message.id) && !message.method) {
+            const { resolve, reject } = pending.get(message.id);
+            pending.delete(message.id);
+            if (message.error) reject(new Error(message.error.message));
+            else resolve(message.result);
+          } else if (message.method === "ui/notifications/tool-input") {
+            byId("city").textContent = `Tool input for ${message.params.arguments.city}`;
+          } else if (message.method === "ui/notifications/tool-result") {
+            byId("summary").textContent = message.params.content.map((block) => block.text).join(" ");
+          }
+        });
+        byId("ask").addEventListener("click", () => {
+          request("ui/message", { role: "user", content: [{ type: "text", text: "Also show Samarkand." }] })
+            .then(() => { byId("status").textContent = "Message sent"; })
+            .catch((error) => { byId("status").textContent = error.message; });
+        });
+        byId("docs").addEventListener("click", () => {
+          byId("status").textContent = "Asking to open the link";
+          request("ui/open-link", { url: "https://example.com/docs?from=polyui" })
+            .then(() => { byId("status").textContent = "Link opened"; })
+            .catch((error) => { byId("status").textContent = error.message; });
+        });
+        request("ui/initialize", { appInfo: { name: "Embed test app", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then(() => {
+          notify("ui/notifications/initialized", {});
+          notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
+        });
+      })();
+    </script>
+  </body>
+</html>

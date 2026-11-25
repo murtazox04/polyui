@@ -19,19 +19,29 @@ struct DemoScript {
     let step: String?
     let scroll: String?
     let instant: Bool
+    let voice: String?
 
     init(defaults: UserDefaults) {
         step = defaults.string(forKey: "PolyUIDemo")
         scroll = defaults.string(forKey: "PolyUIScroll")
         instant = defaults.bool(forKey: "PolyUIInstant")
+        voice = defaults.string(forKey: "PolyUIVoice")
     }
 
     @MainActor
     func run(on model: ChatModel) async {
         guard let step else { return }
+        if step == "forecast" {
+            model.ask(model.forecastQuestion)
+            return
+        }
         model.ask(model.question)
         guard await waitFor({ model.session.surface("s1").rootID != nil }) else { return }
         let session = model.session
+        if let voice {
+            try? await Task.sleep(for: .milliseconds(300))
+            model.hear(voice)
+        }
         if step == "select" || step == "pay" || step == "paid" {
             session.fire(surface: "s1", component: "usage", prop: "on_select", detail: ["row": 1])
         }

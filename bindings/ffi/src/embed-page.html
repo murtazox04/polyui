@@ -1,0 +1,230 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="referrer" content="no-referrer">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PolyUI embed</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+      iframe { display: block; width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <script>
+      (() => {
+        const nonce = "POLYUI_NONCE_SLOT";
+        let props = POLYUI_PROPS_SLOT;
+        const mimeType = "text/html;profile=mcp-app";
+        const bounds = { small: [160, 320], medium: [320, 640], large: [480, 960] };
+        const minHeight = 80;
+        const messageBytes = 4096;
+        const messageGapMs = 1000;
+        const reserved = "ui/notifications/sandbox-";
+        const cspKeys = ["connectDomains", "resourceDomains", "frameDomains", "baseUriDomains"];
+        const sourcePattern = /^(https|wss):\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*(:\d{1,5})?$/i;
+        const controlCharacters = /[\u0000- \u007f-\u009f]/;
+
+        const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+
+        const toNative = (event) => {
+          const text = JSON.stringify(Object.assign({}, event, { nonce }));
+          const handlers = window.webkit && window.webkit.messageHandlers;
+          if (handlers && handlers.polyui) handlers.polyui.postMessage(text);
+          else if (window.polyui && typeof window.polyui.postMessage === "function") window.polyui.postMessage(text);
+        };
+
+        const cleanCsp = (value) => {
+          const csp = {};
+          if (!isRecord(value)) return csp;
+          for (const key of cspKeys) {
+            const list = value[key];
+            if (!Array.isArray(list)) continue;
+            const kept = list.filter((item) => typeof item === "string" && sourcePattern.test(item)).slice(0, 32);
+            if (kept.length > 0) csp[key] = kept;
+          }
+          return csp;
+        };
+
+        const readApp = (value) => {
+          if (!isRecord(value)) return null;
+          const app = value.app;
+          if (!isRecord(app)) return null;
+          const resource = app.resource;
+          if (!isRecord(resource) || resource.mimeType !== mimeType || resource.uri !== value.resource || typeof resource.text !== "string") return null;
+          const meta = resource["_meta"];
+          const ui = isRecord(meta) ? meta.ui : undefined;
+          return {
+            html: resource.text,
+            csp: cleanCsp(isRecord(ui) ? ui.csp : undefined),
+            input: isRecord(app.tool_input) ? app.tool_input : {},
+            result: isRecord(app.tool_result) ? app.tool_result : null,
+          };
+        };
+
+        const policy = (csp) => {
+          const join = (key) => (csp[key] || []).join(" ");
+          const resources = join("resourceDomains");
+          return [
+            "default-src 'none'",
+            `script-src 'self' 'unsafe-inline' ${resources}`,
+            `style-src 'self' 'unsafe-inline' ${resources}`,
+            `img-src 'self' data: ${resources}`,
+            `media-src 'self' data: ${resources}`,
+            `font-src 'self' ${resources}`,
+            `connect-src ${join("connectDomains") || "'none'"}`,
+            `frame-src ${join("frameDomains") || "'none'"}`,
+            `base-uri ${join("baseUriDomains") || "'self'"}`,
+            "object-src 'none'",
+          ].map((directive) => directive.trim()).join("; ");
+        };
+
+        const withPolicy = (html, csp) => {
+          const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
+          const at = doctype ? doctype[0].length : 0;
+          const meta = `<meta http-equiv="Content-Security-Policy" content="${policy(csp)}">`;
+          return html.slice(0, at) + meta + html.slice(at);
+        };
+
+        const safeLink = (raw) => {
+          if (typeof raw !== "string" || raw.length === 0 || raw.length > 4096 || controlCharacters.test(raw)) return null;
+          let parsed;
+          try {
+            parsed = new URL(raw);
+          } catch {
+            return null;
+          }
+          if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "" || parsed.hostname === "") return null;
+          return parsed.href;
+        };
+
+        const messageText = (params) => {
+          if (!isRecord(params) || params.role !== "user") return "";
+          const content = params.content;
+          const blocks = Array.isArray(content) ? content : [content];
+          return blocks
+            .map((block) => (isRecord(block) && block.type === "text" && typeof block.text === "string" ? block.text : ""))
+            .filter((part) => part !== "")
+            .join("\n");
+        };
+
+        let app = readApp(props);
+        if (!app) {
+          toNative({ kind: "unavailable" });
+          return;
+        }
+
+        const inner = document.createElement("iframe");
+        inner.setAttribute("sandbox", "allow-scripts");
+        inner.setAttribute("referrerpolicy", "no-referrer");
+        inner.title = typeof props.title === "string" ? props.title : "";
+        let ready = false;
+        let inputSent = false;
+        let sentResult = "";
+        let lastMessage = -messageGapMs;
+        let pendingLink = null;
+
+        const maxHeight = () => (bounds[props.height] || bounds.medium)[1];
+        const post = (message) => {
+          if (inner.contentWindow) inner.contentWindow.postMessage(Object.assign({ jsonrpc: "2.0" }, message), "*");
+        };
+        const reply = (id, result) => post({ id, result });
+        const fail = (id, code, message) => post({ id, error: { code, message } });
+
+        const sendTool = () => {
+          if (!ready) return;
+          if (!inputSent) post({ method: "ui/notifications/tool-input", params: { arguments: app.input } });
+          inputSent = true;
+          const result = app.result ? JSON.stringify(app.result) : sentResult;
+          if (app.result && result !== sentResult) post({ method: "ui/notifications/tool-result", params: app.result });
+          sentResult = result;
+        };
+
+        const request = (id, method, params) => {
+          if (method === "ui/initialize") {
+            reply(id, {
+              protocolVersion: "2026-01-26",
+              hostInfo: { name: "polyui-native", version: "0.1.0" },
+              hostCapabilities: { openLinks: {} },
+              hostContext: {
+                displayMode: "inline",
+                availableDisplayModes: ["inline"],
+                containerDimensions: { maxHeight: maxHeight() },
+                platform: "mobile",
+                locale: navigator.language,
+              },
+            });
+          } else if (method === "ping") {
+            reply(id, {});
+          } else if (method === "ui/request-display-mode") {
+            reply(id, { mode: "inline" });
+          } else if (method === "ui/message") {
+            const said = messageText(params);
+            const now = Date.now();
+            if (!isRecord(props.on_message)) return fail(id, -32000, "Message sending denied");
+            if (said === "" || new TextEncoder().encode(JSON.stringify({ text: said })).length > messageBytes) return fail(id, -32602, "Invalid message format");
+            if (now - lastMessage < messageGapMs) return fail(id, -32000, "Too many messages");
+            lastMessage = now;
+            toNative({ kind: "message", text: said });
+            reply(id, {});
+          } else if (method === "ui/open-link") {
+            const href = safeLink(isRecord(params) ? params.url : undefined);
+            if (!href) return fail(id, -32000, "Invalid URL");
+            if (pendingLink !== null) return fail(id, -32000, "Policy violation");
+            pendingLink = id;
+            toNative({ kind: "open-link", url: href });
+          } else {
+            fail(id, -32601, "Method not found");
+          }
+        };
+
+        window.addEventListener("message", (event) => {
+          if (event.source !== inner.contentWindow || event.origin !== "null") return;
+          const data = event.data;
+          if (!isRecord(data) || data.jsonrpc !== "2.0" || typeof data.method !== "string" || data.method.startsWith(reserved)) return;
+          const id = data.id;
+          if (typeof id === "string" || typeof id === "number") return request(id, data.method, data.params);
+          if (data.method === "ui/notifications/initialized") {
+            ready = true;
+            sendTool();
+            toNative({ kind: "ready" });
+          } else if (data.method === "ui/notifications/size-changed") {
+            const height = isRecord(data.params) ? data.params.height : undefined;
+            if (typeof height === "number" && Number.isFinite(height)) {
+              toNative({ kind: "height", value: Math.min(maxHeight(), Math.max(minHeight, Math.ceil(height))) });
+            }
+          }
+        });
+
+        Object.defineProperty(window, "polyuiHost", {
+          value: Object.freeze({
+            update(next) {
+              const nextApp = readApp(next);
+              if (!nextApp || nextApp.html !== app.html) return false;
+              props = next;
+              app = nextApp;
+              inner.title = typeof props.title === "string" ? props.title : "";
+              sendTool();
+              return true;
+            },
+            answerLink(accepted) {
+              if (pendingLink === null) return false;
+              const id = pendingLink;
+              pendingLink = null;
+              if (accepted === true) reply(id, {});
+              else fail(id, -32000, "Link opening denied by user");
+              return true;
+            },
+            teardown() {
+              if (ready) post({ id: 0, method: "ui/resource-teardown", params: { reason: "removed" } });
+              return true;
+            },
+          }),
+        });
+
+        inner.srcdoc = withPolicy(app.html, app.csp);
+        document.body.append(inner);
+      })();
+    </script>
+  </body>
+</html>

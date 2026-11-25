@@ -23,7 +23,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val demo = DemoScript(intent.getStringExtra("demo"), intent.getBooleanExtra("instant", false))
-        if (savedInstanceState == null && demo.instant) {
+        val live = intent.getStringExtra("live")
+        if (savedInstanceState == null && live != null) {
+            model.startLive(live.ifEmpty { DEFAULT_LIVE_URL }, intent.getStringExtra("prompt"))
+        } else if (savedInstanceState == null && demo.instant) {
             model.instant = true
             model.startReplay()
         }
@@ -40,7 +43,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = scheme) {
                 ChatScreen(model, followEnd)
             }
-            if (savedInstanceState == null) {
+            if (savedInstanceState == null && live == null) {
                 LaunchedEffect(Unit) { demo.run(model) }
             }
         }

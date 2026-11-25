@@ -1,0 +1,98 @@
+{
+  "description": "A second canned turn: the forecast MCP App from js/polyui-web/demo/embed inside a PolyUI card. The app HTML is read from assets/forecast-app.html and put into props.app.resource.text before the message is sent.",
+  "question": "What is the weather this week?",
+  "answer": [
+    "The forecast tool has its own view, ",
+    "so here it is in a sandbox."
+  ],
+  "open": {
+    "v": 1,
+    "t": "ui.open",
+    "surface": "s2",
+    "seq": 1,
+    "root": "weather",
+    "data": {},
+    "components": [
+      {
+        "id": "weather",
+        "type": "Card",
+        "props": {
+          "title": "Weather this week"
+        },
+        "children": [
+          "intro",
+          "forecast"
+        ]
+      },
+      {
+        "id": "intro",
+        "type": "Text",
+        "props": {
+          "text": "The forecast tool has its own view, so the assistant shows it in a sandbox.",
+          "style": "muted"
+        }
+      },
+      {
+        "id": "forecast",
+        "type": "embed:Embed",
+        "props": {
+          "resource": "ui://weather/forecast",
+          "title": "Five day forecast for Tashkent",
+          "height": "small",
+          "on_message": {
+            "action_id": "act_ask",
+            "confirm": false
+          },
+          "app": {
+            "resource": {
+              "uri": "ui://weather/forecast",
+              "mimeType": "text/html;profile=mcp-app",
+              "text": "",
+              "_meta": {
+                "ui": {
+                  "csp": {}
+                }
+              }
+            },
+            "tool_input": {
+              "city": "Tashkent"
+            },
+            "tool_result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Mild days, a cold front on Friday."
+                }
+              ],
+              "structuredContent": {
+                "days": [
+                  {
+                    "name": "Tue",
+                    "high": 14
+                  },
+                  {
+                    "name": "Wed",
+                    "high": 16
+                  },
+                  {
+                    "name": "Thu",
+                    "high": 12
+                  },
+                  {
+                    "name": "Fri",
+                    "high": 9
+                  },
+                  {
+                    "name": "Sat",
+                    "high": 11
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "reply": "Samarkand this week: 15, 17, 13, 10 and 12 degrees, the same cold front on Friday."
+}

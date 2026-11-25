@@ -1,0 +1,260 @@
+import Foundation
+import Testing
+import WebKit
+
+@testable import PolyUI
+
+struct EmbedNonceTests {
+    @Test func noncesAreLongRandomAndAlphanumeric() throws {
+        let made = try (0..<200).map { _ in try #require(EmbedNonce.make()) }
+        for nonce in made {
+            #expect(nonce.count == 32)
+            #expect(nonce.unicodeScalars.allSatisfy { $0.isASCII && CharacterSet.alphanumerics.contains($0) })
+        }
+        #expect(Set(made).count == made.count)
+    }
+
+    @Test func matchingNeedsTheExactNonce() {
+        #expect(EmbedNonce.matches("abcDEF123", "abcDEF123"))
+        #expect(!EmbedNonce.matches("abcDEF124", "abcDEF123"))
+        #expect(!EmbedNonce.matches("abcDEF12", "abcDEF123"))
+        #expect(!EmbedNonce.matches("", ""))
+    }
+}
+
+struct EmbedEventTests {
+    private let nonce = "Nonce0123456789abcdefABCDEF012345"
+
+    private func body(_ fields: JSONValue) -> String {
+        (try? fields.jsonText()) ?? ""
+    }
+
+    @Test func acceptsEveryKindFromTheMainFrameWithTheNonce() {
+        let read = { (fields: JSONValue) in EmbedEvent.read(body(fields), isMainFrame: true, nonce: nonce) }
+        #expect(read(["kind": "ready", "nonce": .string(nonce)]) == .ready)
+        #expect(read(["kind": "height", "value": 212, "nonce": .string(nonce)]) == .height(212))
+        #expect(read(["kind": "message", "text": "Hi", "nonce": .string(nonce)]) == .message("Hi"))
+        #expect(read(["kind": "unavailable", "nonce": .string(nonce)]) == .unavailable)
+        #expect(read(["kind": "open-link", "url": "https://example.com/a?b=1", "nonce": .string(nonce)]) == .openLink(URL(string: "https://example.com/a?b=1")!))
+    }
+
+    @Test func ignoresSubframesEvenWithTheRightNonce() {
+        let text = body(["kind": "message", "text": "forged", "nonce": .string(nonce)])
+        #expect(EmbedEvent.read(text, isMainFrame: false, nonce: nonce) == nil)
+    }
+
+    @Test(arguments: [
+        #"{"kind":"message","text":"Hi"}"#,
+        #"{"kind":"message","text":"Hi","nonce":"wrong"}"#,
+        #"{"kind":"message","text":"Hi","nonce":"Nonce0123456789abcdefABCDEF012346"}"#,
+        #"{"kind":"message","text":"","nonce":"Nonce0123456789abcdefABCDEF012345"}"#,
+        #"{"kind":"height","value":"tall","nonce":"Nonce0123456789abcdefABCDEF012345"}"#,
+        #"{"kind":"open-link","url":"http://example.com/","nonce":"Nonce0123456789abcdefABCDEF012345"}"#,
+        #"{"kind":"open-link","url":"https://user:pw@example.com/","nonce":"Nonce0123456789abcdefABCDEF012345"}"#,
+        #"{"kind":"open-link","url":"javascript:alert(1)","nonce":"Nonce0123456789abcdefABCDEF012345"}"#,
+        #"{"kind":"navigate","nonce":"Nonce0123456789abcdefABCDEF012345"}"#,
+        #"["ready"]"#,
+        "not json",
+    ])
+    func refusesAnythingElse(_ text: String) {
+        #expect(EmbedEvent.read(text, isMainFrame: true, nonce: nonce) == nil)
+    }
+
+    @Test func refusesBodiesThatAreNotText() {
+        let dictionary: [String: String] = ["kind": "ready", "nonce": nonce]
+        #expect(EmbedEvent.read(dictionary, isMainFrame: true, nonce: nonce) == nil)
+        #expect(EmbedEvent.read(String(repeating: " ", count: EmbedEvent.longestBody + 1), isMainFrame: true, nonce: nonce) == nil)
+    }
+}
+
+struct EmbedSizeTests {
+    @Test func hintsStartAtTheirHeight() {
+        #expect(EmbedSize(prop: "small").startHeight == 160)
+        #expect(EmbedSize(prop: "medium").startHeight == 320)
+        #expect(EmbedSize(prop: "large").startHeight == 480)
+        #expect(EmbedSize(prop: "huge") == .medium)
+        #expect(EmbedSize(prop: nil) == .medium)
+    }
+
+    @Test func heightsAreClampedToTheHint() {
+        #expect(EmbedSize.small.clamp(10) == 80)
+        #expect(EmbedSize.small.clamp(5000) == 320)
+        #expect(EmbedSize.medium.clamp(5000) == 640)
+        #expect(EmbedSize.large.clamp(5000) == 960)
+        #expect(EmbedSize.medium.clamp(200.2) == 201)
+        #expect(EmbedSize.large.clamp(.nan) == 480)
+        #expect(EmbedSize.small.clamp(-.infinity) == 160)
+    }
+}
+
+struct EmbedNavigationTests {
+    @Test func theMainFrameLoadsOnlyWhenThePageIsExpected() {
+        #expect(EmbedNavigation.allows(targetIsMainFrame: true, url: URL(string: "about:blank"), expectingPageLoad: true))
+        #expect(!EmbedNavigation.allows(targetIsMainFrame: true, url: URL(string: "about:blank"), expectingPageLoad: false))
+        #expect(!EmbedNavigation.allows(targetIsMainFrame: true, url: URL(string: "https://example.com/"), expectingPageLoad: false))
+    }
+
+    @Test(arguments: ["about:srcdoc", "about:blank", "https://example.com/app"])
+    func subframesMayUseSrcdocBlankAndHTTPS(_ raw: String) {
+        #expect(EmbedNavigation.allows(targetIsMainFrame: false, url: URL(string: raw), expectingPageLoad: false))
+    }
+
+    @Test(arguments: ["http://example.com/", "file:///etc/hosts", "javascript:alert(1)", "data:text/html,hi", "about:config", "polyui://x"])
+    func subframesMayNotGoAnywhereElse(_ raw: String) {
+        #expect(!EmbedNavigation.allows(targetIsMainFrame: false, url: URL(string: raw), expectingPageLoad: true))
+    }
+
+    @Test func newWindowsAreRefused() {
+        #expect(!EmbedNavigation.allows(targetIsMainFrame: nil, url: URL(string: "https://example.com/"), expectingPageLoad: true))
+    }
+}
+
+struct EmbedPageTests {
+    @Test func theCoreBuildsAPageWithTheNonce() throws {
+        let nonce = try #require(EmbedNonce.make())
+        let page = try PolyUICore.embedPage(propsJSON: #"{"resource":"ui://a/b","title":"T"}"#, nonce: nonce)
+        #expect(page.contains(nonce))
+        #expect(page.hasPrefix("<!doctype html>"))
+    }
+
+    @Test func badInputIsAnError() {
+        #expect(throws: PolyUIError.self) { try PolyUICore.embedPage(propsJSON: "{}", nonce: "short") }
+        #expect(throws: PolyUIError.self) { try PolyUICore.embedPage(propsJSON: "[1]", nonce: "Nonce0123456789abcdef") }
+        #expect(throws: PolyUIError.self) { try PolyUICore.embedPage(propsJSON: "{oops", nonce: "Nonce0123456789abcdef") }
+    }
+}
+
+@MainActor
+struct EmbedSessionTests {
+    static let app = """
+        <!doctype html><html><body><p>app</p><script>
+        const send = (message) => window.parent.postMessage(Object.assign({ jsonrpc: "2.0" }, message), "*");
+        window.addEventListener("message", (event) => {
+          const data = event.data;
+          if (data && data.id === 1 && data.result) {
+            send({ method: "ui/notifications/initialized", params: {} });
+            send({ method: "ui/notifications/size-changed", params: { height: 2000 } });
+          }
+          if (data && data.method === "ui/notifications/tool-result") {
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.polyui) {
+              window.webkit.messageHandlers.polyui.postMessage(JSON.stringify({ kind: "message", text: "forged", nonce: "guess" }));
+            }
+            send({ id: 2, method: "ui/message", params: { role: "user", content: [{ type: "text", text: "From the app" }] } });
+            send({ id: 3, method: "ui/open-link", params: { url: "https://example.com/more" } });
+          }
+          if (data && data.id === 3) document.title = data.result ? "accepted" : "refused";
+        });
+        send({ id: 1, method: "ui/initialize", params: { protocolVersion: "2026-01-26", appInfo: { name: "t", version: "1" }, appCapabilities: {} } });
+        </script></body></html>
+        """
+
+    static func props(withMessage: Bool = true) -> [String: JSONValue] {
+        var props: [String: JSONValue] = [
+            "resource": "ui://test/app",
+            "title": "Test app",
+            "height": "small",
+            "app": [
+                "resource": ["uri": "ui://test/app", "mimeType": "text/html;profile=mcp-app", "text": .string(app)],
+                "tool_input": ["city": "Tashkent"],
+                "tool_result": ["content": [["type": "text", "text": "ok"]], "structuredContent": [:]],
+            ],
+        ]
+        if withMessage { props["on_message"] = ["action_id": "act_ask", "confirm": false] }
+        return props
+    }
+
+    private func waitFor(_ condition: () -> Bool) async -> Bool {
+        for _ in 0..<200 {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return condition()
+    }
+
+    @Test func theCoreKeepsTheAppForAClientThatDeclaresEmbed() throws {
+        var sent: [JSONValue] = []
+        let session = try PolyUISession(hello: PolyUIHello(catalogs: ["core@1", "chart@1", "embed@1"], locale: "en")) {
+            sent.append(try! JSONValue.parse($0))
+        }
+        let open: JSONValue = [
+            "v": 1, "t": "ui.open", "surface": "s1", "seq": 1, "root": "app",
+            "components": [["id": "app", "type": "embed:Embed", "props": .object(Self.props())]],
+            "data": [:],
+        ]
+        session.receive(open)
+        let node = try #require(session.surface("s1").node("app"))
+        #expect(node.type == "embed:Embed")
+        #expect(node.props["app"]?["resource"]?["text"]?.stringValue == Self.app)
+        session.fire(surface: "s1", component: "app", prop: "on_message", detail: ["text": "From the app"])
+        #expect(sent.last?["t"] == "ui.action")
+        #expect(sent.last?["action_id"] == "act_ask")
+        #expect(sent.last?["detail"]?["text"] == "From the app")
+    }
+
+    @Test func oneLinkQuestionAtATime() throws {
+        let session = try PolyUISession(hello: PolyUIHello(locale: "en"))
+        var opened: [URL] = []
+        var answers: [String] = []
+        session.openLink = { opened.append($0) }
+        let url = try #require(URL(string: "https://example.com/more"))
+        session.askToOpen(url, surface: "s1", component: "a") { answers.append("first \($0)") }
+        session.askToOpen(url, surface: "s2", component: "b") { answers.append("second \($0)") }
+        #expect(answers == ["second false"])
+        let link = try #require(session.surface("s1").pendingLink)
+        #expect(session.surface("s1").presentedSheet?.id == "link:\(link.id.uuidString)")
+        session.answerLink(surface: "s1", id: link.id, accepted: true)
+        session.answerLink(surface: "s1", id: link.id, accepted: false)
+        #expect(opened == [url])
+        #expect(answers == ["second false", "first true"])
+        #expect(session.surface("s1").pendingLink == nil)
+    }
+
+    @Test func refusedWithdrawnAndUnsafeLinksNeverOpen() throws {
+        let session = try PolyUISession(hello: PolyUIHello(locale: "en"))
+        var opened: [URL] = []
+        var answers: [Bool] = []
+        session.openLink = { opened.append($0) }
+        session.askToOpen(URL(string: "http://example.com/")!, surface: "s1", component: "a") { answers.append($0) }
+        session.askToOpen(URL(string: "https://example.com/")!, surface: "s1", component: "a") { answers.append($0) }
+        let link = try #require(session.surface("s1").pendingLink)
+        session.answerLink(surface: "s1", id: link.id, accepted: false)
+        session.askToOpen(URL(string: "https://example.com/")!, surface: "s1", component: "a") { answers.append($0) }
+        session.withdrawLink(surface: "s1", component: "a")
+        #expect(opened.isEmpty)
+        #expect(answers == [false, false, false])
+    }
+
+    @Test func aServerConfirmBlocksALinkQuestion() throws {
+        let session = try PolyUISession(hello: PolyUIHello(locale: "en"))
+        session.receive(#"{"v":1,"t":"ui.open","surface":"s1","seq":1,"root":"pay","components":[{"id":"pay","type":"Button","props":{"label":"Pay","on_press":{"action_id":"act_pay","confirm":true}}}],"data":{}}"#)
+        session.receive(#"{"v":1,"t":"ui.confirm","surface":"s1","action_id":"act_pay","nonce":"n_1","title":"Pay"}"#)
+        var answers: [Bool] = []
+        session.askToOpen(URL(string: "https://example.com/")!, surface: "s1", component: "a") { answers.append($0) }
+        #expect(answers == [false])
+        #expect(session.surface("s1").presentedSheet?.id == "confirm:act_pay:n_1")
+    }
+
+    @Test func aRealWebViewRunsTheAppAndFiltersMessages() async throws {
+        let controller = EmbedPageController()
+        var events: [EmbedEvent] = []
+        var links: [URL] = []
+        controller.onEvent = { events.append($0) }
+        controller.onLink = { url, answer in
+            links.append(url)
+            answer(true)
+        }
+        let webView = controller.makeWebView()
+        webView.frame = CGRect(x: 0, y: 0, width: 320, height: 320)
+        let props = try JSONValue.object(Self.props()).jsonText()
+        controller.show(props)
+        let nonce = controller.nonce
+        #expect(nonce.count == 32)
+        #expect(await waitFor { events.contains(.ready) })
+        #expect(await waitFor { events.contains(.message("From the app")) })
+        #expect(await waitFor { !links.isEmpty })
+        #expect(events.contains(.height(320)))
+        #expect(!events.contains(.message("forged")))
+        #expect(links == [URL(string: "https://example.com/more")!])
+        controller.tearDown()
+    }
+}

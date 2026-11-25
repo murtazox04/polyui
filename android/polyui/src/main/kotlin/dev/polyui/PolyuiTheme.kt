@@ -160,6 +160,8 @@ data class PolyuiLabels(
     val chartUnavailable: String = "Chart unavailable",
     val choiceYes: String = "Yes",
     val choiceNo: String = "No",
+    val openLinkTitle: String = "Open this link?",
+    val openLink: String = "Open",
 )
 
 val LocalPolyuiTheme = compositionLocalOf { PolyuiTheme() }

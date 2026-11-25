@@ -1,12 +1,13 @@
 {
- "description": "A canned turn for the iOS example: a bills card with a chart compiled by polyui-chart at 340 by 230, a card picker, a receipt field and a pay button that needs confirmation.",
+ "description": "A canned turn for the iOS example: a bills card with a chart compiled by polyui-chart at 340 by 230, a card picker, a receipt field and a pay button that needs confirmation. A second question opens a forecast MCP App inside an embed:Embed; the scripted server fills its app prop from forecast-app.html at run time.",
  "welcome": {
   "v": 1,
   "t": "welcome",
   "session": "sess_ios",
   "catalogs": [
    "core@1",
-   "chart@1"
+   "chart@1",
+   "embed@1"
   ]
  },
  "question": "What do we owe this month?",
@@ -531,5 +532,94 @@
     }
    ]
   }
- ]
+ ],
+ "forecast": {
+  "question": "What is the weather in Tashkent this week?",
+  "answer": [
+   "Here is the five day forecast for Tashkent. ",
+   "Mild days, cooler at the weekend."
+  ],
+  "open": {
+   "v": 1,
+   "t": "ui.open",
+   "surface": "s2",
+   "seq": 1,
+   "root": "weather",
+   "components": [
+    {
+     "id": "weather",
+     "type": "Card",
+     "props": {
+      "title": "Weather, Tashkent",
+      "subtitle": "From the forecast app"
+     },
+     "children": [
+      "forecast"
+     ]
+    },
+    {
+     "id": "forecast",
+     "type": "embed:Embed",
+     "props": {
+      "resource": "ui://weather/forecast",
+      "title": "Five day forecast for Tashkent",
+      "height": "small",
+      "on_message": {
+       "action_id": "act_ask",
+       "confirm": false
+      },
+      "app": {
+       "resource": {
+        "uri": "ui://weather/forecast",
+        "mimeType": "text/html;profile=mcp-app",
+        "text": "",
+        "_meta": {
+         "ui": {
+          "csp": {}
+         }
+        }
+       },
+       "tool_input": {
+        "city": "Tashkent"
+       },
+       "tool_result": {
+        "content": [
+         {
+          "type": "text",
+          "text": "Mild days, cooler at the weekend."
+         }
+        ],
+        "structuredContent": {
+         "days": [
+          {
+           "name": "Tue",
+           "high": 14
+          },
+          {
+           "name": "Wed",
+           "high": 16
+          },
+          {
+           "name": "Thu",
+           "high": 15
+          },
+          {
+           "name": "Fri",
+           "high": 11
+          },
+          {
+           "name": "Sat",
+           "high": 9
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   ],
+   "data": {}
+  },
+  "reply": "Samarkand looks a little warmer: 17° on Tuesday and 18° on Wednesday."
+ }
 }

@@ -5,17 +5,23 @@ public struct PolyUILabels: Sendable {
     public var confirmFallback: String
     public var expired: String
     public var chartUnavailable: String
+    public var openLinkTitle: String
+    public var openLink: String
 
     public init(
         cancel: String = "Cancel",
         confirmFallback: String = "OK",
         expired: String = "This request expired. Ask again to continue.",
-        chartUnavailable: String = "Chart unavailable"
+        chartUnavailable: String = "Chart unavailable",
+        openLinkTitle: String = "Open this link outside the app?",
+        openLink: String = "Open link"
     ) {
         self.cancel = cancel
         self.confirmFallback = confirmFallback
         self.expired = expired
         self.chartUnavailable = chartUnavailable
+        self.openLinkTitle = openLinkTitle
+        self.openLink = openLink
     }
 }
 

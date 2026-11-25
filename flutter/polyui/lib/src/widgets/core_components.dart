@@ -815,8 +815,8 @@ class ConfirmSheetComponentState extends State<ConfirmSheetComponent> {
   }
 }
 
-class EmbedComponent extends StatelessWidget {
-  const EmbedComponent({super.key, required this.node});
+class EmbedTitle extends StatelessWidget {
+  const EmbedTitle({super.key, required this.node});
 
   final ComponentNode node;
 
@@ -827,7 +827,7 @@ class EmbedComponent extends StatelessWidget {
     return FillWidth(
       child: Semantics(
         container: true,
-        label: node.a11y.label.isEmpty ? title : node.a11y.label,
+        label: title.isEmpty ? node.a11y.label : title,
         excludeSemantics: true,
         child: DecoratedBox(
           decoration: BoxDecoration(

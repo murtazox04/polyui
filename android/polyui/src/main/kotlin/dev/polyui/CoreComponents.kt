@@ -9,13 +9,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -164,7 +161,7 @@ internal fun CardComponent(node: ComponentNode) {
                 .fillMaxWidth()
                 .then(surfaceModifier)
                 .padding(if (nested) theme.spacing else theme.spacing + 2.dp)
-                .polyuiContainer(node.a11y),
+                .polyuiContainer(node.a11y, readByHeading = title),
         verticalArrangement = Arrangement.spacedBy(theme.spacing),
     ) {
         if (title.isNotEmpty() || subtitle.isNotEmpty()) {
@@ -461,31 +458,5 @@ internal fun ConfirmSheetComponent(
                 !locked && node.hasAction("on_confirm"),
             ) { answer("on_confirm") }
         }
-    }
-}
-
-@Composable
-internal fun EmbedComponent(node: ComponentNode) {
-    val theme = LocalPolyuiTheme.current
-    val colors = polyuiColors()
-    val title = node.string("title")
-    val shape = RoundedCornerShape(theme.innerCornerRadius)
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .background(colors.sunken, shape)
-                .padding(theme.spacing)
-                .clearAndSetSemantics { contentDescription = node.a11y.label.ifEmpty { title } },
-    ) {
-        Box(
-            Modifier
-                .size(18.dp)
-                .border(1.5.dp, colors.muted, RoundedCornerShape(4.dp)),
-        )
-        PlainText(title, PolyuiType.style(PolyuiType.body, FontWeight.Medium, colors.foreground))
-        Spacer(Modifier.width(0.dp))
     }
 }

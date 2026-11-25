@@ -119,6 +119,15 @@ external Pointer<Utf8> polyuiClientMatchVoice(
   ErrorSlot error,
 );
 
+@Native<Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, ErrorSlot)>(
+  symbol: 'polyui_embed_page',
+)
+external Pointer<Utf8> polyuiEmbedPage(
+  Pointer<Utf8> props,
+  Pointer<Utf8> nonce,
+  ErrorSlot error,
+);
+
 @Native<Void Function(Pointer<Utf8>)>(symbol: 'polyui_string_free')
 external void polyuiStringFree(Pointer<Utf8> text);
 

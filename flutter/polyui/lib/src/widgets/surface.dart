@@ -93,22 +93,11 @@ class PolyuiSurfaceState extends State<PolyuiSurface> {
 
   Future<void> present(ConfirmRequest request) async {
     final navigator = Navigator.of(context, rootNavigator: true);
-    final localizations = MaterialLocalizations.of(context);
-    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    final route = ModalBottomSheetRoute<bool>(
-      builder: (context) => PolyuiConfirmRequestSheet(
-        request: request,
-        labels: widget.labels,
-        delay: widget.confirmDelay,
-      ),
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
-      barrierLabel: localizations.scrimLabel,
-      barrierOnTapHint: localizations.scrimOnTapHint(
-        localizations.bottomSheetLabel,
-      ),
-      sheetAnimationStyle: reduce ? AnimationStyle.noAnimation : null,
+    final route = polyuiConfirmRoute(
+      context,
+      request: request,
+      labels: widget.labels,
+      delay: widget.confirmDelay,
     );
     sheet = route;
     sheetKey = request.key;
@@ -138,6 +127,7 @@ class PolyuiSurfaceState extends State<PolyuiSurface> {
           surface: model,
           builders: widget.builders,
           labels: widget.labels,
+          confirmDelay: widget.confirmDelay,
           child: AnimatedSize(
             duration: reduce
                 ? Duration.zero

@@ -26,13 +26,16 @@ final class ChatModel {
     private(set) var mode: Mode = .replay
     private(set) var session: PolyUISession
     private(set) var problem: String?
+    private(set) var heard: String?
     let speaker = PolyUISpeaker()
+    let listener = PolyUIListener()
     let socket = PolyUIWebSocket()
     @ObservationIgnored private var scripted: ScriptedServer?
     @ObservationIgnored private var nextID = 0
     @ObservationIgnored private var openAgentEntry: Int?
     @ObservationIgnored private let hello = PolyUIHello(
         client: PolyUIHello.ClientInfo(name: "polyui-ios-example", version: "0.1.0"),
+        catalogs: ["core@1", "chart@1", "embed@1"],
         locale: "en"
     )
     @ObservationIgnored let instant: Bool
@@ -51,6 +54,16 @@ final class ChatModel {
 
     var question: String {
         scripted?.question ?? "What do we owe this month?"
+    }
+
+    var forecastQuestion: String {
+        scripted?.forecastQuestion ?? "What is the weather in Tashkent this week?"
+    }
+
+    var latestSurface: String? {
+        entries.last { if case .surface = $0 { true } else { false } }.flatMap { entry in
+            if case .surface(_, let surface) = entry { surface } else { nil }
+        }
     }
 
     var isLive: Bool {
@@ -96,8 +109,42 @@ final class ChatModel {
         }
     }
 
+    func toggleListening() {
+        if listener.isListening {
+            listener.stop()
+            return
+        }
+        speaker.stop()
+        heard = nil
+        let surface = latestSurface
+        let listener = listener
+        let session = session
+        Task { [weak self] in
+            await listener.listen(surface: surface, in: session, locale: Locale(identifier: "en-US")) { result in
+                self?.handle(result)
+            }
+        }
+    }
+
+    func hear(_ text: String) {
+        if let result = listener.hear(text, surface: latestSurface, in: session) {
+            handle(result)
+        }
+    }
+
+    private func handle(_ result: PolyUIHeard) {
+        if result.match == nil {
+            heard = nil
+            ask(result.transcript)
+        } else {
+            heard = result.transcript
+        }
+    }
+
     private func reset() {
         speaker.stop()
+        listener.cancel()
+        heard = nil
         entries = []
         openAgentEntry = nil
         problem = nil

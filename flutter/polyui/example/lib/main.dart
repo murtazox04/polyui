@@ -11,12 +11,38 @@ import 'src/demo_script.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final text = await rootBundle.loadString('assets/conversation.json');
+  final weatherText = await rootBundle.loadString('assets/weather.json');
+  final forecastApp = await rootBundle.loadString('assets/forecast-app.html');
   const demo = DemoScript();
+  final forecast = demo.pressesInsideApp
+      ? forecastApp.replaceFirst('</body>', '$pressScript</body>')
+      : forecastApp;
   final model = ChatModel(
     script: jsonDecode(text) as Map<String, Object?>,
+    weather: withApp(jsonDecode(weatherText) as Map<String, Object?>, forecast),
     instant: demo.instant,
+    log: demo.log,
   );
   runApp(PolyuiExampleApp(model: model, demo: demo));
+}
+
+const pressScript = '''
+<script>
+  setTimeout(() => document.getElementById("ask").click(), 2500);
+  setTimeout(() => document.getElementById("source").click(), 4500);
+</script>
+''';
+
+Map<String, Object?> withApp(Map<String, Object?> weather, String html) {
+  final open = weather['open'] as Map<String, Object?>;
+  for (final component in open['components'] as List) {
+    final props = (component as Map<String, Object?>)['props'];
+    if (props is Map<String, Object?> && props['app'] is Map) {
+      final app = props['app'] as Map<String, Object?>;
+      (app['resource'] as Map<String, Object?>)['text'] = html;
+    }
+  }
+  return weather;
 }
 
 ThemeData appTheme(Brightness brightness) {

@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -68,13 +69,36 @@ fun PolyuiSurface(
             model.rootId?.let { PolyuiComponent(it) }
         }
     }
-    model.pendingConfirm?.let { request ->
+    val confirm = model.pendingConfirm
+    val link = model.pendingLink
+    if (confirm != null) {
         PolyuiConfirmRequestSheet(
-            request = request,
-            onConfirm = { session.confirm(model.id, request) },
+            request = confirm,
+            onConfirm = { session.confirm(model.id, confirm) },
             onDismiss = { session.dismissConfirm(model.id) },
         )
+    } else if (link != null) {
+        PolyuiLinkSheet(link, model)
     }
+}
+
+@Composable
+private fun PolyuiLinkSheet(
+    link: PolyuiLinkRequest,
+    model: PolyuiSurfaceModel,
+) {
+    val labels = LocalPolyuiLabels.current
+    val opener = LocalPolyuiLinkOpener.current
+    val context = LocalContext.current
+    PolyuiConfirmSheet(
+        key = link.key,
+        title = labels.openLinkTitle,
+        body = link.url,
+        confirmLabel = labels.openLink,
+        expiresMillis = null,
+        onConfirm = { model.answerLink(opener.open(context, link.url)) },
+        onDismiss = { model.answerLink(false) },
+    )
 }
 
 @Composable
@@ -137,7 +161,7 @@ private fun BuiltInComponent(
         "Divider" -> DividerComponent()
         "chart:Chart" -> ChartComponent(node, scope)
         "chart:Dashboard" -> DashboardComponent(node, scope)
-        "embed:Embed" -> EmbedComponent(node)
+        "embed:Embed" -> EmbedComponent(node, scope)
         else -> UnknownComponent(node, scope)
     }
 }
@@ -166,10 +190,13 @@ private fun Modifier.highlight(
     }
 }
 
-internal fun Modifier.polyuiContainer(a11y: A11y): Modifier =
+internal fun Modifier.polyuiContainer(
+    a11y: A11y,
+    readByHeading: String = "",
+): Modifier =
     semantics {
         isTraversalGroup = true
-        if (a11y.label.isNotEmpty()) contentDescription = a11y.label
+        if (a11y.label.isNotEmpty() && a11y.label != readByHeading) contentDescription = a11y.label
         if (a11y.role == "status") liveRegion = LiveRegionMode.Polite
     }
 

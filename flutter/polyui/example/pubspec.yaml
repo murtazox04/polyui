@@ -9,8 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_tts: ^4.2.5
   polyui:
     path: ..
+  speech_to_text: ^7.4.0
+  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   flutter_lints: ^6.0.0
@@ -21,3 +24,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/conversation.json
+    - assets/weather.json
+    - assets/forecast-app.html

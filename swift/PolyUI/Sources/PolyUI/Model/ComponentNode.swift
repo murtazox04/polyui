@@ -14,6 +14,7 @@ public final class ComponentNode: Identifiable {
     public private(set) var revision = 0
 
     @ObservationIgnored private var sceneCache: (revision: Int, scene: ChartScene?)?
+    @ObservationIgnored private var propsCache: (revision: Int, text: String?)?
 
     init(payload: ComponentPayload, type: String) {
         id = payload.id
@@ -49,6 +50,15 @@ public final class ComponentNode: Identifiable {
 
     public func hasAction(_ key: String) -> Bool {
         props[key]?.objectValue?["action_id"]?.stringValue != nil
+    }
+
+    var propsJSON: String? {
+        if let propsCache, propsCache.revision == revision {
+            return propsCache.text
+        }
+        let text = try? JSONValue.object(props).jsonText()
+        propsCache = (revision, text)
+        return text
     }
 
     var chartScene: ChartScene? {

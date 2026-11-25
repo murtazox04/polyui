@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,10 +57,31 @@ private fun systemColorScheme(): ColorScheme {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PolyuiConfirmRequestSheet(
     request: ConfirmRequest,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    PolyuiConfirmSheet(
+        key = request.key,
+        title = request.title,
+        body = request.body,
+        confirmLabel = request.confirmLabel,
+        expiresMillis = request.expiresMillis,
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PolyuiConfirmSheet(
+    key: String,
+    title: String,
+    body: String?,
+    confirmLabel: String?,
+    expiresMillis: Long?,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -66,14 +89,14 @@ internal fun PolyuiConfirmRequestSheet(
     val armDelay = LocalPolyuiConfirmDelay.current
     val sheetState = rememberBottomSheetState(SheetValue.Hidden, setOf(SheetValue.Hidden, SheetValue.Expanded))
     val coroutines = rememberCoroutineScope()
-    var armed by remember(request.key) { mutableStateOf(false) }
-    var answered by remember(request.key) { mutableStateOf(false) }
-    val opened = remember(request.key) { SystemClock.uptimeMillis() }
-    var now by remember(request.key) { mutableLongStateOf(opened) }
-    val expires = request.expiresMillis?.takeIf { it > 0 }
+    var armed by remember(key) { mutableStateOf(false) }
+    var answered by remember(key) { mutableStateOf(false) }
+    val opened = remember(key) { SystemClock.uptimeMillis() }
+    var now by remember(key) { mutableLongStateOf(opened) }
+    val expires = expiresMillis?.takeIf { it > 0 }
     val expired = expires != null && now - opened >= expires
 
-    LaunchedEffect(request.key) {
+    LaunchedEffect(key) {
         delay(armDelay)
         armed = true
         if (expires != null) {
@@ -96,17 +119,18 @@ internal fun PolyuiConfirmRequestSheet(
                 modifier =
                     Modifier
                         .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                         .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
             ) {
                 Text(
-                    text = request.title,
+                    text = title,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.semantics { heading() },
                 )
-                request.body?.takeIf { it.isNotEmpty() }?.let { body ->
+                body?.takeIf { it.isNotEmpty() }?.let { text ->
                     Text(
-                        text = body,
+                        text = text,
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -142,7 +166,7 @@ internal fun PolyuiConfirmRequestSheet(
                                 .heightIn(min = 48.dp)
                                 .testTag(PolyuiTestTags.CONFIRM_BUTTON),
                     ) {
-                        Text(request.confirmLabel?.takeIf { it.isNotEmpty() } ?: labels.confirmFallback)
+                        Text(confirmLabel?.takeIf { it.isNotEmpty() } ?: labels.confirmFallback)
                     }
                     OutlinedButton(
                         onClick = {

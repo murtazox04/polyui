@@ -23,11 +23,17 @@ flowchart LR
 | Web | Done | Wasm core 60 337 bytes brotli, renderer 10 986 bytes brotli. Tested with vitest and happy-dom, and in Chrome by the chat check and the embed check. |
 | Python | Done | [Python and Node](bindings.md) |
 | Node | Done | [Python and Node](bindings.md) |
-| iOS (SwiftUI) | Done | A C interface over the client core (`bindings/ffi`) and a SwiftUI renderer (`swift/`). Tests run on an iOS simulator. See [iOS](ios.md). |
-| Flutter | Done on iOS | A Dart package over the same C interface (`flutter/polyui`). Tested with `flutter test` and run on an iOS simulator. The Android build of the Flutter package has not been run. See [Flutter](flutter.md). |
-| Android (Compose) | Done | A JNI shim over the same C interface and a Compose renderer (`android/`). JVM tests run the real core; the UI tests and the example ran on an API 35 emulator. See [Android](android.md). |
+| iOS (SwiftUI) | Done | A C interface over the client core (`bindings/ffi`) and a SwiftUI renderer (`swift/`). Tests run on an iOS simulator and on Mac Catalyst. MCP Apps in a WKWebView, speech in and out. See [iOS](ios.md). |
+| Flutter | Done | A Dart package over the same C interface (`flutter/polyui`). Tested with `flutter test`, run on an iOS simulator and an Android emulator, live against `polyui serve` on both. MCP Apps through webview_flutter, speech in and out. See [Flutter](flutter.md). |
+| Android (Compose) | Done | A JNI shim over the same C interface and a Compose renderer (`android/`). JVM tests run the real core; the UI tests and the example ran on an API 35 emulator. MCP Apps in a WebView, live mode, speech in and out, walked with TalkBack. See [Android](android.md). |
 
-All three native renderers use the one C interface, so they share its rules for errors, ownership and threads.
+All three native renderers use the one C interface, so they share its rules for errors, ownership and threads. They also share one page for MCP Apps, `polyui_embed_page`, so the sandbox and the CSP are the same everywhere ([Native renderers](embed.md#native-renderers)).
+
+<p>
+<img src="images/ios-embed-light.png" width="240" alt="An MCP App inside a card in the iOS example">
+<img src="images/flutter-embed-android.png" width="240" alt="An MCP App inside a card in the Flutter example on Android">
+<img src="images/android-embed-light.png" width="240" alt="An MCP App inside a card in the Android example">
+</p>
 
 ### Extension catalogs
 
@@ -59,7 +65,7 @@ A C interface over the client core (`bindings/ffi`), a Swift package that draws 
 
 ## Flutter
 
-A Dart package that loads the same core through Dart build hooks and draws surfaces with Flutter widgets. It was run on an iOS simulator; the Android side of the package is written but has not been built. [Flutter](flutter.md) explains how to use it. Screenshots: `images/flutter-light.png` and `images/flutter-dark.png`.
+A Dart package that loads the same core through Dart build hooks and draws surfaces with Flutter widgets. It was run on an iOS simulator and an Android emulator. [Flutter](flutter.md) explains how to use it. Screenshots: `images/flutter-light.png` and `images/flutter-dark.png`.
 
 <p>
 <img src="images/flutter-light.png" width="240" alt="The Flutter example app in light mode, with the July bar selected">

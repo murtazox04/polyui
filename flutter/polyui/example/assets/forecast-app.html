@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Forecast</title>
+    <style>
+      :root { color-scheme: light; font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2433; }
+      body { margin: 0; padding: 16px 18px; background: linear-gradient(160deg, #f3f8fb, #e6f1f4); }
+      h1 { margin: 0; font-size: 17px; }
+      #summary { margin: 2px 0 12px; color: #4b5563; }
+      ol { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
+      li { padding: 10px 6px; border-radius: 10px; background: #fff; text-align: center; box-shadow: 0 1px 2px #0001; }
+      li b { display: block; font-size: 20px; }
+      li span { color: #6b7280; font-size: 12px; }
+      footer { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+      button { padding: 8px 14px; border: 0; border-radius: 9px; background: #0f766e; color: #fff; font: inherit; cursor: pointer; }
+      small { color: #6b7280; }
+    </style>
+  </head>
+  <body>
+    <h1 id="city">Forecast</h1>
+    <p id="summary">Waiting for the tool result.</p>
+    <ol id="days"></ol>
+    <footer>
+      <button id="ask" type="button">Also show Samarkand</button>
+      <button id="source" type="button">Data source</button>
+      <small id="status"></small>
+      <small id="network"></small>
+    </footer>
+    <script>
+      (() => {
+        const pending = new Map();
+        let nextId = 1;
+        const byId = (id) => document.getElementById(id);
+
+        const request = (method, params) => new Promise((resolve, reject) => {
+          const id = nextId++;
+          pending.set(id, { resolve, reject });
+          window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+        });
+        const notify = (method, params) => window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+
+        const render = (result) => {
+          const data = result && result.structuredContent;
+          if (!data) return;
+          byId("summary").textContent = result.content.map((block) => block.text).join(" ");
+          byId("days").replaceChildren(...data.days.map((day) => {
+            const item = document.createElement("li");
+            const temperature = document.createElement("b");
+            const label = document.createElement("span");
+            temperature.textContent = `${day.high}°`;
+            label.textContent = day.name;
+            item.append(temperature, label);
+            return item;
+          }));
+        };
+
+        window.addEventListener("message", (event) => {
+          if (event.source !== window.parent) return;
+          const message = event.data;
+          if (!message || message.jsonrpc !== "2.0") return;
+          if (message.id !== undefined && pending.has(message.id) && !message.method) {
+            const { resolve, reject } = pending.get(message.id);
+            pending.delete(message.id);
+            if (message.error) reject(new Error(message.error.message));
+            else resolve(message.result);
+          } else if (message.method === "ui/notifications/tool-input") {
+            byId("city").textContent = `Forecast for ${message.params.arguments.city}`;
+          } else if (message.method === "ui/notifications/tool-result") {
+            render(message.params);
+          }
+        });
+
+        byId("ask").addEventListener("click", () => {
+          request("ui/message", { role: "user", content: [{ type: "text", text: "Also show the forecast for Samarkand." }] })
+            .then(() => { byId("status").textContent = "Sent to the assistant."; })
+            .catch((error) => { byId("status").textContent = error.message; });
+        });
+
+        request("ui/initialize", { appInfo: { name: "Forecast demo", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then(() => {
+          notify("ui/notifications/initialized", {});
+          const report = () => notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
+          new ResizeObserver(report).observe(document.body);
+          report();
+        });
+
+        byId("source").addEventListener("click", () => {
+          request("ui/open-link", { url: "https://open-meteo.com/en/docs" })
+            .then(() => { byId("status").textContent = "Link opened."; })
+            .catch((error) => { byId("status").textContent = error.message; });
+        });
+
+        document.addEventListener("securitypolicyviolation", (event) => {
+          byId("network").textContent = `Network blocked by ${event.violatedDirective}.`;
+        });
+        fetch("https://example.com/").then(() => { byId("network").textContent = "Network reachable."; }, () => undefined);
+      })();
+    </script>
+  </body>
+</html>

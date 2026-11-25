@@ -15,6 +15,7 @@ import kotlin.math.roundToInt
 class ScriptedServer(
     private val script: JsonObject,
     instant: Boolean,
+    private val readAsset: (String) -> String,
     private val deliver: (String) -> Unit,
 ) {
     private val gapMillis = if (instant) 0L else 60L
@@ -44,6 +45,7 @@ class ScriptedServer(
                         )
                     }
                     send(script["open"])
+                    send(withApps(script["weather"]))
                     send(agentDone())
                 } else {
                     say("This demo only knows one conversation. Reset it from the menu to replay it.")
@@ -85,8 +87,44 @@ class ScriptedServer(
             "act_month" -> {
                 month(message)
             }
+
+            "act_forecast" -> {
+                script.text("forecast_reply")?.let { say(it) }
+            }
         }
     }
+
+    private fun withApps(message: JsonElement?): JsonElement? {
+        val open = message as? JsonObject ?: return message
+        val apps = script["apps"] as? JsonObject ?: return message
+        val components =
+            open.list("components").map { component ->
+                val fields = component as? JsonObject ?: return@map component
+                val props = fields["props"] as? JsonObject
+                val uri = props?.text("resource")
+                val app = uri?.let { apps[it] as? JsonObject }
+                if (fields.text("type") != "embed:Embed" || props == null || app == null) return@map component
+                JsonObject(fields + ("props" to JsonObject(props + ("app" to attach(uri, app)))))
+            }
+        return JsonObject(open + ("components" to JsonArray(components)))
+    }
+
+    private fun attach(
+        uri: String,
+        app: JsonObject,
+    ): JsonObject =
+        buildJsonObject {
+            put(
+                "resource",
+                buildJsonObject {
+                    put("uri", uri)
+                    put("mimeType", "text/html;profile=mcp-app")
+                    put("text", readAsset(app.text("asset").orEmpty()))
+                },
+            )
+            app["tool_input"]?.let { put("tool_input", it) }
+            app["tool_result"]?.let { put("tool_result", it) }
+        }
 
     private suspend fun month(message: JsonObject) {
         val row = ((message["detail"] as? JsonObject)?.get("row") as? JsonPrimitive)?.doubleOrNull?.toInt() ?: return

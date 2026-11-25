@@ -123,3 +123,75 @@ fn freeing_null_is_a_no_op() {
         polyui_client_free(ptr::null_mut());
     }
 }
+
+const NONCE: &str = "abcdefghijklmnop0123";
+
+fn page(props: &str, nonce: &str) -> Result<String, String> {
+    let props = c_text(props);
+    let nonce = c_text(nonce);
+    let mut error = ptr::null_mut();
+    let html = unsafe {
+        take(polyui_embed_page(
+            props.as_ptr(),
+            nonce.as_ptr(),
+            &mut error,
+        ))
+    };
+    match html {
+        Some(html) => Ok(html),
+        None => Err(unsafe { take(error) }.expect("error is set")),
+    }
+}
+
+#[test]
+fn embed_page_carries_props_and_nonce() {
+    let html = page(r#"{"resource":"ui://a/b","title":"Forecast"}"#, NONCE).expect("page");
+    assert!(html.contains(&format!("const nonce = \"{NONCE}\";")));
+    assert!(html.contains(r#"let props = {"resource":"ui://a/b","title":"Forecast"};"#));
+    assert!(!html.contains("POLYUI_NONCE_SLOT"));
+    assert!(!html.contains("POLYUI_PROPS_SLOT"));
+}
+
+#[test]
+fn embed_page_props_cannot_close_the_script() {
+    let props = "{\"title\":\"</script><script>alert(1)</script>\",\"note\":\"a & b > c\",\"line\":\"x\u{2028}y\u{2029}z\"}";
+    let html = page(props, NONCE).expect("page");
+    assert_eq!(html.matches("</script>").count(), 1);
+    assert!(html.contains(r"\u003c/script\u003e\u003cscript\u003ealert(1)\u003c/script\u003e"));
+    assert!(html.contains(r"a \u0026 b \u003e c"));
+    assert!(html.contains(r"x\u2028y\u2029z"));
+    assert!(!html.contains('\u{2028}'));
+    assert!(!html.contains('\u{2029}'));
+}
+
+#[test]
+fn embed_page_props_slot_text_is_not_expanded() {
+    let html = page(r#"{"title":"POLYUI_NONCE_SLOT POLYUI_PROPS_SLOT"}"#, NONCE).expect("page");
+    assert!(html.contains(r#"{"title":"POLYUI_NONCE_SLOT POLYUI_PROPS_SLOT"}"#));
+    assert!(html.contains(&format!("const nonce = \"{NONCE}\";")));
+}
+
+#[test]
+fn embed_page_rejects_bad_input() {
+    assert!(page("{}", "short").unwrap_err().contains("nonce"));
+    assert!(
+        page("{}", "abcdefghijklmnop\"0123")
+            .unwrap_err()
+            .contains("nonce")
+    );
+    assert!(page("{}", &"a".repeat(129)).unwrap_err().contains("nonce"));
+    assert!(
+        page("{not json", NONCE)
+            .unwrap_err()
+            .contains("not valid JSON")
+    );
+    assert!(page("[1]", NONCE).unwrap_err().contains("JSON object"));
+    let mut error = ptr::null_mut();
+    let nonce = c_text(NONCE);
+    assert!(unsafe { polyui_embed_page(ptr::null(), nonce.as_ptr(), &mut error) }.is_null());
+    assert!(
+        unsafe { take(error) }
+            .expect("error")
+            .contains("the props is null")
+    );
+}

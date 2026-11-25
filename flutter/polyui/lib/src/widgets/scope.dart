@@ -42,6 +42,7 @@ class PolyuiScope extends InheritedWidget {
     required this.surface,
     required this.builders,
     required this.labels,
+    this.confirmDelay = const Duration(milliseconds: 400),
     required super.child,
   });
 
@@ -49,6 +50,7 @@ class PolyuiScope extends InheritedWidget {
   final PolyuiSurfaceModel surface;
   final Map<String, PolyuiComponentBuilder> builders;
   final PolyuiLabels labels;
+  final Duration confirmDelay;
 
   static PolyuiScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<PolyuiScope>();
@@ -64,7 +66,8 @@ class PolyuiScope extends InheritedWidget {
       oldWidget.session != session ||
       oldWidget.surface != surface ||
       oldWidget.builders != builders ||
-      oldWidget.labels != labels;
+      oldWidget.labels != labels ||
+      oldWidget.confirmDelay != confirmDelay;
 }
 
 class PolyuiComponent extends StatelessWidget {

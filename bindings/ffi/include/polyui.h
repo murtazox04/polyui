@@ -30,6 +30,8 @@ char *polyui_client_say(PolyuiClient *client, const char *surface, char **error_
 char *polyui_client_match_voice(PolyuiClient *client, const char *surface, const char *text,
                                 char **error_out);
 
+char *polyui_embed_page(const char *props_json, const char *nonce, char **error_out);
+
 void polyui_string_free(char *text);
 
 void polyui_client_free(PolyuiClient *client);

@@ -6,18 +6,29 @@ typedef Deliver = void Function(String message);
 class ScriptedServer {
   ScriptedServer({
     required this.script,
+    required this.weather,
     required this.deliver,
     bool instant = false,
   }) : gap = instant ? Duration.zero : const Duration(milliseconds: 60);
 
   final Map<String, Object?> script;
+  final Map<String, Object?> weather;
   final Deliver deliver;
   final Duration gap;
   bool opened = false;
+  bool weatherOpened = false;
   int nonceCounter = 0;
 
   String get question =>
       script['question'] as String? ?? 'What do we owe this month?';
+
+  String get weatherQuestion =>
+      weather['question'] as String? ?? 'What is the weather this week?';
+
+  static bool asksWeather(String text) {
+    final lower = text.toLowerCase();
+    return lower.contains('weather') || lower.contains('forecast');
+  }
 
   Future<void> receive(String text) async {
     final Object? message;
@@ -32,16 +43,15 @@ class ScriptedServer {
     switch (message['t']) {
       case 'hello':
         await send(script['welcome']);
+      case 'user.say' when !weatherOpened && asksWeather('${message['text']}'):
+        weatherOpened = true;
+        await turn(weather);
       case 'user.say' when !opened:
         opened = true;
-        for (final chunk in script['answer'] as List? ?? const []) {
-          await send({'v': 1, 't': 'agent.delta', 'text': chunk});
-        }
-        await send(script['open']);
-        await send({'v': 1, 't': 'agent.done'});
+        await turn(script);
       case 'user.say':
         await say(
-          'This demo only knows one conversation. '
+          'This demo only knows the bills and the weather. '
           'Replay it from the menu to start again.',
         );
       case 'ui.action':
@@ -49,8 +59,24 @@ class ScriptedServer {
     }
   }
 
+  Future<void> turn(Map<String, Object?> source) async {
+    for (final chunk in source['answer'] as List? ?? const []) {
+      await send({'v': 1, 't': 'agent.delta', 'text': chunk});
+    }
+    await send(source['open']);
+    await send({'v': 1, 't': 'agent.done'});
+  }
+
   Future<void> action(Map<String, Object?> message) async {
     switch (message['action_id']) {
+      case 'act_ask':
+        final detail = message['detail'] as Map<String, Object?>?;
+        final asked = detail?['text'] as String? ?? '';
+        await say(
+          asked.toLowerCase().contains('samarkand')
+              ? weather['reply'] as String? ?? 'Samarkand looks mild too.'
+              : 'The forecast app said: $asked',
+        );
       case 'act_pay' when message['confirm'] == null:
         nonceCounter += 1;
         final values = message['values'] as Map<String, Object?>? ?? const {};
