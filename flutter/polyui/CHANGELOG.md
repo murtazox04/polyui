@@ -1,3 +1,7 @@
+## 0.1.3
+
+- Built from the same core as PolyUI 0.1.3. No change to the Flutter API.
+
 ## 0.1.2
 
 - Built from the same core as PolyUI 0.1.2. No change to the Flutter API.
