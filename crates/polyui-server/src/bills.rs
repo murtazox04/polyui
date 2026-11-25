@@ -196,6 +196,14 @@ fn action_table(tariff_app: bool) -> ActionTable {
                 "requires_confirm": false,
                 "args": { "service": enum_arg(&services, "Service key.") }
             })),
+        )
+        .with(
+            "save_phone",
+            spec(json!({
+                "description": "Save the phone number that gets payment notifications. Use as on_press of a Button next to an Input with input phone, and send that Input's value path in with.",
+                "requires_confirm": false,
+                "args": {}
+            })),
         );
     if !tariff_app {
         return table;
@@ -249,6 +257,7 @@ pub struct BillsHost {
     tariff_app: bool,
     paid: Mutex<BTreeSet<String>>,
     picked: Mutex<Option<String>>,
+    phone: Mutex<Option<String>>,
 }
 
 impl Default for BillsHost {
@@ -264,6 +273,7 @@ impl BillsHost {
             tariff_app: false,
             paid: Mutex::new(BTreeSet::new()),
             picked: Mutex::new(None),
+            phone: Mutex::new(None),
         }
     }
 
@@ -282,6 +292,24 @@ impl BillsHost {
 
     pub fn picked_offer(&self) -> Option<String> {
         self.picked.lock().ok().and_then(|picked| picked.clone())
+    }
+
+    pub fn notification_phone(&self) -> Option<String> {
+        self.phone.lock().ok().and_then(|phone| phone.clone())
+    }
+
+    fn save_phone(&self, call: &ActionCall<'_>) -> ActionOutcome {
+        let typed = call.values.values().find_map(Value::as_str).map(str::trim);
+        let Some(phone) = typed.filter(|phone| is_phone(phone)) else {
+            return ActionOutcome::rejected(text(call.locale, Phrase::BadPhone));
+        };
+        let Ok(mut saved) = self.phone.lock() else {
+            return ActionOutcome::rejected(text(call.locale, Phrase::TryLater));
+        };
+        *saved = Some(phone.to_string());
+        ActionOutcome::ok()
+            .with_message(text(call.locale, Phrase::PhoneSaved).to_string())
+            .with_note(format!("Payment notifications now go to {phone}."))
     }
 
     fn pay(&self, args: &Map<String, Value>, locale: Locale) -> ActionOutcome {
@@ -349,6 +377,8 @@ enum Phrase {
     PayTitle,
     PayLabel,
     FromCard,
+    BadPhone,
+    PhoneSaved,
 }
 
 fn text(locale: Locale, phrase: Phrase) -> &'static str {
@@ -362,6 +392,10 @@ fn text(locale: Locale, phrase: Phrase) -> &'static str {
         (Locale::UzLatn, Phrase::PayTitle) => "To'lash",
         (Locale::UzLatn, Phrase::PayLabel) => "To'lash",
         (Locale::UzLatn, Phrase::FromCard) => "karta",
+        (Locale::UzLatn, Phrase::BadPhone) => {
+            "Telefon raqamini to'liq kiriting, masalan +998 90 123 45 67."
+        }
+        (Locale::UzLatn, Phrase::PhoneSaved) => "Raqam saqlandi.",
         (Locale::UzCyrl, Phrase::UnknownBill) => "Бундай ҳисоб топилмади.",
         (Locale::UzCyrl, Phrase::AlreadyPaid) => "Бу ҳисоб аллақачон тўланган.",
         (Locale::UzCyrl, Phrase::TryLater) => "Кейинроқ қайта уриниб кўринг.",
@@ -371,6 +405,10 @@ fn text(locale: Locale, phrase: Phrase) -> &'static str {
         (Locale::UzCyrl, Phrase::PayTitle) => "Тўлаш",
         (Locale::UzCyrl, Phrase::PayLabel) => "Тўлаш",
         (Locale::UzCyrl, Phrase::FromCard) => "карта",
+        (Locale::UzCyrl, Phrase::BadPhone) => {
+            "Телефон рақамини тўлиқ киритинг, масалан +998 90 123 45 67."
+        }
+        (Locale::UzCyrl, Phrase::PhoneSaved) => "Рақам сақланди.",
         (Locale::Ru, Phrase::UnknownBill) => "Такой счёт не найден.",
         (Locale::Ru, Phrase::AlreadyPaid) => "Этот счёт уже оплачен.",
         (Locale::Ru, Phrase::TryLater) => "Попробуйте позже.",
@@ -380,6 +418,8 @@ fn text(locale: Locale, phrase: Phrase) -> &'static str {
         (Locale::Ru, Phrase::PayTitle) => "Оплатить",
         (Locale::Ru, Phrase::PayLabel) => "Оплатить",
         (Locale::Ru, Phrase::FromCard) => "карта",
+        (Locale::Ru, Phrase::BadPhone) => "Введите номер полностью, например +998 90 123 45 67.",
+        (Locale::Ru, Phrase::PhoneSaved) => "Номер сохранён.",
         (Locale::En, Phrase::UnknownBill) => "This bill was not found.",
         (Locale::En, Phrase::AlreadyPaid) => "This bill is already paid.",
         (Locale::En, Phrase::TryLater) => "Please try again later.",
@@ -389,7 +429,18 @@ fn text(locale: Locale, phrase: Phrase) -> &'static str {
         (Locale::En, Phrase::PayTitle) => "Pay",
         (Locale::En, Phrase::PayLabel) => "Pay",
         (Locale::En, Phrase::FromCard) => "card",
+        (Locale::En, Phrase::BadPhone) => "Enter the full number, for example +998 90 123 45 67.",
+        (Locale::En, Phrase::PhoneSaved) => "Number saved.",
     }
+}
+
+fn is_phone(text: &str) -> bool {
+    let digits = text.chars().filter(char::is_ascii_digit).count();
+    let allowed = text
+        .chars()
+        .enumerate()
+        .all(|(index, c)| c.is_ascii_digit() || c == ' ' || c == '-' || (c == '+' && index == 0));
+    (7..=15).contains(&digits) && allowed
 }
 
 pub struct HouseholdRefs<'a> {
@@ -567,6 +618,7 @@ Internet tariffs:
             match call.action {
                 "pay_bill" => self.pay(call.args, call.locale),
                 "pick_offer" => self.pick(&call),
+                "save_phone" => self.save_phone(&call),
                 "show_usage" => match call
                     .args
                     .get("service")
@@ -640,6 +692,42 @@ Internet tariffs:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phone_numbers_are_checked_before_they_are_saved() {
+        assert!(is_phone("+998 90 123 45 67"));
+        assert!(is_phone("90-123-45-67"));
+        assert!(!is_phone("12345"));
+        assert!(!is_phone("+998 90 123 45 67 <script>"));
+        assert!(!is_phone("99+8901234567"));
+        let host = BillsHost::new();
+        let user = User::new(HOUSEHOLD_USER);
+        let args = Map::new();
+        let run = |typed: &str| {
+            let values = Map::from_iter([("/phone".to_string(), json!(typed))]);
+            futures_util::FutureExt::now_or_never(host.run_action(
+                &user,
+                ActionCall {
+                    action: "save_phone",
+                    args: &args,
+                    values: &values,
+                    detail: None,
+                    source: polyui_core::protocol::ActionSource::Tap,
+                    locale: Locale::En,
+                },
+            ))
+            .expect("the action does not wait")
+        };
+        assert!(!run("call me").ok);
+        assert_eq!(host.notification_phone(), None);
+        let saved = run(" +998 90 123 45 67 ");
+        assert!(saved.ok);
+        assert_eq!(saved.message.as_deref(), Some("Number saved."));
+        assert_eq!(
+            host.notification_phone().as_deref(),
+            Some("+998 90 123 45 67")
+        );
+    }
 
     #[test]
     fn money_and_masks() {

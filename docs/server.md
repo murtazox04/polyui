@@ -144,7 +144,7 @@ Stat(label<=80!, value<=40!, unit<=16, tone: neutral|positive|negative|warning, 
 pay_bill(bill: b_gas_2611|b_power_2611|b_water_2611|b_net_2611!)
 ```
 
-Validation does not depend on the profile. Every prop is still checked against the catalog, and a call with problems gets the same numbered list back, so the model fixes it on the retry. In the 32 prompt benchmark on `claude-haiku-5-5` every first UI call was valid with both profiles, and compact cost about a third as much. Compact drew a form for the phone number request less often, so a host that depends on forms may want `full`. See [the benchmark](benchmark.md#compact-tool-profile-2026-11-24) for the numbers.
+Validation does not depend on the profile. Every prop is still checked against the catalog, and a call with problems gets the same numbered list back, so the model fixes it on the retry. In the 32 prompt benchmark on `claude-haiku-5-5` every first UI call was valid with both profiles, and compact cost about a third as much. Compact draws a form only when the host has an action that can take its values, which is also the only case where a form is useful; register one and it draws the form as often as `full`. See [the benchmark](benchmark.md#forms-with-the-compact-profile-2026-11-25) for the numbers.
 
 `polyui-decode` builds its grammars from the full profile whatever the server uses, because a grammar constrains decoding without adding prompt tokens.
 

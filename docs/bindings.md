@@ -88,7 +88,7 @@ Method names are camelCase; data that mirrors the protocol keeps the wire names,
 
 ## Tool profiles
 
-`tool_definitions` / `toolDefinitions` takes a `profile`. `"compact"`, the default and the same as the Rust server, keeps a closed generic schema and lists each type as one line in the `show_ui` description: with the built-in catalogs and one action it is about 5 KB of JSON. `"full"` puts every prop of every type into the schema, about 31 KB, and is the only profile that supports `strict`; asking for `strict` with `"compact"` raises an error instead of silently dropping it. On Haiku the compact profile drew a form for a phone number request less often than full ([benchmark](benchmark.md#compact-tool-profile-2026-11-24)), so a host whose answers are mostly forms may prefer `"full"`.
+`tool_definitions` / `toolDefinitions` takes a `profile`. `"compact"`, the default and the same as the Rust server, keeps a closed generic schema and lists each type as one line in the `show_ui` description: with the built-in catalogs and one action it is about 5 KB of JSON. `"full"` puts every prop of every type into the schema, about 31 KB, and is the only profile that supports `strict`; asking for `strict` with `"compact"` raises an error instead of silently dropping it. Compact draws a form only when an action can take its values, so register one for every form you expect ([benchmark](benchmark.md#forms-with-the-compact-profile-2026-11-25)).
 
 ```python
 tools = validator.tool_definitions(["core@1", "chart@1"])

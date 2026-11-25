@@ -106,14 +106,14 @@ Every prop, limit and default is in [The catalogs](docs/catalogs.md). Charts are
 
 ### How well the model draws UI
 
-One run of the 32 prompt benchmark with `claude-haiku-5-5`, in English, Uzbek (Latin and Cyrillic) and Russian, with tool calls. The server sends the compact tool profile unless you configure it otherwise, so the first row is what you get by default. The full profile puts every prop in the tool schema; it was the default before.
+Runs of the 32 prompt benchmark with `claude-haiku-5-5` (compact on 2026-11-25, full on 2026-11-24), in English, Uzbek (Latin and Cyrillic) and Russian, with tool calls. The server sends the compact tool profile unless you configure it otherwise, so the first row is what you get by default. The full profile puts every prop in the tool schema; it was the default before.
 
 | Tool profile | `show_ui` valid on the first try | UI shown when the prompt expected one | Mean time to first `ui.open` | Cost of the 32 prompts |
 |---|---|---|---|---|
-| compact (default) | 26 of 26 turns with a UI call | 22 of 24 | 4.5 s | $0.0325 |
+| compact (default) | 27 of 28 turns with a UI call | 24 of 24 | 4.6 s | $0.0349 |
 | full | 28 of 28 | 24 of 24 | 5.1 s | $0.1037 |
 
-Compact costs about a third as much and opens the first UI sooner. It drew no UI for two prompts that expected one, and it drew a form for the phone number request less often. One run with one model is a small sample; [the benchmark page](docs/benchmark.md#compact-tool-profile-2026-11-24) has the full tables, the inline JSON setting, and what the numbers can and cannot tell you.
+Compact costs about a third as much and opens the first UI sooner. It used to draw a form for the phone number request less often; the reason was that the test host had no action to save the number, and with one added compact draws the form every time ([details](docs/benchmark.md#forms-with-the-compact-profile-2026-11-25)). One first call in 28 needed the retry. One run with one model is a small sample; [the benchmark page](docs/benchmark.md#compact-tool-profile-2026-11-24) has the full tables, the inline JSON setting, and what the numbers can and cannot tell you.
 
 We also tried `ember:chat`, a self-hosted Gemma model of about 12B, on 8 prompts. It struggled: tool calls ran out of time on that server, inline JSON gave 1 valid UI in 5 tries (mostly missing closing braces), and the constrained run gave none. The validator caught every bad answer, so nothing broken reached a client. The sample is too small to settle anything about small models yet; the details and what a fair test needs are in [docs/benchmark.md](docs/benchmark.md).
 
