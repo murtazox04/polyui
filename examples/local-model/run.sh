@@ -90,6 +90,7 @@ curl -sS --fail-with-body "${url}/v1/chat/completions" \
     cat "$work/response.json" >&2
     echo >&2
     echo "If it says llguidance is not enabled, rebuild llama.cpp with -DLLAMA_LLGUIDANCE=ON." >&2
+    echo "A server built without it may stop instead of answering; check that it is still up." >&2
     exit 1
   }
 

@@ -118,7 +118,7 @@ cmake --build build --config Release -j
 ./build/bin/llama-server -m /path/to/model.gguf --port 8099
 ```
 
-A grammar that starts with `%llguidance` then goes to llguidance (`common/sampling.cpp`). In a build without it, the same code throws "failed to parse grammar: llguidance is not enabled".
+A grammar that starts with `%llguidance` then goes to llguidance (`common/sampling.cpp`). Never send one to a server built without it. We sent one to a llama-server from the b11020 release build for macOS, and it did not answer with an error: the whole process stopped with `llguidance (cmake -DLLAMA_LLGUIDANCE=ON) is not enabled` at `common/sampling.cpp:217` (a `ggml_abort`), and every request in flight on that server was dropped. If you do not build the server yourself, ask whoever runs it, or use `request::llama_chat_json`. A build without llguidance turns that JSON Schema into its own GBNF grammar instead (read from `common/json-schema-to-grammar.cpp`; we have not run that path).
 
 There are three ways to send a request:
 
@@ -171,7 +171,7 @@ assert!(same_type_unions(&reply_schema).is_empty());
 
 ## What the grammar guarantees
 
-When the server applies the grammar, the reply is either plain text without the call marker in it, or exactly one call and nothing after it. Inside a call:
+When the server applies the grammar, the reply is either plain text or exactly one call and nothing after it. Plain text cannot contain the call marker, and it cannot contain the marker without its closing punctuation either (`<tool_call` for `<tool_call>`), so a near miss such as `<tool_calls>` or `<tool_call name="show_ui">` is stopped instead of passing as text. Inside a call:
 
 - The JSON is complete and well formed.
 - The tool name is one of the tools in the grammar.
@@ -227,4 +227,4 @@ The tests in `crates/polyui-decode/tests` run without a model. They drive llguid
 - wrong enum values, a missing required prop, keys out of schema order, unknown tools, text with the call marker in it, a second call and text after a call are all rejected where expected;
 - special token markers work with a tokenizer that has them and fail to compile with one that does not.
 
-The example in `examples/local-model` sends a real request when a llama-server is available. We have not run it against llama-server or vLLM with a real model, so model output quality under the grammar is not measured yet.
+The example in `examples/local-model` sends a real request when a llama-server is available. It has been run once with a real model, on 2026-11-25: gemma-4-12b-it (unsloth `UD-Q4_K_XL`) in a llama-server built with llguidance, prompt "What do I owe this month?". The model wrote `<tool_calls>` instead of `<tool_call>`, the grammar of that day took it for plain text, and the call under it was never checked, so it carried a `children` list on a `Text` and children that did not exist. The text rule above now refuses that spelling. That one run is all we have: model output quality under the grammar is not measured yet, and the run has not been repeated with the fix. We have not run vLLM.

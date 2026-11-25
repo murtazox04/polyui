@@ -22,7 +22,7 @@ sequenceDiagram
 
 ## What you need
 
-- llama.cpp built with llguidance. A build without it cannot use `%llguidance` grammars and fails with "llguidance is not enabled".
+- llama.cpp built with llguidance. Do not point the script at a server built without it: in grammar mode such a server stops with "llguidance (cmake -DLLAMA_LLGUIDANCE=ON) is not enabled" and drops every request it was serving. With `POLYUI_DECODE_MODE=json` such a server builds its own GBNF grammar from the schema instead; we have read that in the llama.cpp source but not run it.
 
   ```sh
   git clone https://github.com/ggml-org/llama.cpp
