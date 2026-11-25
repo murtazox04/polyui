@@ -23,6 +23,18 @@ android/
   example/                      the demo app (dev.polyui.example)
 ```
 
+## Adding it to an app
+
+From a release, the library is on Maven Central:
+
+```kotlin
+dependencies {
+    implementation("io.github.murtazox04:polyui-android:0.1.0")
+}
+```
+
+The AAR carries `libpolyui_jni.so` for `arm64-v8a`, `armeabi-v7a` and `x86_64`, the consumer ProGuard rule that keeps the JNI methods, and a sources jar. The group is `io.github.murtazox04` because Maven Central only grants `dev.polyui` to the owner of the `polyui.dev` domain; the Kotlin package stays `dev.polyui`. See [Releasing](releasing.md).
+
 ## Building
 
 You need a JDK 17 or newer (21 was used), the Android SDK with platform `android-37.2`, build tools 36.0.0 and NDK `28.2.13676358`, rustup, and `cargo-ndk` (`cargo install cargo-ndk`). Point `ANDROID_HOME` at the SDK, or write `sdk.dir=...` into `android/local.properties`.
