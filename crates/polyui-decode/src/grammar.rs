@@ -229,7 +229,7 @@ impl ToolGrammar {
             let _ = writeln!(
                 grammar,
                 "TEXT: /(?s:.+)/ & ~/(?s:.*){}(?s:.*)/",
-                regex_literal(format.open.spelling())
+                regex_literal(marker_stem(format.open.spelling()))
             );
         }
         grammar
@@ -383,4 +383,10 @@ fn write_value(value: &Value, item: &str, key: &str, out: &mut String) {
         }
         scalar => out.push_str(&scalar.to_string()),
     }
+}
+
+fn marker_stem(spelling: &str) -> &str {
+    let stem = spelling
+        .trim_end_matches(|character: char| !(character.is_alphanumeric() || character == '_'));
+    if stem.is_empty() { spelling } else { stem }
 }

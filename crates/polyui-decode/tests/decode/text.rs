@@ -41,9 +41,26 @@ fn text_cannot_contain_the_call_marker() {
     let at = feed(&grammar, text)
         .rejected_at()
         .expect("the marker inside text is rejected");
-    assert_eq!(&text[..at], "Sure, here it is <tool_call");
+    assert_eq!(&text[..at], "Sure, here it is <tool_cal");
     let leading = format!(" {}", close_call(&grammar));
-    assert_eq!(feed(&grammar, &leading).rejected_at(), Some(11));
+    assert_eq!(feed(&grammar, &leading).rejected_at(), Some(10));
+}
+
+#[test]
+fn text_cannot_spell_a_near_miss_of_the_marker() {
+    let grammar = grammar();
+    for text in [
+        "<tool_calls>\n{\"name\": \"show_ui\"}\n</tool_calls>",
+        "<tool_call name=\"show_ui\">",
+        "Here you go:\n<tool_call\n{}",
+    ] {
+        let at = feed(&grammar, text)
+            .rejected_at()
+            .unwrap_or_else(|| panic!("{text} must not pass as plain text"));
+        let marker = text.find("<tool_call").expect("every case spells the stem");
+        assert!(at <= marker + "<tool_call".len(), "{text} rejected at {at}");
+    }
+    assert!(feed(&grammar, "Use the tool_call helper or <tool> tags.").accepted());
 }
 
 #[test]
@@ -118,7 +135,7 @@ fn special_token_markers_need_the_token_not_its_spelling() {
     );
     let mut matcher = checker.lark(&lark).expect("compiles");
     let fed = checker.feed(&mut matcher, &spelled).expect("feeds");
-    assert_eq!(fed.rejected_at(), Some("<|tool|".len()));
+    assert_eq!(fed.rejected_at(), Some("<|too".len()));
     let unknown = checker
         .lark(
             &case("ok_bills_card.json")
