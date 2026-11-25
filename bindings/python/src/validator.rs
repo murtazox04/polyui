@@ -2,9 +2,10 @@ use crate::catalogs::PyCatalogs;
 use crate::convert::{input, to_json, to_py};
 use crate::errors::{RefRefusedError, catalog_error, validation_error};
 use crate::host::{
-    self, Current, Input, Settings, SourceRefs, View, action_id, attach_apps, attach_scenes,
-    chart_options,
+    self, Current, Input, Settings, SourceRefs, StreamContext, View, action_id, attach_apps,
+    attach_scenes, chart_options,
 };
+use crate::stream::PyShowStream;
 use crate::surface::{PyPrepared, PySurface, PyUpdate, sealed_list};
 use polyui_core::embed::UiResource;
 use polyui_core::tools;
@@ -506,6 +507,91 @@ impl PyValidator {
                 &mut |uri| apps.read(uri),
             )
         });
+        apps.finish()?;
+        let prepared = prepared?;
+        ids.finish()?;
+        Ok(PyPrepared { inner: prepared })
+    }
+
+    #[pyo3(signature = (stream, chunk, user=None, surface_id=None, declared=None, locale="en", next_id=None, refs=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn feed_show<'py>(
+        &self,
+        py: Python<'py>,
+        stream: &Bound<'py, PyShowStream>,
+        chunk: &str,
+        user: Option<&Bound<'py, PyAny>>,
+        surface_id: Option<&str>,
+        declared: Option<Vec<String>>,
+        locale: &str,
+        next_id: Option<&Bound<'py, PyAny>>,
+        refs: Option<&Bound<'py, PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let given = Self::given(refs)?;
+        let view = View::new(declared.as_deref(), locale);
+        let none = py.None().into_bound(py);
+        let user = user.unwrap_or(&none);
+        let mut ids = Ids::new(next_id);
+        let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
+        let mut apps = Apps::new(callback, user);
+        let mut state = stream.borrow_mut();
+        let live = state.live()?;
+        let messages = self.with_refs(py, user, given.as_ref(), |refs| {
+            let mut next = || ids.next();
+            let mut read = |uri: &str| apps.read(uri);
+            let mut context = StreamContext {
+                settings: &self.settings,
+                refs,
+                surface_id,
+                view: &view,
+                next_id: &mut next,
+                read: &mut read,
+            };
+            Ok(live.feed(&mut context, chunk))
+        })?;
+        apps.finish()?;
+        ids.finish()?;
+        to_py(py, &serde_json::Value::Array(messages))
+    }
+
+    #[pyo3(signature = (stream, payload=None, user=None, surface_id=None, declared=None, locale="en", next_id=None, refs=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn finish_show<'py>(
+        &self,
+        py: Python<'py>,
+        stream: &Bound<'py, PyShowStream>,
+        payload: Option<&Bound<'py, PyAny>>,
+        user: Option<&Bound<'py, PyAny>>,
+        surface_id: Option<&str>,
+        declared: Option<Vec<String>>,
+        locale: &str,
+        next_id: Option<&Bound<'py, PyAny>>,
+        refs: Option<&Bound<'py, PyAny>>,
+    ) -> PyResult<PyPrepared> {
+        let payload = payload.map(input).transpose()?;
+        let given = Self::given(refs)?;
+        let view = View::new(declared.as_deref(), locale);
+        let none = py.None().into_bound(py);
+        let user = user.unwrap_or(&none);
+        let mut ids = Ids::new(next_id);
+        let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
+        let mut apps = Apps::new(callback, user);
+        let mut state = stream.borrow_mut();
+        let finished = state.live()?;
+        let prepared = self.with_refs(py, user, given.as_ref(), |refs| {
+            let mut next = || ids.next();
+            let mut read = |uri: &str| apps.read(uri);
+            let mut context = StreamContext {
+                settings: &self.settings,
+                refs,
+                surface_id,
+                view: &view,
+                next_id: &mut next,
+                read: &mut read,
+            };
+            finished.finish(&mut context, payload.as_ref())
+        });
+        state.finished = true;
         apps.finish()?;
         let prepared = prepared?;
         ids.finish()?;

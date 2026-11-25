@@ -125,6 +125,62 @@ const prepared = validator.prepareShow(toolInput, { user, refs })
 
 This works with asyncio, trio, AnyIO or any Node code, because the binding never runs an event loop of its own. Only fetch what `ref_keys` returns: the values still go through the declared kind of each source and the prop's own rules before they reach a client, exactly as with a resolver.
 
+## Streaming a show_ui call
+
+Models stream tool input in pieces (`input_json_delta` on the Anthropic API, `tool_calls[].function.arguments` deltas on OpenAI style APIs). With a `ShowStream` the client gets each component as soon as its closing brace arrives, the same way the Rust server does it, instead of waiting for the whole call.
+
+```mermaid
+sequenceDiagram
+    participant M as Model
+    participant H as Your host
+    participant C as Client
+    M->>H: input_json_delta
+    H->>H: validator.feed_show(stream, chunk)
+    H->>C: ui.open (first time the root is complete)
+    M->>H: input_json_delta
+    H->>C: ui.patch (each new component)
+    M->>H: tool call complete
+    H->>H: validator.finish_show(stream)
+    H->>C: ui.data / ui.patch for anything the full check changed
+    H->>M: prepared.summary, or the problems
+```
+
+```python
+stream = polyui.ShowStream()
+async for delta in tool_input_deltas:
+    for message in validator.feed_show(stream, delta, user=user, declared=hello["catalogs"]):
+        await send_to_client(message)
+try:
+    prepared = validator.finish_show(stream, user=user, declared=hello["catalogs"])
+except polyui.ValidationError as error:
+    if (closing := stream.close_message()) is not None:
+        await send_to_client(closing)
+    send_tool_result(str(error), is_error=True)
+else:
+    for message in prepared.messages:
+        await send_to_client(message)
+    remember(prepared.model, prepared.client, prepared.actions)
+    send_tool_result(prepared.summary)
+```
+
+```js
+const stream = new polyui.ShowStream()
+for await (const delta of toolInputDeltas) {
+  for (const message of validator.feedShow(stream, delta, { user, declared: hello.catalogs })) socket.send(JSON.stringify(message))
+}
+const prepared = validator.finishShow(stream, null, { user, declared: hello.catalogs })
+```
+
+What it guarantees:
+
+- Each component is checked on its own before it is sent, and its `$ref` values are resolved and its actions sealed as it arrives. Nothing unchecked reaches the client, and `$ref` objects never do.
+- `finish_show` / `finishShow` runs the full check on the whole call (the text the stream collected, or the `payload` you pass). Components that did not change keep the handles that were already sent, so a tap that comes in early still finds its action in `prepared.actions`. Anything that changed, was removed or needs the data model (charts bound to `data`) is sent as `ui.data` and `ui.patch`.
+- Streaming stops early, and the final check decides, when a component fails its own check or a `$ref` cannot be resolved. `stream.stopped` tells you it happened.
+- If the final check fails after something was shown, send `stream.close_message()` (a `ui.close` for that surface) and give the model the problems, as without streaming.
+- With async lookups, pass `refs` on every `feed_show` call with what you have; a component whose ref is not there yet stops the preview, and `finish_show` with the full `refs` still shows the whole surface.
+
+Buttons on a surface that is still streaming should not act yet: keep the surface marked as pending in your session until `finish_show` returns, and answer a `ui.action` on it with `rejected`, as the Rust server does.
+
 ## Keep two copies
 
 Both bindings return two versions of a surface. `prepared.model` is what the model wrote, with `$ref` objects still in place; build summaries from it. `prepared.client` and the messages carry the resolved values, chart scenes and handles; send them to the client and use them for `ui.snapshot`. Keep `prepared.actions` on the server and look the handle up when a `ui.action` arrives. Never put the client copy in front of the model.
@@ -132,5 +188,5 @@ Both bindings return two versions of a surface. `prepared.model` is what the mod
 ## Limits today
 
 - The `ui_resource` / `uiResource` callback is synchronous. For refs, see [Async lookups](#async-lookups).
-- There is no async agent loop and no transport in either binding; that part is yours.
+- There is no agent loop and no transport in either binding; that part is yours. Streaming covers `show_ui`; `update_ui` is applied when its call is complete.
 - `Client` is also exposed in both, which is handy for tests and for server-side checks of what a renderer would get.

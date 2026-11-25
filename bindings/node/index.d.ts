@@ -200,8 +200,20 @@ export declare class Validator {
     seq: number,
     options?: Omit<PrepareOptions, 'surfaceId'>,
   ): Prepared
+  feedShow(stream: ShowStream, chunk: string, options?: PrepareOptions): Json[]
+  finishShow(stream: ShowStream, payload?: Payload | null, options?: PrepareOptions): Prepared
   refKeys(payload: Payload): string[]
   toolDefinitions(declared?: string[], strict?: boolean, profile?: ToolProfile): Tool[]
+}
+
+export declare class ShowStream {
+  constructor()
+  get opened(): string | null
+  get seq(): number
+  get stopped(): boolean
+  get finished(): boolean
+  get text(): string
+  closeMessage(): Json | null
 }
 
 export declare class Client {

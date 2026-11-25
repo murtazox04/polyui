@@ -58,6 +58,7 @@ try {
 | `validator.resolveRefs`, `compileCharts`, `attachApps`, `sealActions`, `downgrade`, `summary`, `fallback` | The same steps one at a time. |
 | `Surface`, `Update` | Validated results. `JSON.stringify(surface)` and `Surface.fromJSON()` let you keep a surface in a session store. |
 | `toolDefinitions(catalogs, actions, strict, profile)` | The Anthropic tool JSON for the three UI tools. `profile` is `'compact'` (default) or `'full'`; `strict` needs `'full'`. |
+| `new ShowStream()`, `validator.feedShow(stream, chunk, options)`, `validator.finishShow(stream, payload, options)` | Stream a `show_ui` call: `ui.open` and `ui.patch` for each component as it arrives, then the full check. See [Streaming](https://github.com/murtazox04/polyui/blob/main/docs/bindings.md#streaming-a-show_ui-call). |
 | `validator.refKeys(payload)` | The declared `source:key` refs a tool call uses, to fetch before `prepareShow(payload, { refs })`. |
 | `openMessage`, `patchMessage`, `closeMessage`, `closedSummary` | Protocol messages and the close summary. |
 | `compileChart`, `chartSvg`, `describeChart` | Chart scene, standalone SVG and the spoken summary. |

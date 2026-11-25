@@ -101,6 +101,7 @@ module.exports = {
   Update: native.Update,
   Prepared: native.Prepared,
   Client: native.Client,
+  ShowStream: native.ShowStream,
   toolDefinitions: native.toolDefinitions,
   openMessage: native.openMessage,
   patchMessage: native.patchMessage,

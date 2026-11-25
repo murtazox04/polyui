@@ -203,6 +203,28 @@ class Validator:
         next_id: IdFactory | None = None,
         refs: Mapping[str, Any] | None = None,
     ) -> Prepared: ...
+    def feed_show(
+        self,
+        stream: ShowStream,
+        chunk: str,
+        user: Any = None,
+        surface_id: str | None = None,
+        declared: Sequence[str] | None = None,
+        locale: str = "en",
+        next_id: IdFactory | None = None,
+        refs: Mapping[str, Any] | None = None,
+    ) -> list[Json]: ...
+    def finish_show(
+        self,
+        stream: ShowStream,
+        payload: Payload | None = None,
+        user: Any = None,
+        surface_id: str | None = None,
+        declared: Sequence[str] | None = None,
+        locale: str = "en",
+        next_id: IdFactory | None = None,
+        refs: Mapping[str, Any] | None = None,
+    ) -> Prepared: ...
     def ref_keys(self, payload: Payload) -> list[str]: ...
     def tool_definitions(
         self,
@@ -210,6 +232,21 @@ class Validator:
         strict: bool = False,
         profile: ToolProfile | None = None,
     ) -> list[Json]: ...
+
+@final
+class ShowStream:
+    def __new__(cls) -> ShowStream: ...
+    @property
+    def opened(self) -> str | None: ...
+    @property
+    def seq(self) -> int: ...
+    @property
+    def stopped(self) -> bool: ...
+    @property
+    def finished(self) -> bool: ...
+    @property
+    def text(self) -> str: ...
+    def close_message(self) -> Json | None: ...
 
 @final
 class Client:
