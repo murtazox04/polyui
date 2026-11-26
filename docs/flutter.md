@@ -342,11 +342,11 @@ This used to fail in `debug_unpack_ios` with "does not contain architectures "ar
 | Forecast app renders with its tool input and result, its `fetch` is blocked by `connect-src`, the frame grows from 160 to fit | yes | yes |
 | The app's message button produces `ui.action` `act_ask` with `{"text": "Also show the forecast for Samarkand."}` | yes, pressed by the `embed-press` script | yes, with a real tap (`adb shell input tap`) |
 | A link request shows the confirm sheet with the full URL | yes | yes |
-| Open link opens the browser outside the app and the app hears yes | not checked (no way to tap the simulator here) | yes: Chrome came to the front in its own task, the app showed "Link opened." |
-| Cancel and the app hears no | not checked | yes: the app showed "Link opening denied by user" |
+| Open link opens the browser outside the app and the app hears yes | yes, tapped by hand: Safari came to the front with open-meteo.com, and back in the app it showed "Link opened." | yes: Chrome came to the front in its own task, the app showed "Link opened." |
+| Cancel and the app hears no | yes, tapped by hand: the app showed "Link opening denied by user" | yes: the app showed "Link opening denied by user" |
 | Live mode against `polyui serve` from this repository | yes, `ws://127.0.0.1:8777/ws`, a ChoiceGroup surface came back | yes, `ws://10.0.2.2:8777/ws`, a chart surface came back |
 | Read aloud | the engine took every utterance and finished without an error, the read part was outlined; the audio itself was not listened to | logcat shows Google TTS synthesizing each utterance in en-US |
-| Microphone | the speech recognition prompt shows the usage string; it was not answered | a denied microphone shows the notice and touch keeps working; with the permission granted, listening starts and stops on silence |
+| Microphone | the speech recognition prompt shows the usage string. Don't Allow shows the microphone-off notice. Allow on both prompts: the simulator's recognizer fails to start (`Error starting listen` from `speech_to_text`) and the app shows the recognition-unavailable notice | a denied microphone shows the notice and touch keeps working; with the permission granted, listening starts and stops on silence |
 
 The iOS embed screenshot is above. This is the same app on Android after the link was accepted:
 
@@ -355,7 +355,7 @@ The iOS embed screenshot is above. This is the same app on Android after the lin
 ## What is not done yet
 
 - Real speech was not tested on either platform. No one spoke to the simulator or the emulator, so the path from a real recognizer transcript to `match_voice` has only run in `test/voice_test.dart` with a fake recognizer. Speech output was not listened to.
-- On iOS the link was not accepted or cancelled by hand, and the speech permission prompt was not answered, because nothing here could tap the simulator. The same code paths ran on Android and in widget tests.
+- On iOS the recognizer never started in the simulator, so listening that actually runs has only been seen on Android.
 - On Android `webview_flutter` does not report subframe navigations, so the "only `about:srcdoc`, `about:blank` and https in subframes" rule is applied on iOS only. The main frame rule works on both.
 - `webview_flutter_android` turns on DOM storage for every web view and has no setting to turn it off. Nothing writes to it, but it is not off.
 - No `lib/x86/` in the APK: Flutter did not ask for x86. The `i686-linux-android` build was run by hand with cargo-ndk, not through Flutter.
