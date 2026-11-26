@@ -63,7 +63,8 @@ The client speaks first.
 
 - `catalogs`: what the renderer can draw, as `id@major`. The server must only send components from these catalogs. Anything else is sent as its `alt` text inside a `Text` component.
 - `modalities`: any non-empty subset of `screen` and `voice`.
-- `features`: optional abilities. `sync` means the client handles `ui.sync`. `stream` means it accepts surfaces that grow while the model is still writing (section 8.1).
+- `features`: optional abilities. `sync` means the client handles `ui.sync`. `stream` means it accepts surfaces that grow while the model is still writing (section 8.1). `resume` means the client can come back to its session after the connection drops (section 8.2).
+- `resume`: optional, `{ "session": "...", "token": "..." }`, sent by a client that lost its connection and wants its old session back (section 8.2).
 - `locale`: BCP 47 tag. Used for `alt` and `say` templates and for voice matching.
 
 The server answers with `welcome`:
@@ -72,7 +73,11 @@ The server answers with `welcome`:
 { "v": 1, "t": "welcome", "session": "sess_8f2c", "catalogs": ["core@1", "chart@1"] }
 ```
 
-`catalogs` in `welcome` is the intersection the server will actually use.
+`catalogs` in `welcome` is the intersection the server will actually use. When the client declared `resume`, `welcome` also carries `resume_token`, and, when the `hello` asked to resume, `resumed`:
+
+```json
+{ "v": 1, "t": "welcome", "session": "sess_8f2c", "catalogs": ["core@1", "chart@1"], "resume_token": "rt_3b9e...", "resumed": true }
+```
 
 ## 5. Components
 
@@ -255,7 +260,7 @@ While the voice layer speaks, the client highlights the component being spoken. 
 
 The full state of a surface: `root`, `components`, `data`, `seq`. Sent after `ui.resync`.
 
-A session lives as long as its connection: the WebSocket, or the SSE event stream. When that closes, the session ends. Its surfaces, handles and pending confirmations are gone, and a running model turn stops. A client that connects again sends `hello` and starts a new session; nothing is resumed and no `ui.snapshot` is sent for the old surfaces. The client should mark the surfaces it still shows as stale, because their handles no longer work.
+A session lives as long as its connection: the WebSocket, or the SSE event stream. When that closes, the session ends. Its surfaces, handles and pending confirmations are gone, and a running model turn stops. A client that connects again sends `hello` and starts a new session; nothing is resumed and no `ui.snapshot` is sent for the old surfaces. The client should mark the surfaces it still shows as stale, because their handles no longer work. A client that declared `resume` can get its session back instead (section 8.2).
 
 ### 8.1 Streaming surfaces
 
@@ -266,6 +271,20 @@ A client that declared `stream` may get a surface before the model has finished 
 3. When the model has finished, the server checks the whole surface. If it passes, the server sends what is still different: a `ui.data` with the data model and a `ui.patch` for changed, added or removed components. If it fails, the server sends `ui.close` for the surface.
 
 Every one of these messages has the next `seq`, so the usual gap and `ui.resync` rules apply. While a surface is streaming the server refuses `ui.action` on it with `rejected`, because its action handles become valid only after the full check. A client without `stream` gets one `ui.open` after the full check, as before.
+
+### 8.2 Resuming a session
+
+A client that declared `resume` gets a `resume_token` in `welcome`. When its connection drops, the server keeps the session for a while (the reference server: 120 seconds). A running turn goes on, and messages for the client wait in the session's outgoing queue. If that queue stays full, the session ends as it would for a slow client.
+
+To come back, the client sends a new `hello` with `resume` set to its session id and the last token it got. The server attaches the new connection to the old session when all of these hold: the session is still kept, the token matches, the user is the same, and the page origin is the same. It then answers `welcome` with the same `session`, `resumed: true` and a new `resume_token`; the old token stops working. After `welcome` it sends:
+
+1. a `ui.snapshot` for every surface that is open and not still streaming,
+2. the `ui.confirm` of every confirmation that is still waiting, with `expires_ms` set to the time it has left,
+3. the messages that waited in the queue, without the `ui.open`, `ui.patch`, `ui.data`, `ui.sync` and `ui.confirm` messages of the surfaces the snapshots already cover.
+
+If any check fails, the server starts a new session and answers `welcome` with `resumed: false`, and the client treats its old surfaces as stale, as above. A resume for a session whose old connection is still open closes that connection first. Only one connection works on a session at a time.
+
+The token is a secret like a password. A client keeps it in memory only, never in storage, and sends it only in `hello`.
 
 ## 9. Client to server messages
 

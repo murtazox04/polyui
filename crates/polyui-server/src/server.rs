@@ -1,6 +1,6 @@
 use crate::host::User;
 use crate::origin;
-use crate::session::{Agent, CloseReason, Outgoing, Session};
+use crate::session::{Agent, CloseReason, Outgoing, RESUME_FEATURE, Session};
 use axum::Router;
 use axum::extract::ws::{
     CloseFrame, Message as WsMessage, WebSocket, WebSocketUpgrade, close_code,
@@ -12,7 +12,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use futures_util::stream::{self, SplitSink};
 use futures_util::{SinkExt, StreamExt};
-use polyui_core::protocol::{self, ErrorReason, Hello};
+use polyui_core::protocol::{self, ErrorReason, Hello, ResumeRequest};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -21,10 +21,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 use tower_http::services::ServeDir;
 
 const CLOSE_WAIT: Duration = Duration::from_secs(1);
+const HANDOVER_WAIT: Duration = Duration::from_secs(2);
+const HANDOVER_STEP: Duration = Duration::from_millis(20);
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -33,6 +35,7 @@ pub struct ServerConfig {
     pub attach_timeout: Duration,
     pub embed_origin: Option<String>,
     pub allowed_origins: Vec<String>,
+    pub resume_window: Duration,
 }
 
 impl Default for ServerConfig {
@@ -43,6 +46,7 @@ impl Default for ServerConfig {
             attach_timeout: Duration::from_secs(60),
             embed_origin: None,
             allowed_origins: Vec::new(),
+            resume_window: Duration::from_secs(120),
         }
     }
 }
@@ -50,6 +54,38 @@ impl Default for ServerConfig {
 struct Slot {
     session: Arc<Session>,
     outgoing: Option<Outgoing>,
+    origin: Option<String>,
+    detached: bool,
+    epoch: u64,
+    kick: Option<oneshot::Sender<()>>,
+    prelude: bool,
+    events: bool,
+}
+
+impl Slot {
+    fn new(
+        session: Arc<Session>,
+        outgoing: Option<Outgoing>,
+        origin: Option<String>,
+        events: bool,
+    ) -> Self {
+        Self {
+            session,
+            outgoing,
+            origin,
+            detached: false,
+            epoch: 0,
+            kick: None,
+            prelude: false,
+            events,
+        }
+    }
+}
+
+struct Reclaimed {
+    session: Arc<Session>,
+    outgoing: Outgoing,
+    kicked: oneshot::Receiver<()>,
 }
 
 struct AppState {
@@ -78,6 +114,116 @@ impl AppState {
         self.capacity.clone().try_acquire_owned().ok()
     }
 
+    fn keep(self: &Arc<Self>, session: Arc<Session>, slot: Slot, permit: OwnedSemaphorePermit) {
+        let id = session.id().to_string();
+        self.sessions().insert(id.clone(), slot);
+        let state = Arc::downgrade(self);
+        tokio::spawn(async move {
+            session.closed().await;
+            if let Some(state) = state.upgrade() {
+                let mut sessions = state.sessions();
+                if sessions
+                    .get(&id)
+                    .is_some_and(|slot| Arc::ptr_eq(&slot.session, &session))
+                {
+                    sessions.remove(&id);
+                }
+            }
+            drop(permit);
+        });
+    }
+
+    fn detach(self: &Arc<Self>, session: &Arc<Session>, outgoing: Outgoing) {
+        if session.close_reason().is_some() {
+            return;
+        }
+        let epoch = {
+            let mut sessions = self.sessions();
+            let Some(slot) = sessions
+                .get_mut(session.id())
+                .filter(|slot| Arc::ptr_eq(&slot.session, session))
+            else {
+                session.close(CloseReason::ClientGone);
+                return;
+            };
+            slot.outgoing = Some(outgoing);
+            slot.detached = true;
+            slot.kick = None;
+            slot.prelude = false;
+            slot.epoch += 1;
+            slot.epoch
+        };
+        self.expire_later(session.clone(), epoch);
+    }
+
+    fn expire_later(self: &Arc<Self>, session: Arc<Session>, epoch: u64) {
+        let state = Arc::downgrade(self);
+        let window = self.config.resume_window;
+        tokio::spawn(async move {
+            tokio::time::sleep(window).await;
+            let Some(state) = state.upgrade() else {
+                return;
+            };
+            let expired = state.sessions().get(session.id()).is_some_and(|slot| {
+                Arc::ptr_eq(&slot.session, &session) && slot.epoch == epoch && slot.detached
+            });
+            if expired {
+                session.close(CloseReason::ClientGone);
+            }
+        });
+    }
+
+    async fn reclaim(
+        &self,
+        request: &ResumeRequest,
+        user: &User,
+        origin: Option<&str>,
+        events: bool,
+    ) -> Option<Reclaimed> {
+        let session = {
+            let mut sessions = self.sessions();
+            let slot = sessions.get_mut(&request.session)?;
+            let fits = slot.events == events
+                && slot.session.user().id == user.id
+                && slot.origin.as_deref() == origin
+                && slot.session.close_reason().is_none()
+                && slot.session.redeem(&request.token);
+            if !fits {
+                return None;
+            }
+            if let Some(kick) = slot.kick.take() {
+                let _ = kick.send(());
+            }
+            slot.session.clone()
+        };
+        let deadline = tokio::time::Instant::now() + HANDOVER_WAIT;
+        loop {
+            {
+                let mut sessions = self.sessions();
+                if let Some(slot) = sessions
+                    .get_mut(session.id())
+                    .filter(|slot| Arc::ptr_eq(&slot.session, &session))
+                    && slot.detached
+                    && let Some(outgoing) = slot.outgoing.take()
+                {
+                    let (kick, kicked) = oneshot::channel();
+                    slot.detached = false;
+                    slot.kick = Some(kick);
+                    slot.epoch += 1;
+                    return Some(Reclaimed {
+                        session: session.clone(),
+                        outgoing,
+                        kicked,
+                    });
+                }
+            }
+            if tokio::time::Instant::now() >= deadline || session.close_reason().is_some() {
+                return None;
+            }
+            tokio::time::sleep(HANDOVER_STEP).await;
+        }
+    }
+
     fn refuse_origin(&self, headers: &HeaderMap, uri: &Uri) -> Option<Response> {
         let sent = headers.get(header::ORIGIN)?;
         let host = headers
@@ -89,6 +235,28 @@ impl AppState {
             .is_ok_and(|sent| origin::allowed(sent, host, &self.config.allowed_origins));
         (!fits).then(|| (StatusCode::FORBIDDEN, "this origin is not allowed").into_response())
     }
+}
+
+fn origin_of(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+}
+
+fn wants_resume(hello: &Hello) -> bool {
+    hello
+        .features
+        .iter()
+        .any(|feature| feature == RESUME_FEATURE)
+}
+
+fn drain(outgoing: &mut Outgoing) -> Vec<Value> {
+    let mut queued = Vec::new();
+    while let Ok(message) = outgoing.try_recv() {
+        queued.push(message);
+    }
+    queued
 }
 
 fn too_many_sessions() -> Response {
@@ -191,17 +359,27 @@ async fn websocket(
     let Some(permit) = state.admit() else {
         return too_many_sessions();
     };
+    let origin = origin_of(&headers);
     let limit = state.message_limit();
     upgrade
         .max_message_size(limit)
         .max_frame_size(limit)
-        .on_upgrade(move |socket| run_socket(state, socket, user, permit))
+        .on_upgrade(move |socket| run_socket(state, socket, user, origin, permit))
+}
+
+async fn close_socket(socket: &mut WebSocket, reason: &'static str) {
+    let frame = CloseFrame {
+        code: close_code::POLICY,
+        reason: reason.into(),
+    };
+    let _ = tokio::time::timeout(CLOSE_WAIT, socket.send(WsMessage::Close(Some(frame)))).await;
 }
 
 async fn run_socket(
     state: Arc<AppState>,
     mut socket: WebSocket,
     user: User,
+    origin: Option<String>,
     permit: OwnedSemaphorePermit,
 ) {
     let wait = state.config.attach_timeout;
@@ -209,30 +387,79 @@ async fn run_socket(
         Ok(Some(hello)) => hello,
         Ok(None) => return,
         Err(_) => {
-            let frame = CloseFrame {
-                code: close_code::POLICY,
-                reason: "no hello in time".into(),
-            };
-            let _ =
-                tokio::time::timeout(CLOSE_WAIT, socket.send(WsMessage::Close(Some(frame)))).await;
+            close_socket(&mut socket, "no hello in time").await;
             return;
         }
     };
-    let (session, outgoing) = state.agent.open_session(hello, user);
-    if socket
-        .send(WsMessage::Text(session.welcome().to_string().into()))
-        .await
-        .is_err()
-    {
-        session.close(CloseReason::ClientGone);
+    let asked = wants_resume(&hello).then(|| hello.resume.clone()).flatten();
+    let reclaimed = match &asked {
+        Some(request) => {
+            state
+                .reclaim(request, &user, origin.as_deref(), false)
+                .await
+        }
+        None => None,
+    };
+    let (session, outgoing, prelude, kicked, permit) = match reclaimed {
+        Some(mut reclaimed) => {
+            drop(permit);
+            let welcome = reclaimed.session.welcome_with(Some(true));
+            let mut prelude = vec![welcome];
+            prelude.extend(
+                reclaimed
+                    .session
+                    .resume_messages(drain(&mut reclaimed.outgoing)),
+            );
+            (
+                reclaimed.session,
+                reclaimed.outgoing,
+                prelude,
+                Some(reclaimed.kicked),
+                None,
+            )
+        }
+        None => {
+            let (session, outgoing) = state.agent.open_session(hello, user);
+            let welcome = session.welcome_with(asked.as_ref().map(|_| false));
+            if session.resumable() {
+                let (kick, kicked) = oneshot::channel();
+                let mut slot = Slot::new(session.clone(), None, origin, false);
+                slot.kick = Some(kick);
+                state.keep(session.clone(), slot, permit);
+                (session, outgoing, vec![welcome], Some(kicked), None)
+            } else {
+                (session, outgoing, vec![welcome], None, Some(permit))
+            }
+        }
+    };
+    let mut delivered = true;
+    for message in prelude {
+        if socket
+            .send(WsMessage::Text(message.to_string().into()))
+            .await
+            .is_err()
+        {
+            delivered = false;
+            break;
+        }
+    }
+    if !delivered {
+        if session.resumable() {
+            state.detach(&session, outgoing);
+        } else {
+            session.close(CloseReason::ClientGone);
+        }
         return;
     }
     let (sink, mut stream) = socket.split();
-    let writer = tokio::spawn(write_socket(session.clone(), sink, outgoing));
+    let (stop, stopped) = oneshot::channel();
+    let writer = tokio::spawn(write_socket(session.clone(), sink, outgoing, stopped));
+    let mut kicked = kicked;
     loop {
         let next = tokio::select! {
             biased;
             _ = session.closed() => break,
+            _ = async { match kicked.as_mut() { Some(kicked) => { let _ = kicked.await; } None => std::future::pending().await } } => break,
             next = stream.next() => next,
         };
         match next {
@@ -244,8 +471,18 @@ async fn run_socket(
             Some(Ok(WsMessage::Close(_)) | Err(_)) | None => break,
         }
     }
+    if session.resumable() && session.close_reason().is_none() {
+        let _ = stop.send(());
+        if let Ok(Some(outgoing)) = writer.await {
+            state.detach(&session, outgoing);
+        } else {
+            session.close(CloseReason::ClientGone);
+        }
+        return;
+    }
     session.close(CloseReason::ClientGone);
     let _ = writer.await;
+    drop(stop);
     drop(permit);
 }
 
@@ -274,20 +511,22 @@ async fn write_socket(
     session: Arc<Session>,
     mut sink: SplitSink<WebSocket, WsMessage>,
     mut outgoing: Outgoing,
-) {
+    mut stopped: oneshot::Receiver<()>,
+) -> Option<Outgoing> {
     loop {
         let next = tokio::select! {
             biased;
-            reason = session.closed() => Err(reason),
-            message = outgoing.recv() => message.ok_or(CloseReason::ClientGone),
+            reason = session.closed() => Err(Some(reason)),
+            _ = &mut stopped => Err(None),
+            message = outgoing.recv() => message.ok_or(Some(CloseReason::ClientGone)),
         };
         let reason = match next {
             Ok(message) => {
                 let sent = tokio::select! {
                     biased;
-                    reason = session.closed() => Err(reason),
+                    reason = session.closed() => Err(Some(reason)),
                     sent = sink.send(WsMessage::Text(message.to_string().into())) => {
-                        sent.map_err(|_| CloseReason::ClientGone)
+                        sent.map_err(|_| None)
                     }
                 };
                 match sent {
@@ -296,6 +535,13 @@ async fn write_socket(
                 }
             }
             Err(reason) => reason,
+        };
+        let Some(reason) = reason else {
+            if session.resumable() && session.close_reason().is_none() {
+                return Some(outgoing);
+            }
+            session.close(CloseReason::ClientGone);
+            return None;
         };
         if reason == CloseReason::SlowConsumer {
             let frame = CloseFrame {
@@ -306,7 +552,7 @@ async fn write_socket(
                 tokio::time::timeout(CLOSE_WAIT, sink.send(WsMessage::Close(Some(frame)))).await;
         }
         session.close(reason);
-        return;
+        return None;
     }
 }
 
@@ -332,12 +578,12 @@ async fn send(
         Err(message) => return (StatusCode::UNAUTHORIZED, message).into_response(),
     };
     let Some(id) = query.session else {
-        return start_session(&state, user, &body);
+        return start_session(&state, user, origin_of(&headers), &body).await;
     };
     let session = state
         .sessions()
         .get(&id)
-        .filter(|slot| slot.session.user().id == user.id)
+        .filter(|slot| slot.events && slot.session.user().id == user.id && !slot.detached)
         .map(|slot| slot.session.clone());
     let Some(session) = session else {
         return (StatusCode::NOT_FOUND, "unknown session").into_response();
@@ -346,7 +592,12 @@ async fn send(
     StatusCode::ACCEPTED.into_response()
 }
 
-fn start_session(state: &Arc<AppState>, user: User, body: &str) -> Response {
+async fn start_session(
+    state: &Arc<AppState>,
+    user: User,
+    origin: Option<String>,
+    body: &str,
+) -> Response {
     let limits = state.agent.config().limits;
     let hello = match protocol::parse_hello(body, &limits) {
         Ok(hello) => hello,
@@ -354,36 +605,49 @@ fn start_session(state: &Arc<AppState>, user: User, body: &str) -> Response {
             return json_response(StatusCode::BAD_REQUEST, &bad_message(error.to_string()));
         }
     };
+    let asked = wants_resume(&hello).then(|| hello.resume.clone()).flatten();
+    if let Some(request) = &asked
+        && let Some(reclaimed) = state.reclaim(request, &user, origin.as_deref(), true).await
+    {
+        let welcome = reclaimed.session.welcome_with(Some(true));
+        let epoch = {
+            let mut sessions = state.sessions();
+            let Some(slot) = sessions.get_mut(reclaimed.session.id()) else {
+                return (StatusCode::NOT_FOUND, "unknown session").into_response();
+            };
+            slot.outgoing = Some(reclaimed.outgoing);
+            slot.kick = None;
+            slot.detached = true;
+            slot.prelude = true;
+            slot.epoch
+        };
+        state.expire_later(reclaimed.session.clone(), epoch);
+        return json_response(StatusCode::OK, &welcome);
+    }
     let Some(permit) = state.admit() else {
         return too_many_sessions();
     };
     let (session, outgoing) = state.agent.open_session(hello, user);
     let id = session.id().to_string();
-    let welcome = session.welcome();
-    let counted = session.clone();
-    tokio::spawn(async move {
-        counted.closed().await;
-        drop(permit);
-    });
-    state.sessions().insert(
-        id.clone(),
-        Slot {
-            session,
-            outgoing: Some(outgoing),
-        },
+    let welcome = session.welcome_with(asked.as_ref().map(|_| false));
+    state.keep(
+        session.clone(),
+        Slot::new(session.clone(), Some(outgoing), origin, true),
+        permit,
     );
     let waiting = Arc::downgrade(state);
     let timeout = state.config.attach_timeout;
     tokio::spawn(async move {
         tokio::time::sleep(timeout).await;
         if let Some(state) = waiting.upgrade() {
-            let mut sessions = state.sessions();
-            if sessions
-                .get(&id)
-                .is_some_and(|slot| slot.outgoing.is_some())
-                && let Some(slot) = sessions.remove(&id)
-            {
-                slot.session.close(CloseReason::ClientGone);
+            let unattached = state.sessions().get(&id).is_some_and(|slot| {
+                Arc::ptr_eq(&slot.session, &session)
+                    && slot.outgoing.is_some()
+                    && !slot.detached
+                    && slot.epoch == 0
+            });
+            if unattached {
+                session.close(CloseReason::ClientGone);
             }
         }
     });
@@ -392,16 +656,21 @@ fn start_session(state: &Arc<AppState>, user: User, body: &str) -> Response {
 
 struct EventFeed {
     session: Arc<Session>,
-    outgoing: Outgoing,
+    outgoing: Option<Outgoing>,
+    prelude: std::collections::VecDeque<Value>,
+    kicked: oneshot::Receiver<()>,
     state: Arc<AppState>,
-    id: String,
     finished: bool,
 }
 
 impl Drop for EventFeed {
     fn drop(&mut self) {
-        self.session.close(CloseReason::ClientGone);
-        self.state.sessions().remove(&self.id);
+        match self.outgoing.take() {
+            Some(outgoing) if self.session.resumable() => {
+                self.state.detach(&self.session, outgoing);
+            }
+            _ => self.session.close(CloseReason::ClientGone),
+        }
     }
 }
 
@@ -409,13 +678,18 @@ async fn next_event(mut feed: EventFeed) -> Option<(Result<Event, Infallible>, E
     if feed.finished {
         return None;
     }
+    if let Some(message) = feed.prelude.pop_front() {
+        return Some((Ok(Event::default().data(message.to_string())), feed));
+    }
+    let outgoing = feed.outgoing.as_mut()?;
     let event = tokio::select! {
         biased;
         reason = feed.session.closed() => {
             feed.finished = true;
             Event::default().event("close").data(reason.detail())
         }
-        message = feed.outgoing.recv() => Event::default().data(message?.to_string()),
+        _ = &mut feed.kicked => return None,
+        message = outgoing.recv() => Event::default().data(message?.to_string()),
     };
     Some((Ok(event), feed))
 }
@@ -436,23 +710,38 @@ async fn events(
     let Some(id) = query.session else {
         return (StatusCode::BAD_REQUEST, "missing session").into_response();
     };
-    let (session, outgoing) = {
+    let (session, mut outgoing, prelude, kicked) = {
         let mut sessions = state.sessions();
-        match sessions.get_mut(&id) {
-            Some(slot) if slot.session.user().id == user.id => match slot.outgoing.take() {
-                Some(outgoing) => (slot.session.clone(), outgoing),
-                None => {
-                    return (StatusCode::CONFLICT, "events are already streaming").into_response();
-                }
-            },
-            _ => return (StatusCode::NOT_FOUND, "unknown session").into_response(),
+        let Some(slot) = sessions
+            .get_mut(&id)
+            .filter(|slot| slot.events && slot.session.user().id == user.id)
+        else {
+            return (StatusCode::NOT_FOUND, "unknown session").into_response();
+        };
+        if slot.detached && !slot.prelude {
+            return (StatusCode::NOT_FOUND, "unknown session").into_response();
         }
+        let Some(outgoing) = slot.outgoing.take() else {
+            return (StatusCode::CONFLICT, "events are already streaming").into_response();
+        };
+        let (kick, kicked) = oneshot::channel();
+        let prelude = std::mem::take(&mut slot.prelude);
+        slot.detached = false;
+        slot.kick = Some(kick);
+        slot.epoch += 1;
+        (slot.session.clone(), outgoing, prelude, kicked)
+    };
+    let prelude = if prelude {
+        session.resume_messages(drain(&mut outgoing)).into()
+    } else {
+        std::collections::VecDeque::new()
     };
     let feed = EventFeed {
         session,
-        outgoing,
+        outgoing: Some(outgoing),
+        prelude,
+        kicked,
         state: state.clone(),
-        id,
         finished: false,
     };
     Sse::new(stream::unfold(feed, next_event))

@@ -458,6 +458,12 @@ fn hello_fields(mut fields: Fields) -> Decoded<Hello> {
             .and_then(|value| list(value, modality))?,
         features: fields.list("features", string)?,
         locale: fields.optional_string("locale")?,
+        #[cfg(not(feature = "client-lite"))]
+        resume: fields
+            .present("resume")
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(|error| error.to_string())?,
     })
 }
 
