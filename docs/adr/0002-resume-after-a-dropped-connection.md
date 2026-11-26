@@ -56,5 +56,4 @@ sequenceDiagram
 
 - `spec/protocol.md`: the `resume` feature, `hello.resume`, `welcome.resume_token` and `welcome.resumed`, and the rules above in section 8.
 - `polyui-server`: detached sessions, the new `ServerConfig::resume_window`, and tests for each failure mode.
-- Renderers (web, iOS, Android, Flutter): declare `resume`, keep the token, and send it on reconnect. The example apps reconnect by themselves.
-- Conformance fixtures for a resumed and a refused resume.
+- Clients: `PolyUIWebSocket` in the iOS package, and the transports of the web chat, Android and Flutter examples, declare `resume`, keep the token in memory, and reconnect by themselves with it. The renderers and the client core do not change: a resumed surface arrives as `ui.snapshot`, which they already handle.

@@ -279,7 +279,8 @@ cargo run -p polyui -- serve --env-file ~/.config/polyui/anthropic.env --embed-o
 
 - The connection is an OkHttp `WebSocket` (`LiveSocket.kt`). It sends `hello` as the first text frame, then every message as one JSON text frame each way, and pings every 20 seconds. The server closes a socket that sends no `hello` within 60 seconds.
 - OkHttp sends no `Origin` header, so the server's origin check lets the app in without `--allow-origin`.
-- The pill shows Connecting, Live or Offline. When the server closes the socket or the connection fails, the reason shows under the transcript. A new connection starts a new session, as the server expects.
+- The pill shows Connecting, Live or Offline. When the server closes the socket or the connection fails, the reason shows under the transcript.
+- The socket resumes the session after a drop (`spec/protocol.md`, section 8.2): it declares `resume`, keeps the `resume_token` in memory, and reconnects after 1, 2, 4, 8 and 16 seconds with the session and token in `hello`. The cards stay and their buttons keep working, because the server answers with a snapshot of each surface. When the server cannot resume, the example removes the old cards and says so. Checked on the emulator against `polyui serve` through a proxy that cut the connection: "Pay gas bill" on the old card opened the confirm sheet afterwards.
 - Android blocks plain `ws://` by default. The example's network security config allows it only for `10.0.2.2`, `localhost` and `127.0.0.1`.
 
 Tested once end to end on the emulator against `polyui serve` from this repository with `claude-haiku-5-5`: the prompt "Which internet tariff suits our family? Show the calculator." opened a surface with the tariff calculator MCP App in the `WebView`, its "Ask the assistant to switch to Oila 100" button sent a `ui.action` through `on_message`, and the model answered and patched the surface with a comparison.
@@ -317,7 +318,7 @@ The embed screenshots at the top of [Embedded MCP Apps](#embedded-mcp-apps) come
 - The link question was not walked with TalkBack, only through `EmbedUiTest`. TalkBack's speech was judged from the focus order and the labels, not from recorded audio.
 - An embed that leaves the screen in the example's lazy list is destroyed, and a new page (with a new nonce) loads when it comes back, so the app starts over.
 - `tools/call`, `resources/read` and `ui/update-model-context` from an app are refused by the page, the same as on the web.
-- The live mode does not reconnect by itself. Choose "Connect to polyui serve" again after the server restarts.
+- A server restart ends every session, so after one the example removes the old cards and starts a new session once it reconnects. After five failed tries it stops; choose "Connect to polyui serve" again.
 - The release build with R8 was built and run on the emulator: the forecast app drew in the WebView, its button reached the replay as a `ui.action` and the reply came back, with no missing-class errors in logcat. Live mode was not tried in the release build, so OkHttp under R8 is only covered by its own shipped rules.
 - No x86 (32-bit) ABI.
 - The emulator runs Android 15 (API 35) with WebView 124. Nothing was run on Android 16 or 17 or on a physical phone.
