@@ -10,8 +10,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "PolyUICore",
-            url: "https://github.com/murtazox04/polyui/releases/download/v0.1.2/PolyUICore.xcframework.zip",
-            checksum: "f5a9c591086a9e613fc223e63b8e788c146401ab99d5705bc07f9faaeb99a832"
+            url: "https://github.com/murtazox04/polyui/releases/download/v0.1.3/PolyUICore.xcframework.zip",
+            checksum: "5051014612b49fdb156ecdfd348a617090da850a2657727719ca81b7a4fadd37"
         ),
         .target(
             name: "PolyUI",
