@@ -121,6 +121,11 @@ class RecognizerInput implements PolyuiSpeechInput {
         listenMode: ListenMode.confirmation,
       ),
     );
+    if (!speech.isListening) {
+      finished = null;
+      heard = null;
+      return PolyuiListenStart.unavailable;
+    }
     return PolyuiListenStart.started;
   }
 
