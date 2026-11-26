@@ -205,7 +205,7 @@ What the renderer does, and why:
 
 The web view keeps a strong reference to its script message handler, so the handler is a small relay that holds the page controller weakly.
 
-The tests check this at two levels. `EmbedTests` in the package covers the nonce, the frame and nonce filter, height clamping, the navigation rules, the link queue, and runs a real `WKWebView` with a tiny MCP App that sends `ui/message`, `ui/open-link` and a forged native message, and checks that only the real ones get through. `PolyUIExampleUITests` drives the example app (see below).
+The tests check this at two levels. `EmbedTests` in the package covers the nonce, the frame and nonce filter, height clamping, the navigation rules, the link queue, and runs a real `WKWebView` with a tiny MCP App that sends `ui/message`, `ui/open-link` and a forged native message, and checks that only the real ones get through. A second real `WKWebView` test puts the web view in a dark window, checks that the app is told `dark` in `ui/initialize`, then switches the window to light and checks that `host-context-changed` brings `light`. `PolyUIExampleUITests` drives the example app (see below).
 
 ### Accessibility
 

@@ -223,7 +223,7 @@ sequenceDiagram
     A->>P: ui/initialize, size-changed, ui/message, ui/open-link
     P->>D: polyui.postMessage({kind, nonce, ...})
     D->>D: check nonce, clamp height, fire on_message, ask about links
-    D->>P: window.polyuiHost.update / answerLink / teardown
+    D->>P: window.polyuiHost.update / answerLink / setTheme / teardown
 ```
 
 ![The forecast MCP App in the Flutter example on iOS. The app's button sent a ui.action and the scripted server answered.](images/flutter-embed-ios.png)

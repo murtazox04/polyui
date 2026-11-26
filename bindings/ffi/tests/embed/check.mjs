@@ -102,6 +102,16 @@ try {
   });
   expect(reach === "blocked", "the app cannot reach polyuiHost");
 
+  const appTheme = () => app.locator("html").getAttribute("data-theme");
+  expect((await appTheme()) === "light", "the app starts with the system theme");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await app.locator("html[data-theme='dark']").waitFor({ state: "attached", timeout: 5000 }).catch(() => undefined);
+  expect((await appTheme()) === "dark", "a system theme change reaches the app");
+  expect(await page.evaluate(() => window.polyuiHost.setTheme("light")), "setTheme accepts light");
+  await app.locator("html[data-theme='light']").waitFor({ state: "attached", timeout: 5000 }).catch(() => undefined);
+  expect((await appTheme()) === "light", "the native theme wins over the system theme");
+  expect(await page.evaluate(() => window.polyuiHost.setTheme("sepia") === false), "setTheme refuses other names");
+
   expect(await page.evaluate(() => window.polyuiHost.update({ resource: "ui://weather/forecast" }) === false), "update with a different app asks for a reload");
   expect(problems.length === 0, `no page errors (${problems.join("; ")})`);
 } finally {

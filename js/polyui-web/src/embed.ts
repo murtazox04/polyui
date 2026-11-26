@@ -58,6 +58,20 @@ function readApp(props: Props): App | null {
   return { html, csp: cleanCsp(isRecord(ui) ? ui["csp"] : undefined), input: isRecord(input) ? input : {}, result: isRecord(result) ? result : null };
 }
 
+type Theme = "light" | "dark";
+
+const darkQuery = "(prefers-color-scheme: dark)";
+
+function systemDark(): MediaQueryList | null {
+  return typeof window.matchMedia === "function" ? window.matchMedia(darkQuery) : null;
+}
+
+export function themeOf(node: Element): Theme {
+  const schemes = getComputedStyle(node).getPropertyValue("color-scheme").split(/\s+/).filter((word) => word === "light" || word === "dark");
+  if (schemes.length === 1) return schemes[0] as Theme;
+  return systemDark()?.matches ? "dark" : "light";
+}
+
 function messageText(params: Json | undefined): string {
   if (!isRecord(params) || params["role"] !== "user") return "";
   const content = params["content"];
@@ -83,6 +97,8 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
     let sentResult = "";
     let lastMessage = -messageGapMs;
     let link: ConfirmHandle | null = null;
+    let theme: Theme | null = null;
+    const system = systemDark();
 
     const post = (message: JsonObject): void => port?.postMessage({ jsonrpc: "2.0", ...message });
     const reply = (id: Json, result: JsonObject): void => post({ id, result });
@@ -103,7 +119,14 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
           protocolVersion: "2026-01-26",
           hostInfo: { name: "polyui-web", version: "0.1.0" },
           hostCapabilities: { openLinks: {} },
-          hostContext: { displayMode: "inline", availableDisplayModes: ["inline"], containerDimensions: { maxHeight }, platform: "web", locale: document.documentElement.lang || navigator.language },
+          hostContext: {
+            theme: (theme = themeOf(node)),
+            displayMode: "inline",
+            availableDisplayModes: ["inline"],
+            containerDimensions: { maxHeight },
+            platform: "web",
+            locale: document.documentElement.lang || navigator.language,
+          },
         });
       } else if (method === "ping") {
         reply(id, {});
@@ -131,6 +154,14 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
       } else {
         fail(id, -32601, "Method not found");
       }
+    };
+
+    const sendTheme = (): void => {
+      if (!ready) return;
+      const now = themeOf(node);
+      if (now === theme) return;
+      theme = now;
+      post({ method: "ui/notifications/host-context-changed", params: { theme } });
     };
 
     const fromView = (event: MessageEvent): void => {
@@ -163,6 +194,7 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
 
     const teardown = (): void => {
       window.removeEventListener("message", fromSandbox);
+      system?.removeEventListener("change", sendTheme);
       if (ready) post({ id: 0, method: "ui/resource-teardown", params: { reason: "removed" } });
       port?.close();
       frame?.remove();
@@ -170,6 +202,7 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
       frame = port = link = loadedHtml = null;
       ready = inputSent = false;
       sentResult = "";
+      theme = null;
     };
 
     return {
@@ -184,7 +217,10 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
         maxHeight = max;
         if (!app || !context.sandbox) return teardown();
         if (frame) frame.title = title;
-        if (app.html === loadedHtml) return sendTool();
+        if (app.html === loadedHtml) {
+          sendTheme();
+          return sendTool();
+        }
         teardown();
         loadedHtml = app.html;
         frame = element("iframe", "pui-embed-frame", node);
@@ -193,6 +229,7 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
         frame.title = title;
         frame.style.height = `${initial}px`;
         window.addEventListener("message", fromSandbox);
+        system?.addEventListener("change", sendTheme);
         frame.src = context.sandbox;
       },
       destroy: teardown,

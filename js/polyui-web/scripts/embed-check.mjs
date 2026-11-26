@@ -62,6 +62,13 @@ try {
   results.pageErrors = problems;
   await page.screenshot({ path: screenshot, fullPage: true });
   results.screenshot = screenshot;
+  results.initialTheme = await app.locator("html").getAttribute("data-theme");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await app.locator("html[data-theme='dark']").waitFor({ state: "attached" });
+  results.themeAfterSystemDark = await app.locator("html").getAttribute("data-theme");
+  await page.emulateMedia({ colorScheme: "light" });
+  await app.locator("html[data-theme='light']").waitFor({ state: "attached" });
+  results.themeAfterSystemLight = await app.locator("html").getAttribute("data-theme");
 } finally {
   await browser.close();
   for (const server of servers) server.close();

@@ -21,6 +21,8 @@
         const pending = new Map();
         let nextId = 1;
         const byId = (id) => document.getElementById(id);
+        let theme = "unknown";
+        let reportTheme = false;
         const request = (method, params) => new Promise((resolve, reject) => {
           const id = nextId++;
           pending.set(id, { resolve, reject });
@@ -38,10 +40,24 @@
             else resolve(message.result);
           } else if (message.method === "ui/notifications/tool-input") {
             byId("city").textContent = `Tool input for ${message.params.arguments.city}`;
+            reportTheme = message.params.arguments.report_theme === true;
+            if (reportTheme) sayTheme();
+          } else if (message.method === "ui/notifications/host-context-changed" && message.params.theme) {
+            theme = message.params.theme;
+            if (reportTheme) sayTheme();
           } else if (message.method === "ui/notifications/tool-result") {
             byId("summary").textContent = message.params.content.map((block) => block.text).join(" ");
           }
         });
+        let lastSaid = -Infinity;
+        let themeTimer = null;
+        const sayTheme = () => {
+          clearTimeout(themeTimer);
+          themeTimer = setTimeout(() => {
+            lastSaid = Date.now();
+            request("ui/message", { role: "user", content: [{ type: "text", text: `Theme ${theme}` }] }).catch(() => {});
+          }, Math.max(0, lastSaid + 1200 - Date.now()));
+        };
         byId("ask").addEventListener("click", () => {
           request("ui/message", { role: "user", content: [{ type: "text", text: "Also show Samarkand." }] })
             .then(() => { byId("status").textContent = "Message sent"; })
@@ -53,7 +69,8 @@
             .then(() => { byId("status").textContent = "Link opened"; })
             .catch((error) => { byId("status").textContent = error.message; });
         });
-        request("ui/initialize", { appInfo: { name: "Embed test app", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then(() => {
+        request("ui/initialize", { appInfo: { name: "Embed test app", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then((result) => {
+          theme = result.hostContext.theme;
           notify("ui/notifications/initialized", {});
           notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
         });

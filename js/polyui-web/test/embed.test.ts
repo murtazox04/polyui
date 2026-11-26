@@ -183,6 +183,42 @@ describe("embed:Embed messages", () => {
     expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: 2, error: { code: -32601, message: "Method not found" } });
   });
 
+  it("tells the app the host theme and sends a change when the system theme flips", async () => {
+    const listeners: (() => void)[] = [];
+    const query = { matches: true, addEventListener: (_: string, listener: () => void) => listeners.push(listener), removeEventListener: vi.fn() };
+    vi.stubGlobal("matchMedia", vi.fn(() => query));
+    try {
+      const h = setup();
+      const view = await connect(h);
+      await view.send({ id: 1, method: "ui/initialize", params: { appInfo: { name: "Weather", version: "1" }, appCapabilities: {}, protocolVersion: "2026-01-26" } });
+      expect(((view.replies[0]?.["result"] as JsonObject)["hostContext"] as JsonObject)["theme"]).toBe("dark");
+      await view.send({ method: "ui/notifications/initialized" });
+      const before = view.replies.length;
+      query.matches = false;
+      for (const listener of listeners) listener();
+      await tick();
+      expect(view.replies.slice(before)).toEqual([{ jsonrpc: "2.0", method: "ui/notifications/host-context-changed", params: { theme: "light" } }]);
+      for (const listener of listeners) listener();
+      await tick();
+      expect(view.replies).toHaveLength(before + 1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("uses the surface's own color scheme over the system one", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    try {
+      const h = setup();
+      const view = await connect(h);
+      view.frame.parentElement?.style.setProperty("color-scheme", "light");
+      await view.send({ id: 1, method: "ui/initialize", params: { appInfo: { name: "Weather", version: "1" }, appCapabilities: {}, protocolVersion: "2026-01-26" } });
+      expect(((view.replies[0]?.["result"] as JsonObject)["hostContext"] as JsonObject)["theme"]).toBe("light");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("resizes the frame within the height hint's bounds", async () => {
     const h = setup();
     const view = await connect(h, { app: app() }, "large");
