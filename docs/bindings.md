@@ -18,7 +18,7 @@ What the bindings do not do: run the model, keep sessions, or talk to clients. Y
 |---|---|---|
 | Package | `polyui`, PyO3 and maturin, one abi3 wheel for CPython 3.10+ | `@polyui/node`, napi-rs 3, Node 18+ |
 | Build | `maturin develop --uv --release` in `bindings/python` | `npm install && npm run build` in `bindings/node` |
-| Published | not yet, build from source | not yet, build from source |
+| Published | on PyPI: `pip install polyui` | not yet, build from source |
 | Tests | `pytest`, including every client fixture in `tests/conformance` | `npm test` |
 | Full reference | [bindings/python/README.md](https://github.com/murtazox04/polyui/blob/main/bindings/python/README.md) | [bindings/node/README.md](https://github.com/murtazox04/polyui/blob/main/bindings/node/README.md) |
 
