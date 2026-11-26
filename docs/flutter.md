@@ -346,7 +346,7 @@ This used to fail in `debug_unpack_ios` with "does not contain architectures "ar
 | Cancel and the app hears no | yes, tapped by hand: the app showed "Link opening denied by user" | yes: the app showed "Link opening denied by user" |
 | Live mode against `polyui serve` from this repository | yes, `ws://127.0.0.1:8777/ws`, a ChoiceGroup surface came back | yes, `ws://10.0.2.2:8777/ws`, a chart surface came back |
 | Read aloud | the engine took every utterance and finished without an error, the read part was outlined; the audio itself was not listened to | logcat shows Google TTS synthesizing each utterance in en-US |
-| Microphone | the speech recognition prompt shows the usage string. Don't Allow shows the microphone-off notice. Allow on both prompts: the simulator's recognizer fails to start (`Error starting listen` from `speech_to_text`) and the app shows the recognition-unavailable notice | a denied microphone shows the notice and touch keeps working; with the permission granted, listening starts and stops on silence |
+| Microphone | the speech recognition prompt shows the usage string. Don't Allow shows the microphone-off notice. Allow on both prompts: the simulator's recognizer fails to start (`Error starting listen` from `speech_to_text`) and the app shows the recognition-unavailable notice | a denied microphone shows the notice and touch keeps working; with the permission granted, listening starts and stops on silence. Checked again on 2026-11-26 after the start check was added: the composer shows Listening and Google's recognizer starts. The emulator got no audio from the Mac's microphone (`MIC_END_OF_DATA`), so no words were recognized |
 
 The iOS embed screenshot is above. This is the same app on Android after the link was accepted:
 
@@ -354,11 +354,11 @@ The iOS embed screenshot is above. This is the same app on Android after the lin
 
 ## What is not done yet
 
-- Real speech was not tested on either platform. No one spoke to the simulator or the emulator, so the path from a real recognizer transcript to `match_voice` has only run in `test/voice_test.dart` with a fake recognizer. Speech output was not listened to.
-- On iOS the recognizer never started in the simulator, so listening that actually runs has only been seen on Android.
+- Real speech has been checked once, on an iPhone 14 Pro (iOS 27.0.1) on 2026-11-26, with a release build of the example in Replay mode: with the bills card open, the person holding the phone tapped the microphone and said "the visa card", and the Visa option was selected through `match_voice`. That is the only real recognizer transcript so far. On Android no one has spoken to the recognizer, and speech output was not listened to on either platform.
+- The iOS simulators here have no speech model, so the recognizer cannot start there (see [iOS](ios.md#what-is-not-done-yet)).
 - On Android `webview_flutter` does not report subframe navigations, so the "only `about:srcdoc`, `about:blank` and https in subframes" rule is applied on iOS only. The main frame rule works on both.
 - `webview_flutter_android` turns on DOM storage for every web view and has no setting to turn it off. Nothing writes to it, but it is not off.
 - No `lib/x86/` in the APK: Flutter did not ask for x86. The `i686-linux-android` build was run by hand with cargo-ndk, not through Flutter.
-- No release APK was built, and nothing was installed on a physical phone.
+- No release APK was built, and nothing was installed on an Android phone. A release build of the example ran on an iPhone 14 Pro (iOS 27.0.1); only the spoken choice above was checked on it.
 - Simulator builds are arm64 only because of the Xcode 27 `lipo` change described above.
 - The semantics have been checked in widget tests, not with VoiceOver or TalkBack on a device.
