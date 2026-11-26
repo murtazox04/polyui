@@ -85,6 +85,7 @@ export interface PrepareOptions {
   locale?: string
   nextId?: IdFactory
   refs?: Record<string, unknown>
+  resources?: Record<string, unknown>
 }
 
 export type ToolProfile = 'compact' | 'full'
@@ -188,7 +189,7 @@ export declare class Validator {
   resolveRefs(surface: Surface, user?: unknown, refs?: Record<string, unknown>): Surface
   sealActions(surface: Surface, nextId?: IdFactory): { surface: Surface; actions: SealedAction[] }
   compileCharts(surface: Surface, options?: Omit<ChartOptions, 'dark'>): Surface
-  attachApps(surface: Surface, user?: unknown): Surface
+  attachApps(surface: Surface, user?: unknown, resources?: Record<string, unknown>): Surface
   downgrade(surface: Surface, declared: string[], locale?: string): Surface
   summary(surface: Surface, surfaceId?: string, locale?: string): string
   fallback(surface: Surface, locale?: string): string
@@ -203,6 +204,7 @@ export declare class Validator {
   feedShow(stream: ShowStream, chunk: string, options?: PrepareOptions): Json[]
   finishShow(stream: ShowStream, payload?: Payload | null, options?: PrepareOptions): Prepared
   refKeys(payload: Payload): string[]
+  resourceUris(payload: Payload): string[]
   toolDefinitions(declared?: string[], strict?: boolean, profile?: ToolProfile): Tool[]
 }
 

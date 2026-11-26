@@ -68,6 +68,7 @@ What you get:
 | `tool_definitions(catalogs, actions, strict=False, profile="compact")` | The Anthropic tool JSON for `show_ui`, `update_ui` and `close_ui`. `profile="full"` puts every prop in the schema and is needed for `strict`. |
 | `ShowStream`, `Validator.feed_show(stream, chunk, ...)`, `Validator.finish_show(stream, payload=None, ...)` | Stream a `show_ui` call: `ui.open` and `ui.patch` for each component as it arrives, then the full check. See [Streaming](https://github.com/murtazox04/polyui/blob/main/docs/bindings.md#streaming-a-show_ui-call). |
 | `Validator.ref_keys(payload)` | The declared `source:key` refs a tool call uses, to fetch before `prepare_show(..., refs=...)`. |
+| `Validator.resource_uris(payload)` | The `ui://` URIs the call's `embed:Embed` components name, to read before `prepare_show(..., resources=...)`. |
 | `open_message`, `patch_message`, `close_message`, `closed_summary` | Protocol messages and the close summary. |
 | `compile_chart`, `chart_svg`, `describe_chart` | Chart scene, standalone SVG and the spoken summary. |
 | `Client(hello)` | The client core: `receive`, `set_value`, `fire`, `confirm`, `say`, `match_voice`. Handy for tests and server side rendering checks. |
@@ -110,4 +111,4 @@ The client tests replay every fixture in `tests/conformance/client`, so the bind
 
 ## Not there yet
 
-`ui_resource` is synchronous; read MCP App resources before the call or run it in a worker thread. Async ref lookups go through `ref_keys` and `refs` (above).
+The resolver and `ui_resource` are synchronous. Async lookups go through `ref_keys` with `refs`, and `resource_uris` with `resources` ([Async lookups](https://github.com/murtazox04/polyui/blob/main/docs/bindings.md#async-lookups)).

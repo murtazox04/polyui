@@ -147,24 +147,29 @@ pub struct Settings {
 
 impl Settings {
     pub fn ref_keys(&self, input: &Input) -> Vec<String> {
-        let parsed;
-        let payload = match input {
-            Input::Json(value) => value,
-            Input::Text(text) => match serde_json::from_str(text) {
-                Ok(value) => {
-                    parsed = value;
-                    &parsed
-                }
-                Err(_) => return Vec::new(),
-            },
+        let Some(payload) = parsed_payload(input) else {
+            return Vec::new();
         };
-        validate::ref_keys(payload)
+        validate::ref_keys(&payload)
             .into_iter()
             .filter(|reference| {
                 validate::split_ref(reference)
                     .is_some_and(|(source, _)| self.sources.iter().any(|(name, _)| name == source))
             })
             .collect()
+    }
+
+    pub fn resource_uris(&self, input: &Input) -> Vec<String> {
+        let Some(payload) = parsed_payload(input) else {
+            return Vec::new();
+        };
+        let mut uris = embed::resources_in(&payload, "components");
+        for uri in embed::resources_in(&payload, "upsert") {
+            if !uris.contains(&uri) {
+                uris.push(uri);
+            }
+        }
+        uris
     }
 
     pub fn validator<'a>(&'a self, refs: &'a dyn RefResolver) -> Validator<'a> {
@@ -346,6 +351,13 @@ pub fn attach_scenes(
         }
     }
     problems
+}
+
+fn parsed_payload(input: &Input) -> Option<std::borrow::Cow<'_, Value>> {
+    match input {
+        Input::Json(value) => Some(std::borrow::Cow::Borrowed(value)),
+        Input::Text(text) => serde_json::from_str(text).ok().map(std::borrow::Cow::Owned),
+    }
 }
 
 pub fn attach_apps(

@@ -38,6 +38,7 @@ pub struct PrepareOptions<'a> {
     pub locale: Option<String>,
     pub next_id: Option<Function<'a, (), String>>,
     pub refs: Option<Value>,
+    pub resources: Option<Value>,
 }
 
 #[napi(object, object_to_js = false)]
@@ -138,12 +139,28 @@ impl<'a> Lookup<'a> {
 struct Apps<'a> {
     env: &'a Env,
     reader: Option<Function<'a, ReaderArgs<'a>, Unknown<'a>>>,
+    given: Option<Map<String, Value>>,
     user: Option<Unknown<'a>>,
     failure: Option<Error>,
 }
 
 impl<'a> Apps<'a> {
-    fn new(env: &'a Env, stored: Option<&StoredReader>, user: Option<Unknown<'a>>) -> Result<Self> {
+    fn new(
+        env: &'a Env,
+        stored: Option<&StoredReader>,
+        given: Option<Value>,
+        user: Option<Unknown<'a>>,
+    ) -> Result<Self> {
+        let given = match given {
+            None | Some(Value::Null) => None,
+            Some(Value::Object(map)) => Some(map),
+            Some(_) => {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "resources must be an object from a ui:// URI to its resource",
+                ));
+            }
+        };
         let reader = match stored {
             Some(stored) => {
                 let function: Function<'a, ReaderArgs<'a>, Unknown<'a>> =
@@ -155,6 +172,7 @@ impl<'a> Apps<'a> {
         Ok(Self {
             env,
             reader,
+            given,
             user,
             failure: None,
         })
@@ -165,6 +183,19 @@ impl<'a> Apps<'a> {
     }
 
     fn read(&mut self, uri: &str) -> Option<UiResource> {
+        if let Some(given) = &self.given {
+            let found = given.get(uri).filter(|value| !value.is_null())?.clone();
+            return match UiResource::from_value(found) {
+                Ok(resource) => Some(resource),
+                Err(message) => {
+                    self.keep(Error::new(
+                        Status::InvalidArg,
+                        format!("resources[{uri:?}]: {message}"),
+                    ));
+                    None
+                }
+            };
+        }
         let reader = self.reader.as_ref()?;
         let found = match reader.call(FnArgs::from((self.user, uri.to_string()))) {
             Ok(found) => found,
@@ -431,8 +462,9 @@ impl Validator {
         env: &'a Env,
         surface: &Surface,
         user: Option<Unknown<'a>>,
+        resources: Option<Value>,
     ) -> Result<Surface> {
-        let mut apps = Apps::new(env, self.ui_resource.as_ref(), user)?;
+        let mut apps = Apps::new(env, self.ui_resource.as_ref(), resources, user)?;
         let mut attached = surface.inner.clone();
         let problems = attach_apps(&mut attached.components, "components", &mut |uri| {
             apps.read(uri)
@@ -506,6 +538,7 @@ impl Validator {
             locale: None,
             next_id: None,
             refs: None,
+            resources: None,
         });
         let payload = input(payload);
         let given = given(options.refs)?;
@@ -513,7 +546,12 @@ impl Validator {
         let view = View::new(options.declared.as_deref(), &locale);
         let mut ids = Ids::new(options.next_id);
         let surface_id = options.surface_id;
-        let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
+        let mut apps = Apps::new(
+            env,
+            self.ui_resource.as_ref(),
+            options.resources,
+            options.user,
+        )?;
         let prepared = self.with_refs(env, options.user, given.as_ref(), |refs| {
             host::prepare_show(
                 &self.settings,
@@ -548,6 +586,7 @@ impl Validator {
             locale: None,
             next_id: None,
             refs: None,
+            resources: None,
         });
         let payload = input(payload);
         let given = given(options.refs)?;
@@ -559,7 +598,12 @@ impl Validator {
             client: &client.inner,
             seq: u64::from(seq),
         };
-        let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
+        let mut apps = Apps::new(
+            env,
+            self.ui_resource.as_ref(),
+            options.resources,
+            options.user,
+        )?;
         let prepared = self.with_refs(env, options.user, given.as_ref(), |refs| {
             host::prepare_update(
                 &self.settings,
@@ -598,13 +642,19 @@ impl Validator {
             locale: None,
             next_id: None,
             refs: None,
+            resources: None,
         });
         let given = given(options.refs)?;
         let locale = options.locale.unwrap_or_else(|| "en".into());
         let view = View::new(options.declared.as_deref(), &locale);
         let mut ids = Ids::new(options.next_id);
         let surface_id = options.surface_id;
-        let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
+        let mut apps = Apps::new(
+            env,
+            self.ui_resource.as_ref(),
+            options.resources,
+            options.user,
+        )?;
         let messages = self.with_refs(env, options.user, given.as_ref(), |refs| {
             let mut next = || ids.next();
             let mut read = |uri: &str| apps.read(uri);
@@ -644,6 +694,7 @@ impl Validator {
             locale: None,
             next_id: None,
             refs: None,
+            resources: None,
         });
         let payload = payload.filter(|value| !value.is_null()).map(input);
         let given = given(options.refs)?;
@@ -651,7 +702,12 @@ impl Validator {
         let view = View::new(options.declared.as_deref(), &locale);
         let mut ids = Ids::new(options.next_id);
         let surface_id = options.surface_id;
-        let mut apps = Apps::new(env, self.ui_resource.as_ref(), options.user)?;
+        let mut apps = Apps::new(
+            env,
+            self.ui_resource.as_ref(),
+            options.resources,
+            options.user,
+        )?;
         let prepared = self.with_refs(env, options.user, given.as_ref(), |refs| {
             let mut next = || ids.next();
             let mut read = |uri: &str| apps.read(uri);
@@ -675,6 +731,11 @@ impl Validator {
     #[napi]
     pub fn ref_keys(&self, payload: Value) -> Vec<String> {
         self.settings.ref_keys(&input(payload))
+    }
+
+    #[napi]
+    pub fn resource_uris(&self, payload: Value) -> Vec<String> {
+        self.settings.resource_uris(&input(payload))
     }
 
     #[napi]

@@ -60,6 +60,7 @@ try {
 | `toolDefinitions(catalogs, actions, strict, profile)` | The Anthropic tool JSON for the three UI tools. `profile` is `'compact'` (default) or `'full'`; `strict` needs `'full'`. |
 | `new ShowStream()`, `validator.feedShow(stream, chunk, options)`, `validator.finishShow(stream, payload, options)` | Stream a `show_ui` call: `ui.open` and `ui.patch` for each component as it arrives, then the full check. See [Streaming](https://github.com/murtazox04/polyui/blob/main/docs/bindings.md#streaming-a-show_ui-call). |
 | `validator.refKeys(payload)` | The declared `source:key` refs a tool call uses, to fetch before `prepareShow(payload, { refs })`. |
+| `validator.resourceUris(payload)` | The `ui://` URIs the call's `embed:Embed` components name, to read before `prepareShow(payload, { resources })`. |
 | `openMessage`, `patchMessage`, `closeMessage`, `closedSummary` | Protocol messages and the close summary. |
 | `compileChart`, `chartSvg`, `describeChart` | Chart scene, standalone SVG and the spoken summary. |
 | `new Client(hello)` | The client core: `receive`, `setValue`, `fire`, `confirm`, `say`, `matchVoice`. |
@@ -86,4 +87,4 @@ Action objects become handles like `{ action_id: 'act_3f2a...', confirm: true }`
 
 ## Not there yet
 
-The resolver and `uiResource` are called synchronously, so they cannot return a Promise. For refs, use `refKeys` and `refs` (above); load MCP App resources before calling `prepareShow`. Prebuilt per-platform npm packages are not published yet; build locally with `npm run build`.
+The resolver and `uiResource` are called synchronously, so they cannot return a Promise. Use `refKeys` with `refs`, and `resourceUris` with `resources`, for async lookups ([Async lookups](https://github.com/murtazox04/polyui/blob/main/docs/bindings.md#async-lookups)). Prebuilt per-platform npm packages are not published yet; build locally with `npm run build`.
