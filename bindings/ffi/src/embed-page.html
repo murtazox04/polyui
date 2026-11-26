@@ -27,6 +27,10 @@
 
         const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
+        const dark = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+        let chosenTheme = null;
+        const currentTheme = () => chosenTheme || (dark && dark.matches ? "dark" : "light");
+
         const toNative = (event) => {
           const text = JSON.stringify(Object.assign({}, event, { nonce }));
           const handlers = window.webkit && window.webkit.messageHandlers;
@@ -123,6 +127,7 @@
         let sentResult = "";
         let lastMessage = -messageGapMs;
         let pendingLink = null;
+        let theme = null;
 
         const maxHeight = () => (bounds[props.height] || bounds.medium)[1];
         const post = (message) => {
@@ -147,6 +152,7 @@
               hostInfo: { name: "polyui-native", version: "0.1.0" },
               hostCapabilities: { openLinks: {} },
               hostContext: {
+                theme: (theme = currentTheme()),
                 displayMode: "inline",
                 availableDisplayModes: ["inline"],
                 containerDimensions: { maxHeight: maxHeight() },
@@ -178,6 +184,13 @@
           }
         };
 
+        const sendTheme = () => {
+          if (!ready || currentTheme() === theme) return;
+          theme = currentTheme();
+          post({ method: "ui/notifications/host-context-changed", params: { theme } });
+        };
+        if (dark) dark.addEventListener("change", sendTheme);
+
         window.addEventListener("message", (event) => {
           if (event.source !== inner.contentWindow || event.origin !== "null") return;
           const data = event.data;
@@ -205,6 +218,12 @@
               app = nextApp;
               inner.title = typeof props.title === "string" ? props.title : "";
               sendTool();
+              return true;
+            },
+            setTheme(name) {
+              if (name !== "light" && name !== "dark") return false;
+              chosenTheme = name;
+              sendTheme();
               return true;
             },
             answerLink(accepted) {

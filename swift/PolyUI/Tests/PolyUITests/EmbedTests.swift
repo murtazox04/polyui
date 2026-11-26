@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 import WebKit
 
 @testable import PolyUI
@@ -232,6 +233,47 @@ struct EmbedSessionTests {
         session.askToOpen(URL(string: "https://example.com/")!, surface: "s1", component: "a") { answers.append($0) }
         #expect(answers == [false])
         #expect(session.surface("s1").presentedSheet?.id == "confirm:act_pay:n_1")
+    }
+
+    static let themeApp = """
+        <!doctype html><html><body><script>
+        const send = (message) => window.parent.postMessage(Object.assign({ jsonrpc: "2.0" }, message), "*");
+        let said = 0;
+        const say = (theme) => send({ id: 10 + said++, method: "ui/message", params: { role: "user", content: [{ type: "text", text: "theme " + theme }] } });
+        window.addEventListener("message", (event) => {
+          const data = event.data;
+          if (data && data.id === 1 && data.result) {
+            send({ method: "ui/notifications/initialized", params: {} });
+            say(data.result.hostContext.theme);
+          }
+          if (data && data.method === "ui/notifications/host-context-changed") say(data.params.theme);
+        });
+        send({ id: 1, method: "ui/initialize", params: { protocolVersion: "2026-01-26", appInfo: { name: "t", version: "1" }, appCapabilities: {} } });
+        </script></body></html>
+        """
+
+    @Test func theAppHearsTheHostThemeAndItsChanges() async throws {
+        let controller = EmbedPageController()
+        var events: [EmbedEvent] = []
+        controller.onEvent = { events.append($0) }
+        let webView = controller.makeWebView()
+        webView.frame = CGRect(x: 0, y: 0, width: 320, height: 320)
+        let window = UIWindow(frame: webView.frame)
+        window.addSubview(webView)
+        window.isHidden = false
+        window.overrideUserInterfaceStyle = .dark
+        var props = Self.props()
+        props["app"] = [
+            "resource": ["uri": "ui://test/app", "mimeType": "text/html;profile=mcp-app", "text": .string(Self.themeApp)],
+            "tool_input": [:],
+        ]
+        controller.show(try JSONValue.object(props).jsonText())
+        #expect(await waitFor { events.contains(.message("theme dark")) })
+        try await Task.sleep(for: .milliseconds(1100))
+        window.overrideUserInterfaceStyle = .light
+        #expect(await waitFor { events.contains(.message("theme light")) })
+        controller.tearDown()
+        window.isHidden = true
     }
 
     @Test func aRealWebViewRunsTheAppAndFiltersMessages() async throws {

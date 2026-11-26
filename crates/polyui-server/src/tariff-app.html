@@ -4,20 +4,21 @@
     <meta charset="utf-8">
     <title>Internet tariff calculator</title>
     <style>
-      :root { color-scheme: light; font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2433; }
-      body { margin: 0; padding: 16px 18px; background: #f6f7fb; }
+      :root { color-scheme: light; font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2433; --page: #f6f7fb; --card: #fff; --muted: #4b5563; --faint: #6b7280; }
+      :root[data-theme="dark"] { color-scheme: dark; color: #e5e9f0; --page: #151b22; --card: #1f2731; --muted: #b4bcc8; --faint: #98a2b1; }
+      body { margin: 0; padding: 16px 18px; background: var(--page); }
       h1 { margin: 0 0 2px; font-size: 17px; }
-      p { margin: 0 0 12px; color: #4b5563; }
+      p { margin: 0 0 12px; color: var(--muted); }
       label { display: block; font-weight: 600; margin-bottom: 4px; }
       input[type="range"] { width: 100%; }
       ul { display: grid; gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
-      li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: #fff; box-shadow: 0 1px 2px #0001; }
+      li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--card); box-shadow: 0 1px 2px #0001; }
       li[data-best] { outline: 2px solid #0f766e; }
-      li span { color: #6b7280; font-size: 13px; }
+      li span { color: var(--faint); font-size: 13px; }
       footer { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
       button { padding: 8px 14px; border: 0; border-radius: 9px; background: #0f766e; color: #fff; font: inherit; cursor: pointer; }
       button:disabled { background: #9ca3af; cursor: default; }
-      small { color: #6b7280; }
+      small { color: var(--faint); }
     </style>
   </head>
   <body>
@@ -40,6 +41,9 @@
         let current = "";
         let best = null;
         const byId = (id) => document.getElementById(id);
+        const applyTheme = (theme) => {
+          if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+        };
 
         const request = (method, params) => new Promise((resolve, reject) => {
           const id = nextId++;
@@ -86,6 +90,8 @@
             if (typeof args.usage_gb === "number") byId("usage").value = String(Math.round(args.usage_gb / 10) * 10);
             if (typeof args.current === "string") current = args.current;
             pick();
+          } else if (message.method === "ui/notifications/host-context-changed") {
+            applyTheme(message.params && message.params.theme);
           } else if (message.method === "ui/notifications/tool-result") {
             const data = message.params && message.params.structuredContent;
             if (!data || !Array.isArray(data.offers)) return;
@@ -105,7 +111,8 @@
             .catch((error) => { byId("status").textContent = error.message; });
         });
 
-        request("ui/initialize", { appInfo: { name: "Bills tariff calculator", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then(() => {
+        request("ui/initialize", { appInfo: { name: "Bills tariff calculator", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then((result) => {
+          applyTheme(result && result.hostContext && result.hostContext.theme);
           notify("ui/notifications/initialized", {});
           const report = () => notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
           new ResizeObserver(report).observe(document.body);

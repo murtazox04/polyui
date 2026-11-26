@@ -76,6 +76,19 @@ sequenceDiagram
     R->>S: ui.action from on_message, with the text as detail
 ```
 
+### Theme
+
+The host context in the `ui/initialize` answer carries `theme`, `"light"` or `"dark"`, as the MCP Apps spec defines it. When the theme changes after that, the renderer sends `ui/notifications/host-context-changed` with `{ "theme": ... }`, once per change. An app that reads it can follow the host; the forecast and tariff example apps do, through a `data-theme` attribute on their root.
+
+| Renderer | Where the theme comes from |
+|---|---|
+| Web | The computed `color-scheme` of the embed's element. With the default `light dark`, the system setting (`prefers-color-scheme`) decides; a page that sets `--pui-scheme` to `light` or `dark` on the surface gets that theme in the app too. A change of the system setting is sent at once; a change of `--pui-scheme` is sent with the next update of the component. |
+| iOS | The web view's `prefers-color-scheme`, which WebKit takes from the view's trait collection, so the app follows the window's light or dark style. |
+| Android | The theme the Compose renderer draws with: `LocalPolyuiDarkTheme`, or the system setting when it is not set. The renderer calls `polyuiHost.setTheme` with it, so an activity theme that is always light does not hide dark mode from the app. |
+| Flutter | The brightness of the `PolyuiTheme` background, through `polyuiHost.setTheme`. |
+
+The app gets no `styles` with CSS variables yet, only the theme name.
+
 ## Security rules
 
 These are the rules the web renderer follows. Hosts with their own renderer should follow the same ones.
@@ -108,7 +121,7 @@ The spec and the SDK types disagree on the shape of `ui/message`: the spec shows
 
 ## Browser check
 
-`js/polyui-web/scripts/embed-check.mjs` serves the host page on `http://localhost:4190` and the sandbox on `http://127.0.0.1:4191`, loads the real wasm core in Chrome through Playwright, and embeds `demo/embed/forecast-app.html`, a small MCP App written without the SDK. It checks the sandbox attributes of both frames, waits for the app to resize its frame, clicks the app's button so it sends `ui/message`, and reads the `ui.action` the client sends. The screenshot above comes from it.
+`js/polyui-web/scripts/embed-check.mjs` serves the host page on `http://localhost:4190` and the sandbox on `http://127.0.0.1:4191`, loads the real wasm core in Chrome through Playwright, and embeds `demo/embed/forecast-app.html`, a small MCP App written without the SDK. It checks the sandbox attributes of both frames, waits for the app to resize its frame, clicks the app's button so it sends `ui/message`, and reads the `ui.action` the client sends. The screenshot above comes from it. After the screenshot it switches the page to dark and back with `emulateMedia` and checks that the app's theme follows both times.
 
 ```sh
 cd js/polyui-web
@@ -135,7 +148,7 @@ sequenceDiagram
     V->>P: ui/notifications/initialized
     P-->>V: tool-input, then tool-result
     P->>N: ready, height, message, open-link (each with the nonce)
-    N->>P: polyuiHost.update, answerLink, teardown
+    N->>P: polyuiHost.update, answerLink, setTheme, teardown
 ```
 
 The page does the same work as the web sandbox page and the web renderer together:
@@ -144,6 +157,7 @@ The page does the same work as the web sandbox page and the web renderer togethe
 - The page answers `ui/initialize`, `ping` and `ui/request-display-mode` itself, sends `tool-input` and `tool-result`, refuses everything else with `-32601`, and drops `ui/notifications/sandbox-*` methods.
 - It checks `ui/message` the same way the web renderer does (`on_message` present, text only, 4096 bytes, one per second) and clamps `size-changed` to the height hint.
 - It accepts `ui/open-link` only for `https` URLs without credentials, and only one at a time.
+- It tells the app the theme from `prefers-color-scheme`, or from `polyuiHost.setTheme("light" | "dark")` once the native side has called it, and sends `host-context-changed` when it changes (see [Theme](#theme)).
 
 What reaches the native side is a JSON string with `kind` set to `ready`, `height`, `message`, `open-link` or `unavailable`, sent through `window.webkit.messageHandlers.polyui` on iOS and `window.polyui` elsewhere. Every event carries the nonce. The app's frame can see the same bridge object on some platforms, but it cannot read the page's script, so it cannot know the nonce. The native side drops any event without it, and where the platform says which frame sent it, also any event that is not from the main frame.
 
@@ -151,7 +165,7 @@ The native side still does the parts that need the person or the core: it fires 
 
 Where the web view is Chromium, load the page with a fixed `https` base URL such as `https://embed.polyui.invalid/`, not as `about:blank` content: desktop Chrome stopped with a failed check when the page came in that way. Android and Flutter do this. iOS loads it with no base URL, and WebKit draws the inner frame fine that way.
 
-`bindings/ffi/tests/embed/check.mjs` loads the page in Chromium with a fake bridge and checks the sandbox attribute, that the tool input reaches the app, that the app's `fetch` is blocked by `connect-src`, the clamped height, the message and its one-per-second limit, the link round trip, that plain `http` links are refused, that the app cannot forge an event with the nonce and that it cannot reach `polyuiHost`. CI runs it next to the C test.
+`bindings/ffi/tests/embed/check.mjs` loads the page in Chromium with a fake bridge and checks the sandbox attribute, that the tool input reaches the app, that the app's `fetch` is blocked by `connect-src`, the clamped height, the message and its one-per-second limit, the link round trip, that plain `http` links are refused, that the app cannot forge an event with the nonce, that it cannot reach `polyuiHost`, and that the theme reaches the app at start, after a system change and after `setTheme`. CI runs it next to the C test.
 
 ```sh
 cargo build -p polyui-ffi --example embed_page

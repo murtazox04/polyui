@@ -23,6 +23,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -100,6 +102,7 @@ private fun EmbedFrame(
     onUnavailable: () -> Unit,
 ) {
     val theme = LocalPolyuiTheme.current
+    val dark = LocalPolyuiDarkTheme.current ?: isSystemInDarkTheme()
     val heights = PolyuiEmbedHeight.of(node.string("height"))
     var height by remember { mutableIntStateOf(heights.start) }
     val nonce = remember { PolyuiEmbed.newNonce() }
@@ -124,6 +127,7 @@ private fun EmbedFrame(
                 onUnavailable = { giveUp() },
             )
         }
+    LaunchedEffect(bridge, dark) { bridge.theme(dark) }
     AndroidView(
         factory = { context -> bridge.create(context, page, title, firstProps) },
         update = { view -> bridge.push(view, node.props) { reload() } },
@@ -178,6 +182,9 @@ internal class EmbedBridge(
     private val gate = PolyuiMessageGate()
     private var pushed: JsonObject? = null
     private var released = false
+    private var dark: Boolean? = null
+    private var ready = false
+    private var view: WebView? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     fun create(
@@ -188,6 +195,7 @@ internal class EmbedBridge(
     ): WebView {
         pushed = props
         val view = WebView(context)
+        this.view = view
         view.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         view.settings.apply {
             javaScriptEnabled = true
@@ -259,6 +267,17 @@ internal class EmbedBridge(
         }
     }
 
+    fun theme(dark: Boolean) {
+        if (this.dark == dark) return
+        this.dark = dark
+        if (ready) sendTheme()
+    }
+
+    private fun sendTheme() {
+        val name = if (dark ?: return) "dark" else "light"
+        if (!released) view?.evaluateJavascript("window.polyuiHost.setTheme(\"$name\")", null)
+    }
+
     fun release(view: WebView) {
         if (released) return
         released = true
@@ -280,7 +299,8 @@ internal class EmbedBridge(
         if (released) return
         when (event) {
             PolyuiEmbedEvent.Ready -> {
-                return
+                ready = true
+                sendTheme()
             }
 
             is PolyuiEmbedEvent.Height -> {

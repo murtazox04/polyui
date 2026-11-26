@@ -38,6 +38,9 @@ class EmbedComponentState extends State<EmbedComponent> {
   int seenRevision = 0;
   DateTime? lastMessage;
   ModalBottomSheetRoute<bool>? linkRoute;
+  String themeName = 'light';
+  String? sentTheme;
+  bool pageReady = false;
 
   ComponentNode get node => widget.node;
 
@@ -54,6 +57,27 @@ class EmbedComponentState extends State<EmbedComponent> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     scope = PolyuiScope.of(context);
+    final background = PolyuiTheme.of(context).background;
+    themeName =
+        ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+        ? 'dark'
+        : 'light';
+    final current = controller;
+    if (current != null) {
+      sendTheme(current);
+    }
+  }
+
+  void sendTheme(WebViewController made) {
+    if (!pageReady || sentTheme == themeName) {
+      return;
+    }
+    sentTheme = themeName;
+    unawaited(
+      made
+          .runJavaScript('window.polyuiHost.setTheme("$themeName")')
+          .catchError((Object error) {}),
+    );
   }
 
   @override
@@ -127,6 +151,8 @@ class EmbedComponentState extends State<EmbedComponent> {
     controller = null;
     nonce = '';
     expectingLoad = false;
+    pageReady = false;
+    sentTheme = null;
     if (current != null) {
       unawaited(
         current
@@ -218,8 +244,11 @@ class EmbedComponentState extends State<EmbedComponent> {
       return;
     }
     switch (EmbedEvent.parse(text, nonce)) {
-      case null || EmbedReady():
+      case null:
         break;
+      case EmbedReady():
+        pageReady = true;
+        sendTheme(made);
       case EmbedUnavailable():
         fallBack();
       case EmbedHeightEvent(:final value):
@@ -322,6 +351,8 @@ class EmbedComponentState extends State<EmbedComponent> {
     }
     setState(() => height = bounds.start);
     expectingLoad = true;
+    pageReady = false;
+    sentTheme = null;
     await made.loadHtmlString(page, baseUrl: embedBaseUrl);
   }
 

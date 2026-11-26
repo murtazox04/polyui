@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -93,14 +96,17 @@ class EmbedUiTest {
             }
         }.toString()
 
-    private fun app(): JsonObject =
+    private fun app(reportTheme: Boolean = false): JsonObject =
         buildJsonObject {
             putJsonObject("resource") {
                 put("uri", RESOURCE)
                 put("mimeType", "text/html;profile=mcp-app")
                 put("text", appHtml())
             }
-            putJsonObject("tool_input") { put("city", "Tashkent") }
+            putJsonObject("tool_input") {
+                put("city", "Tashkent")
+                if (reportTheme) put("report_theme", true)
+            }
             putJsonObject("tool_result") {
                 put(
                     "content",
@@ -144,6 +150,29 @@ class EmbedUiTest {
     }
 
     private fun actions(): List<JsonElement> = sent.filter { it["t"].stringValue == "ui.action" }
+
+    @Test
+    fun theAppFollowsTheRendererTheme() {
+        var dark by mutableStateOf(true)
+        rule.setContent {
+            CompositionLocalProvider(
+                LocalPolyuiReducedMotion provides true,
+                LocalPolyuiLinkOpener provides opener,
+                LocalPolyuiDarkTheme provides dark,
+            ) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    PolyuiSurface(session, "s1")
+                }
+            }
+        }
+        rule.runOnIdle { session.receive(open(app(reportTheme = true))) }
+        rule.waitUntil(WEB_TIMEOUT) { saidTexts().lastOrNull() == "Theme dark" }
+        val before = saidTexts().size
+        rule.runOnIdle { dark = false }
+        rule.waitUntil(WEB_TIMEOUT) { saidTexts().drop(before).contains("Theme light") }
+    }
+
+    private fun saidTexts(): List<String?> = actions().map { it["detail"]["text"].stringValue }
 
     @Test
     fun theToolResultRendersInsideTheWebView() {
