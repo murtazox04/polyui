@@ -354,11 +354,11 @@ The iOS embed screenshot is above. This is the same app on Android after the lin
 
 ## What is not done yet
 
-- Real speech was not tested on either platform. No one spoke to the simulator or the emulator, so the path from a real recognizer transcript to `match_voice` has only run in `test/voice_test.dart` with a fake recognizer. Speech output was not listened to.
-- On iOS the recognizer never started in the simulator, so listening that actually runs has only been seen on Android.
+- Real speech has been checked once, on an iPhone 14 Pro (iOS 27.0.1) on 2026-11-26, with a release build of the example in Replay mode: with the bills card open, the person holding the phone tapped the microphone and said "the visa card", and the Visa option was selected through `match_voice`. That is the only real recognizer transcript so far. On Android no one has spoken to the recognizer, and speech output was not listened to on either platform.
+- The iOS simulators here have no speech model, so the recognizer cannot start there (see [iOS](ios.md#what-is-not-done-yet)).
 - On Android `webview_flutter` does not report subframe navigations, so the "only `about:srcdoc`, `about:blank` and https in subframes" rule is applied on iOS only. The main frame rule works on both.
 - `webview_flutter_android` turns on DOM storage for every web view and has no setting to turn it off. Nothing writes to it, but it is not off.
 - No `lib/x86/` in the APK: Flutter did not ask for x86. The `i686-linux-android` build was run by hand with cargo-ndk, not through Flutter.
-- No release APK was built, and nothing was installed on an Android phone. A release build of the example was installed and started on an iPhone 14 Pro (iOS 27.0.1) on 2026-11-26; nothing was checked on it yet.
+- No release APK was built, and nothing was installed on an Android phone. A release build of the example ran on an iPhone 14 Pro (iOS 27.0.1); only the spoken choice above was checked on it.
 - Simulator builds are arm64 only because of the Xcode 27 `lipo` change described above.
 - The semantics have been checked in widget tests, not with VoiceOver or TalkBack on a device.
