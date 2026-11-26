@@ -87,6 +87,7 @@ final class ChatModel {
         scripted = nil
         mode = .live(url)
         session.send = { [weak self] text in self?.socket.send(text) }
+        socket.onSessionLost = { [weak self] in self?.sessionLost() }
         guard let hello = try? hello.jsonText() else { return }
         socket.connect(to: url, hello: hello) { [weak self] text in
             self?.incoming(text)
@@ -149,6 +150,16 @@ final class ChatModel {
         openAgentEntry = nil
         problem = nil
         if let fresh = try? PolyUISession(hello: hello) { session = fresh }
+    }
+
+    private func sessionLost() {
+        entries.removeAll { if case .surface = $0 { true } else { false } }
+        openAgentEntry = nil
+        problem = "The connection was gone too long, so the earlier cards were removed."
+        if let fresh = try? PolyUISession(hello: hello) {
+            fresh.send = session.send
+            session = fresh
+        }
     }
 
     private func outgoing(_ text: String) {
