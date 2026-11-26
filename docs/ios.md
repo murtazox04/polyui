@@ -262,7 +262,7 @@ let speaker = PolyUISpeaker()
 speaker.speak(surface: "s1", in: session, language: "uz-UZ")
 ```
 
-`PolyUIListener` is the other direction. It uses the Speech framework with `AVAudioEngine`, and asks for on-device recognition whenever the recognizer supports it for the language. The final transcript goes to the core's `match_voice` for the surface, and the session acts on the result as the [renderer contract](../spec/renderer.md) says: the match's `batch` is applied, its `action` is sent, and when that action answers the open confirm sheet (a spoken "yes"), the sheet closes.
+`PolyUIListener` is the other direction. It uses the Speech framework with `AVAudioEngine`, and asks for on-device recognition whenever the recognizer supports it for the language. If that recognizer fails before it hears anything, for example because its model is not installed, the listener starts again once without the on-device requirement, the same way the Android listener falls back to the default service. The final transcript goes to the core's `match_voice` for the surface, and the session acts on the result as the [renderer contract](../spec/renderer.md) says: the match's `batch` is applied, its `action` is sent, and when that action answers the open confirm sheet (a spoken "yes"), the sheet closes.
 
 ```swift
 let listener = PolyUIListener()
@@ -317,6 +317,7 @@ On 2026-11-25 the example app ran on an iPhone 14 Pro with iOS 27.0.1, as a Debu
 ## What is not done yet
 
 - On-device recognition and audio session behavior next to `PolyUISpeaker` were not checked on their own. Only the spoken request above went through a real recognizer.
+- Speech recognition does not work in the iOS 27 simulators on this Mac. None of them has the speech model installed (the `com_apple_MobileAsset_UAF_Siri_Understanding` asset has no `mini.json`), so the recognizer fails with `kLSRErrorDomain` 300 "Failed to initialize recognizer", with or without the on-device requirement, and the app shows "Could not hear that". The fallback above was seen to start its second attempt there, but whether that attempt succeeds where only the on-device model is missing has not been seen. Test listening on a device.
 - The embed was tested in the iOS 27.2 simulator and, through the package tests (including the real `WKWebView` test), on Mac Catalyst on this Mac. The forecast embed was not opened on the device, and the example app does not have a Catalyst build.
 - The Intel simulator slice builds and the package links against it, but no test ran on an Intel simulator.
 - `teardown` is best effort: the web view can be gone before the app receives `ui/resource-teardown`.

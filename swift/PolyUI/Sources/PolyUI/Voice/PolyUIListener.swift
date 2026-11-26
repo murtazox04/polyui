@@ -42,6 +42,9 @@ public final class PolyUIListener {
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private var request: SFSpeechAudioBufferRecognitionRequest?
     @ObservationIgnored private var task: SFSpeechRecognitionTask?
+    @ObservationIgnored private var recognizer: SFSpeechRecognizer?
+    @ObservationIgnored private var attempt = 0
+    @ObservationIgnored private var retriedOnServer = false
     @ObservationIgnored private var target: (surface: String?, session: PolyUISession)?
     @ObservationIgnored private var onHeard: (@MainActor (PolyUIHeard) -> Void)?
     @ObservationIgnored private var audioWork: Task<Bool, Never>?
@@ -100,9 +103,12 @@ public final class PolyUIListener {
             return
         }
         self.request = request
+        self.recognizer = recognizer
+        retriedOnServer = false
         target = (surface, session)
         self.onHeard = onHeard
-        task = Self.recognize(request, with: recognizer, reporting: self)
+        attempt += 1
+        task = Self.recognize(request, with: recognizer, attempt: attempt, reporting: self)
         state = .listening
     }
 
@@ -132,10 +138,11 @@ public final class PolyUIListener {
         return PolyUIHeard(transcript: text, match: match)
     }
 
-    func partial(_ text: String?, isFinal: Bool, failed: Bool) {
-        guard request != nil else { return }
+    func partial(_ text: String?, isFinal: Bool, failed: Bool, attempt: Int) {
+        guard request != nil, attempt == self.attempt else { return }
         if let text { transcript = text }
         guard isFinal || failed else { return }
+        if failed, transcript.isEmpty, retryOnServer() { return }
         let heard = transcript
         let target = self.target
         let onHeard = self.onHeard
@@ -148,9 +155,27 @@ public final class PolyUIListener {
         }
     }
 
+    private func retryOnServer() -> Bool {
+        guard !retriedOnServer, tapInstalled, let recognizer, request?.requiresOnDeviceRecognition == true else { return false }
+        retriedOnServer = true
+        let next = SFSpeechAudioBufferRecognitionRequest()
+        next.shouldReportPartialResults = true
+        next.requiresOnDeviceRecognition = false
+        engine.inputNode.removeTap(onBus: 0)
+        tapInstalled = false
+        guard Self.feed(engine.inputNode, into: next) else { return false }
+        tapInstalled = true
+        task?.cancel()
+        request = next
+        attempt += 1
+        task = Self.recognize(next, with: recognizer, attempt: attempt, reporting: self)
+        return true
+    }
+
     private func finishListening() {
         stopAudio()
         request = nil
+        recognizer = nil
         task = nil
         target = nil
         onHeard = nil
@@ -215,6 +240,7 @@ public final class PolyUIListener {
     private nonisolated static func recognize(
         _ request: SFSpeechAudioBufferRecognitionRequest,
         with recognizer: SFSpeechRecognizer,
+        attempt: Int,
         reporting listener: PolyUIListener
     ) -> SFSpeechRecognitionTask {
         recognizer.recognitionTask(with: request) { [weak listener] result, error in
@@ -222,7 +248,7 @@ public final class PolyUIListener {
             let isFinal = result?.isFinal ?? false
             let failed = error != nil
             Task { @MainActor [listener] in
-                listener?.partial(text, isFinal: isFinal, failed: failed)
+                listener?.partial(text, isFinal: isFinal, failed: failed, attempt: attempt)
             }
         }
     }
