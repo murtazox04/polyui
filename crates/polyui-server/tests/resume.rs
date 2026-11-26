@@ -170,9 +170,10 @@ async fn a_resumed_socket_gets_its_surfaces_handles_and_confirmation_back() {
     assert_eq!(result["status"], "ok");
     drop(socket);
 
-    let (_socket, welcome) = connect(addr, hello(&["resume"], Some((&session, &token)))).await;
+    let (socket, welcome) = connect(addr, hello(&["resume"], Some((&session, &token)))).await;
     assert_eq!(welcome["resumed"], false, "an old token works only once");
     assert_ne!(text(&welcome, "session"), session);
+    drop(socket);
 }
 
 #[tokio::test]
@@ -190,9 +191,10 @@ async fn a_wrong_token_or_a_closed_window_starts_a_new_session() {
     drop(socket);
 
     tokio::time::sleep(Duration::from_millis(900)).await;
-    let (_socket, late) = connect(addr, hello(&["resume"], Some((&session, &token)))).await;
+    let (socket, late) = connect(addr, hello(&["resume"], Some((&session, &token)))).await;
     assert_eq!(late["resumed"], false);
     assert_ne!(text(&late, "session"), session);
+    drop(socket);
 }
 
 #[tokio::test]
@@ -203,9 +205,10 @@ async fn a_client_without_the_feature_gets_no_token_and_no_resume() {
     assert!(welcome.get("resume_token").is_none());
     let session = text(&welcome, "session");
     drop(socket);
-    let (_socket, again) = connect(addr, hello(&[], Some((&session, "rt_x")))).await;
+    let (socket, again) = connect(addr, hello(&[], Some((&session, "rt_x")))).await;
     assert!(again.get("resumed").is_none());
     assert_ne!(text(&again, "session"), session);
+    drop(socket);
 }
 
 #[tokio::test]
@@ -215,7 +218,7 @@ async fn a_resume_closes_the_connection_that_is_still_open() {
     let (mut first, welcome) = connect(addr, hello(&["resume"], None)).await;
     let session = text(&welcome, "session");
     let token = text(&welcome, "resume_token");
-    let (_second, resumed) = connect(addr, hello(&["resume"], Some((&session, &token)))).await;
+    let (second, resumed) = connect(addr, hello(&["resume"], Some((&session, &token)))).await;
     assert_eq!(resumed["resumed"], true);
     let ended = tokio::time::timeout(WAIT, async {
         loop {
@@ -227,6 +230,7 @@ async fn a_resume_closes_the_connection_that_is_still_open() {
     })
     .await;
     assert!(ended.is_ok(), "the old connection must end");
+    drop(second);
 }
 
 #[tokio::test]
