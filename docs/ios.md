@@ -9,7 +9,7 @@ The iOS side has three layers. At the bottom is `polyui-ffi`, a small C ABI over
 ![The forecast MCP App inside an embed:Embed, light mode](images/ios-embed-light.png)
 ![The same embed in dark mode](images/ios-embed-dark.png)
 
-The light screenshot shows the July bar after a tap. The confirm sheet and the dark screenshot come from the same run: the Visa card was picked, a phone number typed into the receipt field, Pay pressed and confirmed, and the server's patch turned the button into Paid. These three were taken before the microphone button was added to the composer. The two embed screenshots are newer: they show the forecast app from `js/polyui-web/demo/embed` running inside the iOS renderer, with the tool result drawn and its fetch blocked by the app's CSP.
+The light screenshot shows the July bar after a tap. The dark screenshot is the `paid` demo with `-PolyUIVoice "the visa card"`: the heard phrase picked the Visa card, a phone number went into the receipt field, Pay was pressed and confirmed, and the server's patch turned the button into Paid. Both were taken on 2026-11-26 in the iPhone 17 simulator. The confirm sheet is older, from a run where the Visa card was picked by hand; the sheet covers the composer, so the missing microphone button does not show. The two embed screenshots are newer: they show the forecast app from `js/polyui-web/demo/embed` running inside the iOS renderer, with the tool result drawn and its fetch blocked by the app's CSP.
 
 ## Adding it to an app
 
@@ -321,5 +321,4 @@ On 2026-11-25 the example app ran on an iPhone 14 Pro with iOS 27.0.1, as a Debu
 - The Intel simulator slice builds and the package links against it, but no test ran on an Intel simulator.
 - `teardown` is best effort: the web view can be gone before the app receives `ui/resource-teardown`.
 - An embed inside a `LazyVStack` that scrolls far off screen can be torn down by SwiftUI and loads again, with a new nonce, when it comes back.
-- The three older screenshots at the top predate the microphone button.
 - VoiceOver was tried on a device only with the bills card, by hand. Other component types and the embed have been checked only through the accessibility traits and labels the code sets, and through the UI test that finds the web view by its title.
