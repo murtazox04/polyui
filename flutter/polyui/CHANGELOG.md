@@ -1,3 +1,8 @@
+## 0.1.4
+
+- An MCP App inside `embed:Embed` is told the app's light or dark theme and hears when it changes.
+- The example's microphone shows the unavailable notice when the recognizer does not start, instead of staying silent.
+
 ## 0.1.3
 
 - Built from the same core as PolyUI 0.1.3. No change to the Flutter API.
