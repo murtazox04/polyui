@@ -88,17 +88,20 @@ function sandboxOverHttp(origin: string | null): boolean {
   }
 }
 
-function helloFor(current: Setup) {
+function helloFor(current: Setup, resume: Resume | null) {
   return {
     v: 1,
     t: "hello",
     client: { name: "polyui-chat", version: "0.1.0" },
     catalogs: current.embedOrigin === null ? ["core@1", "chart@1"] : ["core@1", "chart@1", "embed@1"],
     modalities: ["screen", "voice"],
-    features: ["sync", "stream"],
+    features: ["sync", "stream", "resume"],
     locale,
+    ...(resume === null ? {} : { resume }),
   };
 }
+
+type Resume = { readonly session: string; readonly token: string };
 
 interface Line extends EventTarget {
   readonly readyState: number;
@@ -110,6 +113,7 @@ let core: WasmCore | null = null;
 let renderer: Renderer | null = null;
 let live = false;
 let retries = 0;
+let resumeWith: Resume | null = null;
 let turn: HTMLElement | null = null;
 let answer: HTMLParagraphElement | null = null;
 let turnSurfaces: string[] = [];
@@ -234,7 +238,14 @@ function onServerMessage(raw: string): void {
   if (!message || !renderer) return;
   const type = field(message, "t");
   switch (type) {
-    case "welcome":
+    case "welcome": {
+      const token = field(message, "resume_token");
+      if (message["resumed"] === false) {
+        resumeWith = null;
+        startOver();
+        return;
+      }
+      resumeWith = token === "" ? null : { session: field(message, "session"), token };
       live = true;
       retries = 0;
       setStatus("live", REPLAY ? "Replay" : "Connected");
@@ -242,6 +253,7 @@ function onServerMessage(raw: string): void {
       renderer.receive(raw);
       refreshSend();
       return;
+    }
     case "agent.delta": {
       const piece = field(message, "text");
       const stick = nearBottom();
@@ -282,11 +294,53 @@ function scheduleReconnect(): void {
   setTimeout(() => void connect(), delay);
 }
 
+function openLine(current: Setup, resume: Resume | null): Line {
+  const ws: Line = REPLAY ? new ReplaySocket() : new WebSocket(endpoint);
+  socket = ws;
+  ws.addEventListener("open", () => ws.send(JSON.stringify(helloFor(current, resume))));
+  ws.addEventListener("message", (event) => {
+    if (socket === ws && event instanceof MessageEvent && typeof event.data === "string") onServerMessage(event.data);
+  });
+  ws.addEventListener("close", () => {
+    if (socket !== ws) return;
+    live = false;
+    refreshSend();
+    settleAnswer();
+    turn = null;
+    if (resumeWith !== null && core !== null) {
+      scheduleReconnect();
+      return;
+    }
+    teardown();
+    scheduleReconnect();
+  });
+  return ws;
+}
+
+function teardown(): void {
+  markStale();
+  core?.free();
+  core = null;
+  renderer = null;
+}
+
+function startOver(): void {
+  const old = socket;
+  socket = null;
+  if (old instanceof WebSocket) old.close();
+  teardown();
+  void connect();
+}
+
 async function connect(): Promise<void> {
   setStatus("connecting", "Connecting");
   setup ??= await readSetup();
   const current = setup;
-  const hello = helloFor(current);
+  if (resumeWith !== null && core !== null && renderer !== null) {
+    openLine(current, resumeWith);
+    return;
+  }
+  const hello = helloFor(current, null);
   let next: WasmCore;
   try {
     next = await loadCore(hello, wasmUrl);
@@ -295,33 +349,16 @@ async function connect(): Promise<void> {
     setHint(error instanceof Error ? error.message : String(error));
     return;
   }
-  const ws: Line = REPLAY ? new ReplaySocket() : new WebSocket(endpoint);
-  socket = ws;
   core = next;
   renderer = createRenderer({
     core: next,
     send: (message) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(message);
+      if (socket !== null && socket.readyState === WebSocket.OPEN) socket.send(message);
     },
     ...(current.embedOrigin === null ? {} : { embedOrigin: current.embedOrigin }),
     allowHttp: sandboxOverHttp(current.embedOrigin),
   });
-  ws.addEventListener("open", () => ws.send(JSON.stringify(hello)));
-  ws.addEventListener("message", (event) => {
-    if (event instanceof MessageEvent && typeof event.data === "string") onServerMessage(event.data);
-  });
-  ws.addEventListener("close", () => {
-    if (socket !== ws) return;
-    live = false;
-    refreshSend();
-    settleAnswer();
-    turn = null;
-    markStale();
-    next.free();
-    if (core === next) core = null;
-    renderer = null;
-    scheduleReconnect();
-  });
+  openLine(current, null);
 }
 
 function sendSay(text: string, source: Source): void {
