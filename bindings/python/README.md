@@ -4,7 +4,13 @@ This package lets a Python server (FastAPI, Django, a plain worker) use the Poly
 
 It is a native extension built with PyO3 and maturin. One abi3 wheel works on CPython 3.10 and newer.
 
-## Build and install
+## Install
+
+```sh
+pip install polyui
+```
+
+## Build from source
 
 You need Rust, [uv](https://docs.astral.sh/uv/) and maturin 1.16 or newer (`uv tool install maturin`).
 

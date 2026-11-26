@@ -306,12 +306,20 @@ xcodebuild test -project PolyUIExample.xcodeproj -scheme PolyUIExample -destinat
 
 It checks that the forecast app draws its tool input and tool result and that its `fetch` is blocked by CSP, that the web view is labelled with the title, that "Also show Samarkand" turns into a `ui.action` the server answers with the app's text, that "Full forecast" opens the confirm sheet with the full URL, that Cancel gives the app the "denied by user" error, that Open link brings Safari to the front and the app hears the link was accepted, that a heard "the visa card" selects the Visa option through `match_voice`, and that refusing speech permission shows the type-instead message. The last test taps "Don't Allow" on the system prompt, so after it runs the example app has speech recognition denied on that simulator until you reinstall it.
 
+## On a device
+
+On 2026-11-25 the example app ran on an iPhone 14 Pro with iOS 27.0.1, as a Debug build in Replay mode. These checks were done by hand by the person holding the phone. No automated test runs on a device.
+
+- Speaking "Show my bills" was recognized, sent as a message, and the bills card opened.
+- With VoiceOver on, swiping through the card read the title, the amounts, the chart bars and the "Pay from" options.
+- Tapping a bar in the chart selected it.
+
 ## What is not done yet
 
-- Real speech was not tested. The simulator runs had no microphone input, so `PolyUIListener` was checked only up to the permission prompt and through `hear`, the step its final transcript takes. Recognition from a real voice, on-device recognition and audio session behavior next to `PolyUISpeaker` still need a device.
-- The embed was tested in the iOS 27.2 simulator and, through the package tests (including the real `WKWebView` test), on Mac Catalyst on this Mac. It was not tested on a device, and the example app does not have a Catalyst build.
+- On-device recognition and audio session behavior next to `PolyUISpeaker` were not checked on their own. Only the spoken request above went through a real recognizer.
+- The embed was tested in the iOS 27.2 simulator and, through the package tests (including the real `WKWebView` test), on Mac Catalyst on this Mac. The forecast embed was not opened on the device, and the example app does not have a Catalyst build.
 - The Intel simulator slice builds and the package links against it, but no test ran on an Intel simulator.
 - `teardown` is best effort: the web view can be gone before the app receives `ui/resource-teardown`.
 - An embed inside a `LazyVStack` that scrolls far off screen can be torn down by SwiftUI and loads again, with a new nonce, when it comes back.
 - The three older screenshots at the top predate the microphone button.
-- The renderer has not been tested with VoiceOver on a device, only through the accessibility traits and labels the code sets, and through the UI test that finds the web view by its title.
+- VoiceOver was tried on a device only with the bills card, by hand. Other component types and the embed have been checked only through the accessibility traits and labels the code sets, and through the UI test that finds the web view by its title.
