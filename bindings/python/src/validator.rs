@@ -83,14 +83,20 @@ impl<'a, 'py> Lookup<'a, 'py> {
 
 struct Apps<'a, 'py> {
     callback: Option<&'a Bound<'py, PyAny>>,
+    given: Option<&'a Map<String, Value>>,
     user: &'a Bound<'py, PyAny>,
     failure: Option<PyErr>,
 }
 
 impl<'a, 'py> Apps<'a, 'py> {
-    fn new(callback: Option<&'a Bound<'py, PyAny>>, user: &'a Bound<'py, PyAny>) -> Self {
+    fn new(
+        callback: Option<&'a Bound<'py, PyAny>>,
+        given: Option<&'a Map<String, Value>>,
+        user: &'a Bound<'py, PyAny>,
+    ) -> Self {
         Self {
             callback,
+            given,
             user,
             failure: None,
         }
@@ -101,6 +107,18 @@ impl<'a, 'py> Apps<'a, 'py> {
     }
 
     fn read(&mut self, uri: &str) -> Option<UiResource> {
+        if let Some(given) = self.given {
+            let found = given.get(uri).filter(|value| !value.is_null())?.clone();
+            return match UiResource::from_value(found) {
+                Ok(resource) => Some(resource),
+                Err(message) => {
+                    self.keep(PyValueError::new_err(format!(
+                        "resources[{uri:?}]: {message}"
+                    )));
+                    None
+                }
+            };
+        }
         let callback = self.callback?;
         match callback.call1((self.user, uri)) {
             Ok(found) if found.is_none() => None,
@@ -209,6 +227,16 @@ impl PyValidator {
             Some(Value::Object(map)) => Ok(Some(map)),
             Some(_) => Err(PyTypeError::new_err(
                 "refs must be a mapping from \"source:key\" to a value",
+            )),
+        }
+    }
+
+    fn resources(resources: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Map<String, Value>>> {
+        match resources.map(to_json).transpose()? {
+            None => Ok(None),
+            Some(Value::Object(map)) => Ok(Some(map)),
+            Some(_) => Err(PyTypeError::new_err(
+                "resources must be a mapping from a ui:// URI to its resource",
             )),
         }
     }
@@ -379,16 +407,18 @@ impl PyValidator {
         }
     }
 
-    #[pyo3(signature = (surface, user=None))]
+    #[pyo3(signature = (surface, user=None, resources=None))]
     fn attach_apps(
         &self,
         py: Python<'_>,
         surface: &PySurface,
         user: Option<&Bound<'_, PyAny>>,
+        resources: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PySurface> {
         let none = py.None().into_bound(py);
         let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
-        let mut apps = Apps::new(callback, user.unwrap_or(&none));
+        let resources = Self::resources(resources)?;
+        let mut apps = Apps::new(callback, resources.as_ref(), user.unwrap_or(&none));
         let mut attached = surface.inner.clone();
         let problems = attach_apps(&mut attached.components, "components", &mut |uri| {
             apps.read(uri)
@@ -430,7 +460,7 @@ impl PyValidator {
             .fallback(&self.settings.catalogs, Locale::from_tag(locale))
     }
 
-    #[pyo3(signature = (payload, user=None, surface_id=None, declared=None, locale="en", next_id=None, refs=None))]
+    #[pyo3(signature = (payload, user=None, surface_id=None, declared=None, locale="en", next_id=None, refs=None, resources=None))]
     #[allow(clippy::too_many_arguments)]
     fn prepare_show(
         &self,
@@ -442,6 +472,7 @@ impl PyValidator {
         locale: &str,
         next_id: Option<&Bound<'_, PyAny>>,
         refs: Option<&Bound<'_, PyAny>>,
+        resources: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyPrepared> {
         let payload = input(payload)?;
         let given = Self::given(refs)?;
@@ -450,7 +481,8 @@ impl PyValidator {
         let mut ids = Ids::new(next_id);
         let user = user.unwrap_or(&none);
         let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
-        let mut apps = Apps::new(callback, user);
+        let resources = Self::resources(resources)?;
+        let mut apps = Apps::new(callback, resources.as_ref(), user);
         let prepared = self.with_refs(py, user, given.as_ref(), |refs| {
             host::prepare_show(
                 &self.settings,
@@ -468,7 +500,7 @@ impl PyValidator {
         Ok(PyPrepared { inner: prepared })
     }
 
-    #[pyo3(signature = (payload, model, client, seq, user=None, declared=None, locale="en", next_id=None, refs=None))]
+    #[pyo3(signature = (payload, model, client, seq, user=None, declared=None, locale="en", next_id=None, refs=None, resources=None))]
     #[allow(clippy::too_many_arguments)]
     fn prepare_update(
         &self,
@@ -482,6 +514,7 @@ impl PyValidator {
         locale: &str,
         next_id: Option<&Bound<'_, PyAny>>,
         refs: Option<&Bound<'_, PyAny>>,
+        resources: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyPrepared> {
         let payload: Input = input(payload)?;
         let given = Self::given(refs)?;
@@ -495,7 +528,8 @@ impl PyValidator {
         };
         let user = user.unwrap_or(&none);
         let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
-        let mut apps = Apps::new(callback, user);
+        let resources = Self::resources(resources)?;
+        let mut apps = Apps::new(callback, resources.as_ref(), user);
         let prepared = self.with_refs(py, user, given.as_ref(), |refs| {
             host::prepare_update(
                 &self.settings,
@@ -513,7 +547,7 @@ impl PyValidator {
         Ok(PyPrepared { inner: prepared })
     }
 
-    #[pyo3(signature = (stream, chunk, user=None, surface_id=None, declared=None, locale="en", next_id=None, refs=None))]
+    #[pyo3(signature = (stream, chunk, user=None, surface_id=None, declared=None, locale="en", next_id=None, refs=None, resources=None))]
     #[allow(clippy::too_many_arguments)]
     fn feed_show<'py>(
         &self,
@@ -526,6 +560,7 @@ impl PyValidator {
         locale: &str,
         next_id: Option<&Bound<'py, PyAny>>,
         refs: Option<&Bound<'py, PyAny>>,
+        resources: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let given = Self::given(refs)?;
         let view = View::new(declared.as_deref(), locale);
@@ -533,7 +568,8 @@ impl PyValidator {
         let user = user.unwrap_or(&none);
         let mut ids = Ids::new(next_id);
         let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
-        let mut apps = Apps::new(callback, user);
+        let resources = Self::resources(resources)?;
+        let mut apps = Apps::new(callback, resources.as_ref(), user);
         let mut state = stream.borrow_mut();
         let live = state.live()?;
         let messages = self.with_refs(py, user, given.as_ref(), |refs| {
@@ -554,7 +590,7 @@ impl PyValidator {
         to_py(py, &serde_json::Value::Array(messages))
     }
 
-    #[pyo3(signature = (stream, payload=None, user=None, surface_id=None, declared=None, locale="en", next_id=None, refs=None))]
+    #[pyo3(signature = (stream, payload=None, user=None, surface_id=None, declared=None, locale="en", next_id=None, refs=None, resources=None))]
     #[allow(clippy::too_many_arguments)]
     fn finish_show<'py>(
         &self,
@@ -567,6 +603,7 @@ impl PyValidator {
         locale: &str,
         next_id: Option<&Bound<'py, PyAny>>,
         refs: Option<&Bound<'py, PyAny>>,
+        resources: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<PyPrepared> {
         let payload = payload.map(input).transpose()?;
         let given = Self::given(refs)?;
@@ -575,7 +612,8 @@ impl PyValidator {
         let user = user.unwrap_or(&none);
         let mut ids = Ids::new(next_id);
         let callback = self.ui_resource.as_ref().map(|callback| callback.bind(py));
-        let mut apps = Apps::new(callback, user);
+        let resources = Self::resources(resources)?;
+        let mut apps = Apps::new(callback, resources.as_ref(), user);
         let mut state = stream.borrow_mut();
         let finished = state.live()?;
         let prepared = self.with_refs(py, user, given.as_ref(), |refs| {
@@ -600,6 +638,10 @@ impl PyValidator {
 
     fn ref_keys(&self, payload: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
         Ok(self.settings.ref_keys(&input(payload)?))
+    }
+
+    fn resource_uris(&self, payload: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+        Ok(self.settings.resource_uris(&input(payload)?))
     }
 
     #[pyo3(signature = (declared=None, strict=false, profile=None))]

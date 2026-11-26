@@ -173,7 +173,9 @@ class Validator:
         width: int | None = None,
         height: int | None = None,
     ) -> Surface: ...
-    def attach_apps(self, surface: Surface, user: Any = None) -> Surface: ...
+    def attach_apps(
+        self, surface: Surface, user: Any = None, resources: Mapping[str, Any] | None = None
+    ) -> Surface: ...
     def downgrade(
         self, surface: Surface, declared: Sequence[str], locale: str = "en"
     ) -> Surface: ...
@@ -190,6 +192,7 @@ class Validator:
         locale: str = "en",
         next_id: IdFactory | None = None,
         refs: Mapping[str, Any] | None = None,
+        resources: Mapping[str, Any] | None = None,
     ) -> Prepared: ...
     def prepare_update(
         self,
@@ -202,6 +205,7 @@ class Validator:
         locale: str = "en",
         next_id: IdFactory | None = None,
         refs: Mapping[str, Any] | None = None,
+        resources: Mapping[str, Any] | None = None,
     ) -> Prepared: ...
     def feed_show(
         self,
@@ -213,6 +217,7 @@ class Validator:
         locale: str = "en",
         next_id: IdFactory | None = None,
         refs: Mapping[str, Any] | None = None,
+        resources: Mapping[str, Any] | None = None,
     ) -> list[Json]: ...
     def finish_show(
         self,
@@ -224,8 +229,10 @@ class Validator:
         locale: str = "en",
         next_id: IdFactory | None = None,
         refs: Mapping[str, Any] | None = None,
+        resources: Mapping[str, Any] | None = None,
     ) -> Prepared: ...
     def ref_keys(self, payload: Payload) -> list[str]: ...
+    def resource_uris(self, payload: Payload) -> list[str]: ...
     def tool_definitions(
         self,
         declared: Sequence[str] | None = None,

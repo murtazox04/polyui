@@ -112,3 +112,52 @@ test('attachApps on its own', () => {
   assert.ok(polyui.Catalogs.builtin().withEmbed().has('embed:Embed'))
   assert.ok(!polyui.Catalogs.builtin().has('embed:Embed'))
 })
+
+test('resourceUris lists each app once', () => {
+  const card = tariffCard()
+  card.components.push({ id: 'again', type: 'embed:Embed', props: { resource: URI, title: 'Again' } })
+  card.components.push({ id: 'plain', type: 'embed:Embed', props: { resource: 'https://x.example', title: 'No' } })
+  const validator = make()
+  assert.deepEqual(validator.resourceUris(card), [URI])
+  assert.deepEqual(validator.resourceUris(JSON.stringify(card)), [URI])
+  assert.deepEqual(validator.resourceUris('not json'), [])
+  assert.deepEqual(validator.resourceUris({ upsert: [{ id: 'calc', type: 'embed:Embed', props: { resource: URI } }] }), [URI])
+})
+
+test('prefetched resources replace the callback', () => {
+  const validator = make(() => {
+    throw new Error('the callback must not run when resources are given')
+  })
+  const resources = Object.fromEntries(validator.resourceUris(tariffCard()).map((uri) => [uri, { resource: entry(), tool_input: { usage_gb: 236 } }]))
+  const prepared = validator.prepareShow(tariffCard(), { user: USER, declared: ['core@1', 'embed@1'], resources })
+  const { app } = prepared.client.get('calc').props
+  assert.equal(app.resource.text, HTML)
+  assert.deepEqual(app.tool_input, { usage_gb: 236 })
+  assert.equal(prepared.model.get('calc').props.app, undefined)
+})
+
+test('a missing prefetched resource is a problem for the model', () => {
+  const validator = make()
+  for (const resources of [{}, { [URI]: null }]) {
+    assert.throws(() => validator.prepareShow(tariffCard(), { resources }), (error) => error instanceof polyui.ValidationError && /not an MCP App this host offers/.test(error.message))
+  }
+})
+
+test('bad prefetched resources throw', () => {
+  const validator = make()
+  assert.throws(() => validator.prepareShow(tariffCard(), { resources: { [URI]: '<html>' } }), /must be an object/)
+  assert.throws(() => validator.prepareShow(tariffCard(), { resources: [URI] }), /resources must be an object/)
+  assert.throws(() => validator.prepareShow(tariffCard(), { resources: { [URI]: entry({ mime: 'text/html' }) } }), polyui.ValidationError)
+})
+
+test('prefetched resources work for attachApps and streaming', () => {
+  const validator = make()
+  const attached = validator.attachApps(validator.showUi(tariffCard()), undefined, { [URI]: entry() })
+  assert.equal(attached.get('calc').props.app.resource.text, HTML)
+  const stream = new polyui.ShowStream()
+  for (const message of validator.feedShow(stream, JSON.stringify(tariffCard()), { resources: { [URI]: entry() } })) {
+    assert.ok(['ui.open', 'ui.patch'].includes(message.t))
+  }
+  const prepared = validator.finishShow(stream, null, { resources: { [URI]: entry() } })
+  assert.equal(prepared.client.get('calc').props.app.resource.text, HTML)
+})

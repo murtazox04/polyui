@@ -125,6 +125,23 @@ const prepared = validator.prepareShow(toolInput, { user, refs })
 
 This works with asyncio, trio, AnyIO or any Node code, because the binding never runs an event loop of its own. Only fetch what `ref_keys` returns: the values still go through the declared kind of each source and the prop's own rules before they reach a client, exactly as with a resolver.
 
+MCP App resources work the same way. `resource_uris(payload)` / `resourceUris(payload)` returns the distinct `ui://` URIs the call's `embed:Embed` components name. Read them with your MCP client, then pass `resources`, a mapping from URI to what the `ui_resource` callback would return (a `resources/read` entry, or `{"resource": entry, "tool_input": ..., "tool_result": ...}`), to `prepare_show`, `prepare_update`, `feed_show`, `finish_show` or `attach_apps`. When `resources` is given the callback is not called, and a URI that is missing or mapped to `None` / `null` is an app this host does not offer, which the model is told.
+
+```python
+uris = validator.resource_uris(tool_input)
+entries = await asyncio.gather(*(mcp.read_resource(uri) for uri in uris))
+prepared = validator.prepare_show(
+    tool_input, user=user, resources=dict(zip(uris, entries, strict=True))
+)
+```
+
+```js
+const uris = validator.resourceUris(toolInput)
+const entries = await Promise.all(uris.map((uri) => mcp.readResource(uri)))
+const resources = Object.fromEntries(uris.map((uri, index) => [uri, entries[index]]))
+const prepared = validator.prepareShow(toolInput, { user, resources })
+```
+
 ## Streaming a show_ui call
 
 Models stream tool input in pieces (`input_json_delta` on the Anthropic API, `tool_calls[].function.arguments` deltas on OpenAI style APIs). With a `ShowStream` the client gets each component as soon as its closing brace arrives, the same way the Rust server does it, instead of waiting for the whole call.
@@ -187,6 +204,6 @@ Both bindings return two versions of a surface. `prepared.model` is what the mod
 
 ## Limits today
 
-- The `ui_resource` / `uiResource` callback is synchronous. For refs, see [Async lookups](#async-lookups).
+- The resolver and the `ui_resource` / `uiResource` callback are synchronous. For async lookups, pass `refs` and `resources` instead (see [Async lookups](#async-lookups)).
 - There is no agent loop and no transport in either binding; that part is yours. Streaming covers `show_ui`; `update_ui` is applied when its call is complete.
 - `Client` is also exposed in both, which is handy for tests and for server-side checks of what a renderer would get.
