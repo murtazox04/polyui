@@ -7,6 +7,10 @@ final class EmbedPageController: NSObject {
 
     var onEvent: (EmbedEvent) -> Void = { _ in }
     var onLink: (URL, @escaping @MainActor (Bool) -> Void) -> Void = { _, answer in answer(false) }
+    var onAppCall: (String, JSONValue, @escaping @MainActor (JSONValue) -> Void) -> Void = { _, _, answer in
+        answer(["error": ["code": -32601, "message": "Method not found"]])
+    }
+    var appCalls = false
 
     private(set) var webView: WKWebView?
     private(set) var nonce = ""
@@ -64,6 +68,7 @@ final class EmbedPageController: NSObject {
         linkPending = false
         onEvent = { _ in }
         onLink = { _, answer in answer(false) }
+        onAppCall = { _, _, _ in }
         self.webView = nil
     }
 
@@ -71,6 +76,13 @@ final class EmbedPageController: NSObject {
         guard let webView, message.webView === webView,
             let event = EmbedEvent.read(message.body, isMainFrame: message.frameInfo.isMainFrame, nonce: nonce)
         else { return }
+        if case .appCall(let id, let method, let params) = event {
+            let pageNonce = nonce
+            onAppCall(method, params) { [weak self] answer in
+                self?.answerApp(id, answer: answer, pageNonce: pageNonce)
+            }
+            return
+        }
         guard case .openLink(let url) = event else {
             onEvent(event)
             return
@@ -89,9 +101,16 @@ final class EmbedPageController: NSObject {
         webView.evaluateJavaScript("window.polyuiHost.answerLink(\(accepted ? "true" : "false"))")
     }
 
+    private func answerApp(_ id: String, answer: JSONValue, pageNonce: String) {
+        guard pageNonce == nonce, let webView, let idLiteral = Self.stringLiteral(id),
+            let answerText = try? answer.jsonText(), let answerLiteral = Self.stringLiteral(answerText)
+        else { return }
+        webView.evaluateJavaScript("window.polyuiHost.answerApp(\(idLiteral), JSON.parse(\(answerLiteral)))")
+    }
+
     private func load(_ propsJSON: String) {
         guard let webView, let fresh = EmbedNonce.make(),
-            let page = try? PolyUICore.embedPage(propsJSON: propsJSON, nonce: fresh)
+            let page = try? PolyUICore.embedPage(propsJSON: propsJSON, nonce: fresh, appCalls: appCalls)
         else {
             onEvent(.unavailable)
             return
