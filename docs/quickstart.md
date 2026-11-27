@@ -98,7 +98,7 @@ cargo run -p polyui -- tools --catalogs core@1,chart@1 --strict
 
 `js/polyui-web` is a renderer with no framework: custom elements and the wasm core. Build it with `node js/polyui-web/scripts/build.mjs`, which leaves `polyui.js`, `polyui.css` and `polyui_core_bg.wasm` in `js/polyui-web/dist`. The package is not on npm yet.
 
-This sketch shows the shape of the code. It is not tested as written; `examples/chat/main.ts` is the tested version, with reconnects, streaming text and voice.
+This sketch shows the shape of the code. It is not tested as written; `examples/chat/main.ts` is the tested version, with reconnects that resume the session, streaming text and voice.
 
 ```js
 import { loadCore, mount } from "./polyui.js";

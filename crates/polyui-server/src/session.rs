@@ -31,6 +31,8 @@ pub const ERROR: &str = "agent.error";
 pub const UI_TOOLS: [&str; 3] = ["show_ui", "update_ui", "close_ui"];
 pub const MAX_SAY_CHARS: usize = 4000;
 pub const STREAM_FEATURE: &str = "stream";
+pub const RESUME_FEATURE: &str = "resume";
+const COVERED_BY_SNAPSHOT: [&str; 5] = ["ui.open", "ui.patch", "ui.data", "ui.sync", "ui.confirm"];
 pub const BUSY: &str =
     "The assistant is still working on your earlier messages. Please wait for it to finish.";
 pub const TOO_FAST: &str =
@@ -198,6 +200,7 @@ struct PendingConfirm {
     expires: Instant,
     values: Map<String, Value>,
     detail: Option<Map<String, Value>>,
+    prompt: Confirm,
 }
 
 #[derive(Debug, Default)]
@@ -383,6 +386,17 @@ pub struct Session {
     out: mpsc::Sender<Value>,
     turns: mpsc::Sender<TurnInput>,
     closing: watch::Sender<Option<CloseReason>>,
+    resumable: bool,
+    resume_token: Mutex<Option<String>>,
+}
+
+fn same_secret(expected: &str, given: &str) -> bool {
+    expected.len() == given.len()
+        && expected
+            .bytes()
+            .zip(given.bytes())
+            .fold(0u8, |difference, (left, right)| difference | (left ^ right))
+            == 0
 }
 
 fn chat(kind: &str) -> Value {
@@ -567,6 +581,10 @@ impl Session {
             .features
             .iter()
             .any(|feature| feature == STREAM_FEATURE);
+        let resumable = hello
+            .features
+            .iter()
+            .any(|feature| feature == RESUME_FEATURE);
         let config = agent.config;
         let (out, outgoing) = mpsc::channel(config.outgoing_queue.max(1));
         let (turns, mut incoming) = mpsc::channel(config.waiting_turns.max(1));
@@ -592,6 +610,8 @@ impl Session {
             out,
             turns,
             closing,
+            resumable,
+            resume_token: Mutex::new(None),
         });
         let weak: Weak<Self> = Arc::downgrade(&session);
         tokio::spawn(async move {
@@ -638,11 +658,81 @@ impl Session {
     }
 
     pub fn welcome(&self) -> Value {
-        Message::Welcome(Welcome {
+        self.welcome_with(None)
+    }
+
+    pub fn welcome_with(&self, resumed: Option<bool>) -> Value {
+        let mut welcome = Message::Welcome(Welcome {
             session: self.id.clone(),
             catalogs: self.negotiated.clone(),
         })
-        .to_value()
+        .to_value();
+        if let Some(fields) = welcome.as_object_mut() {
+            if self.resumable {
+                let token = ids::random_id("rt_", 32);
+                *self
+                    .resume_token
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(token.clone());
+                fields.insert("resume_token".into(), Value::String(token));
+            }
+            if let Some(resumed) = resumed {
+                fields.insert("resumed".into(), Value::Bool(resumed));
+            }
+        }
+        welcome
+    }
+
+    pub fn resumable(&self) -> bool {
+        self.resumable
+    }
+
+    pub fn redeem(&self, token: &str) -> bool {
+        let mut current = self
+            .resume_token
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let matches = current
+            .as_deref()
+            .is_some_and(|expected| same_secret(expected, token));
+        if matches {
+            *current = None;
+        }
+        matches
+    }
+
+    pub fn resume_messages(&self, queued: Vec<Value>) -> Vec<Value> {
+        let now = Instant::now();
+        let ui = self.lock();
+        let mut messages = Vec::new();
+        let mut covered = HashSet::new();
+        for (id, state) in ui.surfaces.iter().filter(|(_, state)| !state.pending) {
+            let view = self.client_view(&state.client);
+            covered.insert(id.clone());
+            messages.push(
+                Message::Snapshot(Snapshot {
+                    surface: id.clone(),
+                    seq: state.seq,
+                    root: view.root,
+                    components: view.components,
+                    data: view.data,
+                })
+                .to_value(),
+            );
+        }
+        for pending in ui.confirms.iter().filter(|pending| pending.expires > now) {
+            let mut prompt = pending.prompt.clone();
+            prompt.expires_ms = u64::try_from((pending.expires - now).as_millis()).ok();
+            messages.push(Message::Confirm(prompt).to_value());
+        }
+        drop(ui);
+        messages.extend(queued.into_iter().filter(|message| {
+            let kind = message.get("t").and_then(Value::as_str).unwrap_or_default();
+            let surface = message.get("surface").and_then(Value::as_str);
+            !(COVERED_BY_SNAPSHOT.contains(&kind)
+                && surface.is_some_and(|surface| covered.contains(surface)))
+        }));
+        messages
     }
 
     pub fn open_surfaces(&self) -> Vec<String> {
@@ -904,17 +994,8 @@ impl Session {
         }
         match &action.confirm {
             None => {
-                let nonce = ids::nonce();
                 ui.confirms.retain(|pending| {
                     !(pending.surface == action.surface && pending.action_id == action.action_id)
-                });
-                ui.confirms.push(PendingConfirm {
-                    nonce: nonce.clone(),
-                    surface: action.surface.clone(),
-                    action_id: action.action_id.clone(),
-                    expires: now + ttl,
-                    values,
-                    detail: action.detail.clone(),
                 });
                 let text = self.agent.host.confirm_text(
                     &self.user,
@@ -922,19 +1003,26 @@ impl Session {
                     &handle.sealed.args,
                     self.locale,
                 );
-                ActionStep::Ask(
-                    Message::Confirm(Confirm {
-                        surface: action.surface.clone(),
-                        action_id: action.action_id.clone(),
-                        nonce,
-                        title: text.title,
-                        body: text.body,
-                        confirm_label: text.confirm_label,
-                        expires_ms: u64::try_from(ttl.as_millis()).ok(),
-                        seq: None,
-                    })
-                    .to_value(),
-                )
+                let prompt = Confirm {
+                    surface: action.surface.clone(),
+                    action_id: action.action_id.clone(),
+                    nonce: ids::nonce(),
+                    title: text.title,
+                    body: text.body,
+                    confirm_label: text.confirm_label,
+                    expires_ms: u64::try_from(ttl.as_millis()).ok(),
+                    seq: None,
+                };
+                ui.confirms.push(PendingConfirm {
+                    nonce: prompt.nonce.clone(),
+                    surface: action.surface.clone(),
+                    action_id: action.action_id.clone(),
+                    expires: now + ttl,
+                    values,
+                    detail: action.detail.clone(),
+                    prompt: prompt.clone(),
+                });
+                ActionStep::Ask(Message::Confirm(prompt).to_value())
             }
             Some(nonce) => {
                 let found = ui.confirms.iter().position(|pending| {

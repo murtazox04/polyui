@@ -20,16 +20,22 @@ struct DemoScript {
     let scroll: String?
     let instant: Bool
     let voice: String?
+    let live: URL?
 
     init(defaults: UserDefaults) {
         step = defaults.string(forKey: "PolyUIDemo")
         scroll = defaults.string(forKey: "PolyUIScroll")
         instant = defaults.bool(forKey: "PolyUIInstant")
         voice = defaults.string(forKey: "PolyUIVoice")
+        live = defaults.string(forKey: "PolyUILive").flatMap(URL.init(string:))
     }
 
     @MainActor
     func run(on model: ChatModel) async {
+        if let live {
+            model.connectLive(to: live)
+            guard await waitFor({ model.socket.state == .open }) else { return }
+        }
         guard let step else { return }
         if step == "forecast" {
             model.ask(model.forecastQuestion)

@@ -152,6 +152,8 @@ socket.connect(to: URL(string: "wss://agent.example.com/ws")!, hello: session.co
 PolyUISurfaceView(session: session, surface: "s1")
 ```
 
+`PolyUIWebSocket` resumes the session when the connection drops (`spec/protocol.md`, section 8.2). It adds `resume` to the `features` of your `hello`, keeps the `resume_token` from each `welcome` in memory, and when the socket fails it connects again after 1, 2, 4, 8 and 16 seconds with the session and token in `hello.resume`. The server answers with `ui.snapshot` for every open surface, so the cards and their buttons keep working. If the server could not resume (`welcome` with `resumed: false`), `onSessionLost` is called and the old surfaces' buttons no longer work; the example app removes those cards then. Checked in the simulator against `polyui serve` through a proxy that cut the connection: after the cut, "Pay water bill" on the old card opened the server's confirm sheet.
+
 ### What the renderer does
 
 Each surface model keeps its components in a dictionary keyed by component id. Every component is an `@Observable` node, so an `update` op changes one node and SwiftUI redraws only the views that read it. A `create` for an id that already exists with the same type updates that node in place; a different type makes a new node, and the view is rebuilt with a new identity. That is what keeps a text field focused while the server echoes its value back, and what makes a replaced component start fresh. As on the web, a `remove` followed by a `create` of the same id in one batch keeps the node.

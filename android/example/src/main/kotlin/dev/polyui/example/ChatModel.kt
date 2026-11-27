@@ -106,7 +106,7 @@ class ChatModel(
     ) {
         reset()
         waitingPrompt = prompt?.trim()?.takeIf { it.isNotEmpty() }
-        val live = LiveSocket(url, ::connectionChanged, ::incoming)
+        val live = LiveSocket(url, ::connectionChanged, ::incoming, ::sessionLost)
         socket = live
         session.send = live::send
         live.open(hello.jsonText())
@@ -211,6 +211,12 @@ class ChatModel(
         problem = null
         session.close()
         session = PolyuiSession(hello)
+    }
+
+    private fun sessionLost() {
+        entries.removeAll { it is ChatEntry.Surface }
+        openAgentEntry = null
+        problem = "The connection was gone too long, so the earlier cards were removed."
     }
 
     private fun connectionChanged(state: Connection) {

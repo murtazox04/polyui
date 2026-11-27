@@ -167,6 +167,14 @@ Every incoming message is size checked before it is parsed: the WebSocket frame 
 
 A session lives as long as its connection. When the WebSocket closes, or the SSE stream ends, the session ends with it: its surfaces and handles are dropped and a running turn stops. A client that reconnects sends `hello` again and starts over; the server does not resume the old session or send `ui.snapshot` for it.
 
+A client that puts `resume` in `features` is treated differently (`spec/protocol.md`, section 8.2, and [ADR 2](adr/0002-resume-after-a-dropped-connection.md)):
+
+- `welcome` carries a `resume_token`. When the connection drops, the session is kept, detached, for `ServerConfig::resume_window` (120 seconds). A running turn goes on and its messages wait in the outgoing queue.
+- A new `hello` with `"resume": { "session": ..., "token": ... }` gets the session back if the token, the user and the `Origin` header match and the window is still open. `welcome` then says `"resumed": true` and brings a new token, and the server sends a `ui.snapshot` for every open surface, the `ui.confirm` of a confirmation that is still waiting (with the time it has left), and the messages that waited. Otherwise the `hello` starts a new session and `welcome` says `"resumed": false`.
+- Over WebSocket the resume is the `hello` on a new `/ws` connection. Over SSE it is a `POST /send` with the `hello`, then a new `GET /events?session=<id>`; the stream starts with the snapshots. While a session is detached, `GET /events` and `POST /send?session=<id>` answer 404 until the token was used.
+- A resume for a session whose connection is still open ends that connection first. A token works once; a WebSocket session cannot be resumed over SSE or the other way round.
+- A detached session keeps its place in `max_sessions`. If its queue stays full for `slow_consumer_after`, it ends like a slow consumer.
+
 ### Which pages may connect
 
 A browser lets any page open a WebSocket to any address, including `127.0.0.1`, and sends the page's `Origin` header with it. Without a check, a page on another site could open a session on your server, spend your API key and read every `ui.open`. So `/ws`, `/events` and `/send` look at `Origin` before anything else and answer 403 when it is not allowed. Allowed are:
@@ -184,6 +192,7 @@ Memory, CPU and model spend have to stay bounded whatever a client sends. These 
 | Limit | Default | What happens when it is reached |
 |---|---|---|
 | `max_sessions` | 1000 | Counts WebSocket and SSE sessions together. A WebSocket upgrade or a new `POST /send` session gets HTTP 503 "too many sessions". A WebSocket counts from the upgrade until it closes, an SSE session until its event stream closes or the attach timeout passes. |
+| `resume_window` | 120 s | How long a session whose client declared `resume` is kept after its connection drops. When it passes, the session ends as below. |
 | `attach_timeout` | 60 s | How long a new session may wait for its client. A WebSocket that sends no `hello` in this time is closed with code 1008 "no hello in time" and gives its place back. A session started with `POST /send` whose `GET /events` does not arrive in this time is closed. |
 | `outgoing_queue` | 256 messages | Server messages for one session wait in a queue of this size. Before the server handles a client message or a model event, it waits until at least 16 places are free, so a client that sends faster than it reads is slowed down instead of filling memory. |
 | `slow_consumer_after` | 10 s | If those places do not free up in time, the session is closed as a slow consumer. A WebSocket gets close code 1008 with the reason "the client did not read server messages in time" when the frame still fits in the socket; an SSE stream ends with an event named `close` whose data is the same text. A client that reads nothing at all may only see the connection drop. |
@@ -191,7 +200,7 @@ Memory, CPU and model spend have to stay bounded whatever a client sends. These 
 | `turn_rate` | 8 at once, then one more every 4 s | Each `user.say` and each action that runs takes one. When none is left, a `user.say` gets `agent.error` "You are sending messages too quickly. Please wait a moment and try again." and an action is refused before it runs. Set `refill` to zero to turn the limit off. |
 | `max_open_surfaces` | 16 | A `show_ui` that would open one more surface fails like any other invalid call, and the model reads "16 surfaces are already open, which is the most one conversation can have. Close one with close_ui or change one with update_ui." with the list of open surfaces. |
 
-When a client goes away (its WebSocket closes, or its SSE stream is dropped or never attached), the session is closed and a running turn is stopped where it is. The model stream is dropped, and `AnthropicProvider` stops reading and closes the HTTP request at once, so no more tokens are generated for nobody.
+When a client goes away (its WebSocket closes, or its SSE stream is dropped or never attached), the session is closed and a running turn is stopped where it is. For a client that declared `resume` this happens when `resume_window` passes without a resume. The model stream is dropped, and `AnthropicProvider` stops reading and closes the HTTP request at once, so no more tokens are generated for nobody.
 
 ## Running the demo
 
@@ -246,5 +255,5 @@ POLYUI_LIVE=1 cargo test -p polyui-server --test live -- --ignored --nocapture
 ## Known limits
 
 - The Anthropic API limits strict tool schemas to 24 optional parameters and 16 parameters with union types across one request. `polyui-core` builds strict schemas with no optional parameters (null stands for a missing value), and marks a tool `strict` only when it fits what is left of those limits, counting host tools too. With the built-in catalogs in the full profile every bindable prop is a union, so `show_ui` and `update_ui` go without `strict` and `close_ui` (and small host tools such as `get_usage`) go with it. In the compact profile `show_ui` and `update_ui` are never strict, because their `props` object is open. Sending all three strict returns HTTP 400 "Schemas contains too many parameters with union types (116 parameters with type arrays or anyOf) ... (limit: 16 parameters with unions)". If the API still refuses strict schemas (for example "Schema is too complex for compilation"), the provider logs it once and sends the same tools without `strict` from then on. Validation on the server is unchanged, so nothing invalid reaches a client either way.
-- Sessions live in memory. A WebSocket session ends when the socket closes. An SSE session ends when its event stream closes, or after 60 seconds if no stream was opened.
+- Sessions live in memory. A WebSocket session ends when the socket closes. An SSE session ends when its event stream closes, or after 60 seconds if no stream was opened. A client that declared `resume` has `resume_window` to come back, but only to the same process: behind a load balancer, resumes need sticky sessions.
 - A turn that is running stops when the client leaves. If a host action had already run, its report to the model is lost with the turn.

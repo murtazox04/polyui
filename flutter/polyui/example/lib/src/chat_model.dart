@@ -119,6 +119,11 @@ class ChatModel extends ChangeNotifier {
               liveChanged(state, reason);
             }
           },
+          lost: () {
+            if (current == run) {
+              sessionLost();
+            }
+          },
         );
         transport = live;
         connection = Connection.connecting;
@@ -147,6 +152,14 @@ class ChatModel extends ChangeNotifier {
     if (reason != null) {
       problem = reason;
     }
+    notifyListeners();
+  }
+
+  void sessionLost() {
+    entries.removeWhere((entry) => entry is SurfaceEntry);
+    openAgentEntry = null;
+    problem =
+        'The connection was gone too long, so the earlier cards were removed.';
     notifyListeners();
   }
 
