@@ -32,6 +32,7 @@
     <p id="quote" hidden></p>
     <footer>
       <button id="ask" type="button" disabled>Ask the assistant to switch</button>
+      <button id="switch" type="button" hidden>Switch now</button>
       <small id="status"></small>
     </footer>
     <script>
@@ -78,6 +79,9 @@
           const ask = byId("ask");
           ask.disabled = !best || best.id === current;
           ask.textContent = best && best.id !== current ? `Ask the assistant to switch to ${best.name}` : "Your tariff already fits";
+          const switchNow = byId("switch");
+          switchNow.hidden = !serverTools || !best || best.id === current;
+          switchNow.textContent = best ? `Switch to ${best.name} now` : "Switch now";
           if (serverTools) {
             clearTimeout(quoteTimer);
             quoteTimer = setTimeout(quote, 300);
@@ -123,6 +127,21 @@
 
         byId("usage").addEventListener("input", pick);
         byId("people").addEventListener("input", pick);
+        byId("switch").addEventListener("click", () => {
+          if (!best) return;
+          const chosen = best;
+          byId("switch").disabled = true;
+          byId("status").textContent = "Waiting for your confirmation.";
+          request("tools/call", { name: "switch_tariff", arguments: { offer: chosen.id } })
+            .then((result) => {
+              current = chosen.id;
+              byId("status").textContent = result.content.map((block) => block.text).join(" ");
+              pick();
+            })
+            .catch((error) => { byId("status").textContent = error.message; })
+            .finally(() => { byId("switch").disabled = false; });
+        });
+
         byId("ask").addEventListener("click", () => {
           if (!best) return;
           const text = `Please switch our internet to ${best.name}. We use about ${byId("usage").value} GB a month with ${byId("people").value} people online at once.`;

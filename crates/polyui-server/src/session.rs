@@ -37,6 +37,9 @@ pub const APP_CALLS_FEATURE: &str = "app_calls";
 pub const APP_CALL: &str = "app.call";
 pub const APP_RESULT: &str = "app.result";
 pub const MAX_APP_CALL_ID_CHARS: usize = 64;
+pub const APP_NOT_CONFIRMED: &str = "The person did not confirm this request.";
+pub const APP_QUESTION_OPEN: &str =
+    "Another request is waiting for confirmation. Please wait for it to finish.";
 const COVERED_BY_SNAPSHOT: [&str; 5] = ["ui.open", "ui.patch", "ui.data", "ui.sync", "ui.confirm"];
 pub const BUSY: &str =
     "The assistant is still working on your earlier messages. Please wait for it to finish.";
@@ -407,7 +410,18 @@ pub struct Session {
     app_calls: bool,
     open_app_calls: Arc<AtomicUsize>,
     app_buckets: Mutex<HashMap<(String, String), Bucket>>,
+    app_question: Mutex<Option<AppQuestion>>,
     me: Weak<Session>,
+}
+
+struct AppQuestion {
+    prompt: Confirm,
+    expires: Instant,
+    call: AppCall,
+    app: String,
+    method: AppMethod,
+    params: Map<String, Value>,
+    slot: OpenAppCall,
 }
 
 struct OpenAppCall(Arc<AtomicUsize>);
@@ -737,6 +751,7 @@ impl Session {
             app_calls,
             open_app_calls: Arc::new(AtomicUsize::new(0)),
             app_buckets: Mutex::new(HashMap::new()),
+            app_question: Mutex::new(None),
             me: me.clone(),
         });
         let weak: Weak<Self> = Arc::downgrade(&session);
@@ -864,6 +879,15 @@ impl Session {
             messages.push(Message::Confirm(prompt).to_value());
         }
         drop(ui);
+        if let Some(question) = self
+            .app_question()
+            .as_ref()
+            .filter(|question| question.expires > now)
+        {
+            let mut prompt = question.prompt.clone();
+            prompt.expires_ms = u64::try_from((question.expires - now).as_millis()).ok();
+            messages.push(Message::Confirm(prompt).to_value());
+        }
         messages.extend(queued.into_iter().filter(|message| {
             let kind = message.get("t").and_then(Value::as_str).unwrap_or_default();
             let surface = message.get("surface").and_then(Value::as_str);
@@ -1050,10 +1074,149 @@ impl Session {
             );
             return;
         };
-        match self.plan_app_call(&call) {
-            Ok((app, method, params, slot)) => self.run_app_call(call, app, method, params, slot),
-            Err(error) => self.send(call.reply(Err(error))),
+        let (app, method, params, slot) = match self.plan_app_call(&call) {
+            Ok(planned) => planned,
+            Err(error) => {
+                self.send(call.reply(Err(error)));
+                return;
+            }
+        };
+        let request = AppRequest {
+            app: &app,
+            method,
+            params: &params,
+        };
+        match self
+            .agent
+            .host
+            .app_confirm(&self.user, request, self.locale)
+        {
+            None => self.run_app_call(call, app, method, params, slot),
+            Some(text) => self.ask_about_app_call(AppQuestion {
+                prompt: Confirm {
+                    surface: call.surface.clone(),
+                    action_id: ids::random_id("app_", 8),
+                    nonce: ids::nonce(),
+                    title: text.title,
+                    body: text.body,
+                    confirm_label: text.confirm_label,
+                    expires_ms: u64::try_from(self.agent.config.app_call_timeout.as_millis()).ok(),
+                    seq: None,
+                },
+                expires: Instant::now() + self.agent.config.app_call_timeout,
+                call,
+                app,
+                method,
+                params,
+                slot,
+            }),
         }
+    }
+
+    fn app_question(&self) -> MutexGuard<'_, Option<AppQuestion>> {
+        self.app_question
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn ask_about_app_call(&self, question: AppQuestion) {
+        let mut open = self.app_question();
+        if open
+            .as_ref()
+            .is_some_and(|current| current.expires > Instant::now())
+        {
+            drop(open);
+            self.send(
+                question
+                    .call
+                    .reply(Err(AppError::refused(APP_QUESTION_OPEN))),
+            );
+            return;
+        }
+        let prompt = question.prompt.clone();
+        let action_id = prompt.action_id.clone();
+        let wait = question.expires.saturating_duration_since(Instant::now());
+        if let Some(stale) = open.replace(question) {
+            self.close_app_question(stale);
+        }
+        drop(open);
+        self.send(Message::Confirm(prompt).to_value());
+        let weak = self.me.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(wait).await;
+            if let Some(session) = weak.upgrade() {
+                session.expire_app_question(&action_id);
+            }
+        });
+    }
+
+    fn expire_app_question(&self, action_id: &str) {
+        let expired = {
+            let mut open = self.app_question();
+            match open.as_ref() {
+                Some(current) if current.prompt.action_id == action_id => open.take(),
+                _ => None,
+            }
+        };
+        if let Some(question) = expired {
+            self.close_app_question(question);
+        }
+    }
+
+    fn close_app_question(&self, question: AppQuestion) {
+        self.action_result(
+            &question.prompt.surface,
+            &question.prompt.action_id,
+            ActionStatus::Expired,
+            Some("This confirmation expired.".into()),
+        );
+        self.send(
+            question
+                .call
+                .reply(Err(AppError::refused(APP_NOT_CONFIRMED))),
+        );
+    }
+
+    fn answer_app_question(&self, action: &Action) -> bool {
+        let mut open = self.app_question();
+        let Some(current) = open.as_ref() else {
+            return false;
+        };
+        if current.prompt.action_id != action.action_id {
+            return false;
+        }
+        let genuine = current.prompt.surface == action.surface
+            && action
+                .confirm
+                .as_deref()
+                .is_some_and(|nonce| same_secret(&current.prompt.nonce, nonce));
+        if !genuine {
+            drop(open);
+            self.action_result(
+                &action.surface,
+                &action.action_id,
+                ActionStatus::Rejected,
+                Some("This confirmation is not valid. Please try again.".into()),
+            );
+            return true;
+        }
+        let Some(question) = open.take() else {
+            return true;
+        };
+        drop(open);
+        if question.expires <= Instant::now() {
+            self.close_app_question(question);
+            return true;
+        }
+        self.action_result(&action.surface, &action.action_id, ActionStatus::Ok, None);
+        self.run_app_call(
+            question.call,
+            question.app,
+            question.method,
+            question.params,
+            question.slot,
+        );
+        true
     }
 
     fn plan_app_call(
@@ -1410,6 +1573,9 @@ impl Session {
     }
 
     async fn on_action(&self, action: Action) {
+        if self.answer_app_question(&action) {
+            return;
+        }
         let (sealed, values, detail) = match self.plan_action(&action) {
             ActionStep::Reply(status, message) => {
                 self.action_result(&action.surface, &action.action_id, status, Some(message));
