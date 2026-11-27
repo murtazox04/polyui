@@ -31,6 +31,7 @@ final class ChatModel {
     let listener = PolyUIListener()
     let socket = PolyUIWebSocket()
     @ObservationIgnored private var scripted: ScriptedServer?
+    @ObservationIgnored private var replayRun = 0
     @ObservationIgnored private var nextID = 0
     @ObservationIgnored private var openAgentEntry: Int?
     @ObservationIgnored private let hello = PolyUIHello(
@@ -75,8 +76,11 @@ final class ChatModel {
         socket.disconnect()
         reset()
         mode = .replay
+        replayRun += 1
+        let run = replayRun
         let server = ScriptedServer(script: ScriptedServer.loadScript(), instant: instant) { [weak self] text in
-            self?.incoming(text)
+            guard let self, self.replayRun == run, case .replay = self.mode else { return }
+            self.incoming(text)
         }
         scripted = server
         session.send = { [weak self] text in self?.outgoing(text) }
@@ -86,6 +90,7 @@ final class ChatModel {
     func connectLive(to url: URL = ChatModel.liveURL) {
         reset()
         scripted = nil
+        replayRun += 1
         mode = .live(url)
         session.send = { [weak self] text in self?.socket.send(text) }
         socket.onSessionLost = { [weak self] in self?.sessionLost() }
