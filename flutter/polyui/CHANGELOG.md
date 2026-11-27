@@ -1,3 +1,7 @@
+## 0.1.6
+
+- An MCP App inside `embed:Embed` can call `tools/call` and `resources/read` on its own MCP server through the PolyUI server, when the server accepts the `app_calls` feature.
+
 ## 0.1.5
 
 - The example app comes back to the same session after a dropped connection: its cards keep working and a pending confirmation is shown again.

@@ -1,6 +1,6 @@
 {
   "name": "@polyui/node",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Node bindings for the PolyUI core: check generative UI from LLM agents, build tool schemas, compile charts.",
   "license": "Apache-2.0",
   "author": "Murtazo Xurramov",
