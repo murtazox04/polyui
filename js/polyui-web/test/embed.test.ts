@@ -288,3 +288,97 @@ describe("embed:Embed messages", () => {
     expect(view.frame.isConnected).toBe(false);
   });
 });
+
+describe("embed:Embed app calls", () => {
+  const initialize = { id: 1, method: "ui/initialize", params: { appInfo: { name: "Weather", version: "1" }, appCapabilities: {}, protocolVersion: "2026-01-26" } };
+  const welcome = (features: string[]): string => JSON.stringify({ v: 1, t: "welcome", session: "sess_1", catalogs: ["core@1", "embed@1"], features });
+  const appCalls = (h: Harness): { [key: string]: unknown }[] => h.messages().filter((message) => message["t"] === "app.call");
+  const capabilities = (view: Connection): JsonObject => (view.replies[0]?.["result"] as JsonObject)["hostCapabilities"] as JsonObject;
+
+  it("refuses server requests and advertises no server tools until the server accepts app calls", async () => {
+    const h = setup();
+    h.renderer.receive(welcome(["resume"]));
+    const view = await connect(h);
+    await view.send(initialize);
+    expect(capabilities(view)).toEqual({ openLinks: {} });
+    await view.send({ id: 2, method: "tools/call", params: { name: "refresh", arguments: {} } });
+    expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: 2, error: { code: -32601, message: "Method not found" } });
+    expect(appCalls(h)).toEqual([]);
+  });
+
+  it("carries tools/call and resources/read to the server and the answers back to the app", async () => {
+    const h = setup();
+    h.renderer.receive(welcome(["stream", "app_calls"]));
+    const view = await connect(h);
+    await view.send(initialize);
+    expect(capabilities(view)).toEqual({ openLinks: {}, serverTools: {}, serverResources: {} });
+
+    await view.send({ id: 7, method: "tools/call", params: { name: "forecast", arguments: { city: "Samarkand" } } });
+    await view.send({ id: "read-1", method: "resources/read", params: { uri } });
+    const [call, read] = appCalls(h);
+    expect(call).toEqual({ v: 1, t: "app.call", surface: "s1", embed: "app", id: "a1", method: "tools/call", params: { name: "forecast", arguments: { city: "Samarkand" } } });
+    expect(read).toMatchObject({ embed: "app", id: "a2", method: "resources/read", params: { uri } });
+
+    const result = { content: [{ type: "text", text: "Rain" }], structuredContent: { city: "Samarkand" } };
+    h.renderer.receive(JSON.stringify({ v: 1, t: "app.result", surface: "s1", embed: "app", id: "a1", result }));
+    await tick();
+    expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: 7, result });
+
+    h.renderer.receive(JSON.stringify({ v: 1, t: "app.result", surface: "s1", embed: "app", id: "a2", error: { code: -32000, message: "unknown resource" } }));
+    await tick();
+    expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: "read-1", error: { code: -32000, message: "unknown resource" } });
+
+    const before = view.replies.length;
+    h.renderer.receive(JSON.stringify({ v: 1, t: "app.result", surface: "s1", embed: "app", id: "a1", result }));
+    h.renderer.receive(JSON.stringify({ v: 1, t: "app.result", surface: "s1", embed: "other", id: "a3", result }));
+    await tick();
+    expect(view.replies).toHaveLength(before);
+    expect(h.core.calls.filter((call) => call.method === "receive" && String(call.args[0]).includes("app.result"))).toEqual([]);
+  });
+
+  it("refuses an answer that is not an object and caps the open requests", async () => {
+    const h = setup();
+    h.renderer.receive(welcome(["app_calls"]));
+    const view = await connect(h);
+    await view.send(initialize);
+    for (const id of [1, 2, 3, 4, 5]) await view.send({ id: 10 + id, method: "tools/call", params: { name: "slow" } });
+    expect(appCalls(h)).toHaveLength(4);
+    expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: 15, error: { code: -32000, message: "Too many requests are still open" } });
+    h.renderer.receive(JSON.stringify({ v: 1, t: "app.result", surface: "s1", embed: "app", id: "a1", result: "done" }));
+    await tick();
+    expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: 11, error: { code: -32603, message: "Invalid result" } });
+    await view.send({ id: 16, method: "tools/call", params: { name: "slow" } });
+    expect(appCalls(h)).toHaveLength(5);
+  });
+
+  it("drops answers for an embed that was removed", async () => {
+    const h = setup();
+    h.renderer.receive(welcome(["app_calls"]));
+    const view = await connect(h);
+    await view.send(initialize);
+    await view.send({ method: "ui/notifications/initialized" });
+    await view.send({ id: 3, method: "tools/call", params: { name: "forecast" } });
+    h.play({ surface: "s1", ops: [{ op: "remove", id: "app" }] });
+    const before = view.replies.length;
+    h.renderer.receive(JSON.stringify({ v: 1, t: "app.result", surface: "s1", embed: "app", id: "a1", result: { content: [] } }));
+    await tick();
+    expect(view.replies.slice(before).filter((reply) => reply["id"] === 3)).toEqual([]);
+  });
+
+  it("times out a request the server never answers", async () => {
+    const h = setup();
+    h.renderer.receive(welcome(["app_calls"]));
+    const view = await connect(h);
+    await view.send(initialize);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await view.send({ id: 9, method: "tools/call", params: { name: "forecast" } });
+      expect(view.replies.at(-1)?.["id"]).not.toBe(9);
+      vi.advanceTimersByTime(40_000);
+      await tick();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: 9, error: { code: -32000, message: "The app request timed out." } });
+  });
+});

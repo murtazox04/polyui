@@ -3,10 +3,17 @@ import { choice, element, isRecord, setShown, setText, text } from "./dom";
 import { safeUrl } from "./url";
 import type { ComponentRenderer, Json, Props } from "./types";
 
+export interface AppAnswer {
+  readonly result?: Json | undefined;
+  readonly error?: { readonly code: number; readonly message: string };
+}
+
 export interface EmbedContext {
   readonly sandbox: string | null;
   confirmLink(url: string, done: (accepted: boolean) => void): ConfirmHandle;
   openLink(url: string): void;
+  appCalls(): boolean;
+  callApp(surface: string, embed: string, method: string, params: Json | undefined, done: (answer: AppAnswer) => void): () => void;
 }
 
 type JsonObject = { [key: string]: Json };
@@ -24,6 +31,8 @@ const bounds: { readonly [key in (typeof sizes)[number]]: readonly [number, numb
 const minHeight = 80;
 const messageBytes = 4096;
 const messageGapMs = 1000;
+const openAppCalls = 4;
+const proxiedMethods = ["tools/call", "resources/read"];
 const cspKeys = ["connectDomains", "resourceDomains", "frameDomains", "baseUriDomains"];
 const sourcePattern = /^(https|wss):\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*(:\d{1,5})?$/i;
 
@@ -99,6 +108,7 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
     let link: ConfirmHandle | null = null;
     let theme: Theme | null = null;
     const system = systemDark();
+    const calls = new Set<() => void>();
 
     const post = (message: JsonObject): void => port?.postMessage({ jsonrpc: "2.0", ...message });
     const reply = (id: Json, result: JsonObject): void => post({ id, result });
@@ -118,7 +128,7 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
         reply(id, {
           protocolVersion: "2026-01-26",
           hostInfo: { name: "polyui-web", version: "0.1.0" },
-          hostCapabilities: { openLinks: {} },
+          hostCapabilities: context.appCalls() ? { openLinks: {}, serverTools: {}, serverResources: {} } : { openLinks: {} },
           hostContext: {
             theme: (theme = themeOf(node)),
             displayMode: "inline",
@@ -151,6 +161,15 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
           context.openLink(href);
           reply(id, {});
         });
+      } else if (proxiedMethods.includes(method) && context.appCalls()) {
+        if (calls.size >= openAppCalls) return fail(id, -32000, "Too many requests are still open");
+        const cancel = context.callApp(api.surface, api.id, method, params, (answer) => {
+          calls.delete(cancel);
+          if (answer.error) return fail(id, answer.error.code, answer.error.message);
+          if (!isRecord(answer.result)) return fail(id, -32603, "Invalid result");
+          reply(id, answer.result);
+        });
+        calls.add(cancel);
       } else {
         fail(id, -32601, "Method not found");
       }
@@ -195,6 +214,8 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
     const teardown = (): void => {
       window.removeEventListener("message", fromSandbox);
       system?.removeEventListener("change", sendTheme);
+      for (const cancel of calls) cancel();
+      calls.clear();
       if (ready) post({ id: 0, method: "ui/resource-teardown", params: { reason: "removed" } });
       port?.close();
       frame?.remove();
