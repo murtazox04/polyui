@@ -48,6 +48,14 @@ Nothing here goes in the repository. Secrets and variables live in the repositor
 5. **Maven Central.** Sign in at central.sonatype.com with GitHub; the namespace `io.github.murtazox04` is verified from that login. Generate a user token and store its two halves as `MAVEN_CENTRAL_USERNAME` and `MAVEN_CENTRAL_PASSWORD`. Create a GPG key, send the public key to `keys.openpgp.org`, and store `gpg --export-secret-keys --armor <key id>` as `SIGNING_KEY` and its passphrase as `SIGNING_KEY_PASSWORD`.
 6. **pub.dev.** pub.dev automates only packages that already exist, so publish 0.1.0 yourself once the GitHub release is out: `git checkout v0.1.0 && cd flutter/polyui && flutter pub publish`. Then on pub.dev, the package's Admin tab, enable publishing from GitHub Actions with repository `murtazox04/polyui`, tag pattern `v{{version}}` and required environment `pub.dev`, and add `pub` to `RELEASE_REGISTRIES`.
 
+### Setting the secrets in one go
+
+`scripts/release/set-registry-secrets.sh` asks for each token in your terminal without echoing it, stores it with `gh secret set`, and sets `RELEASE_REGISTRIES` to the registries you gave secrets for. Skip a registry by leaving its prompt empty. It never prints or saves a secret.
+
+```sh
+scripts/release/set-registry-secrets.sh
+```
+
 ## Each release
 
 1. Set the new version everywhere. `scripts/release/check-versions.sh 0.2.0` lists every file and says which ones are wrong: the workspace `Cargo.toml` (package and the `polyui-*` dependency versions), `bindings/node/package.json`, `js/polyui-web/package.json`, `flutter/polyui/pubspec.yaml` (and its `CHANGELOG.md`), `flutter/polyui/hook/prebuilt.dart` and `android/gradle.properties`. The Python version comes from Cargo. Merge that to `main`.
