@@ -382,3 +382,35 @@ describe("embed:Embed app calls", () => {
     expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: 9, error: { code: -32000, message: "The app request timed out." } });
   });
 });
+
+describe("embed:Embed model context", () => {
+  const initialize = { id: 1, method: "ui/initialize", params: { appInfo: { name: "Weather", version: "1" }, appCapabilities: {}, protocolVersion: "2026-01-26" } };
+  const welcome = (features: string[]): string => JSON.stringify({ v: 1, t: "welcome", session: "sess_1", catalogs: ["core@1", "embed@1"], features });
+  const capabilities = (view: Connection): JsonObject => (view.replies[0]?.["result"] as JsonObject)["hostCapabilities"] as JsonObject;
+  const update = { id: 4, method: "ui/update-model-context", params: { content: [{ type: "text", text: "Samarkand picked" }] } };
+
+  it("forwards context only when the server accepted app_context", async () => {
+    const h = setup();
+    h.renderer.receive(welcome(["app_calls", "app_context"]));
+    const view = await connect(h);
+    await view.send(initialize);
+    expect(capabilities(view)["updateModelContext"]).toEqual({ text: {} });
+    await view.send(update);
+    const sent = h.messages().filter((message) => message["t"] === "app.call");
+    expect(sent).toEqual([{ v: 1, t: "app.call", surface: "s1", embed: "app", id: "a1", method: "ui/update-model-context", params: update.params }]);
+    h.renderer.receive(JSON.stringify({ v: 1, t: "app.result", surface: "s1", embed: "app", id: "a1", result: {} }));
+    await tick();
+    expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: 4, result: {} });
+  });
+
+  it("refuses context when only app calls are on", async () => {
+    const h = setup();
+    h.renderer.receive(welcome(["app_calls"]));
+    const view = await connect(h);
+    await view.send(initialize);
+    expect(capabilities(view)["updateModelContext"]).toBeUndefined();
+    await view.send(update);
+    expect(view.replies.at(-1)).toEqual({ jsonrpc: "2.0", id: 4, error: { code: -32601, message: "Method not found" } });
+    expect(h.messages().filter((message) => message["t"] === "app.call")).toEqual([]);
+  });
+});

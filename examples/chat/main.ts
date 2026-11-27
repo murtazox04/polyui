@@ -1,4 +1,4 @@
-import { appCallsFeature, createRenderer, loadCore, type Json, type Renderer, type WasmCore } from "../../js/polyui-web/src/index";
+import { appCallsFeature, appContextFeature, createRenderer, dismissFeature, loadCore, type Json, type Renderer, type WasmCore } from "../../js/polyui-web/src/index";
 import { ReplaySocket } from "./replay";
 
 declare const REPLAY: boolean;
@@ -95,7 +95,7 @@ function helloFor(current: Setup, resume: Resume | null) {
     client: { name: "polyui-chat", version: "0.1.0" },
     catalogs: current.embedOrigin === null ? ["core@1", "chart@1"] : ["core@1", "chart@1", "embed@1"],
     modalities: ["screen", "voice"],
-    features: ["sync", "stream", "resume", appCallsFeature],
+    features: ["sync", "stream", "resume", appCallsFeature, appContextFeature, dismissFeature],
     locale,
     ...(resume === null ? {} : { resume }),
   };

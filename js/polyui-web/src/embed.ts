@@ -13,6 +13,7 @@ export interface EmbedContext {
   confirmLink(url: string, done: (accepted: boolean) => void): ConfirmHandle;
   openLink(url: string): void;
   appCalls(): boolean;
+  appContext(): boolean;
   callApp(surface: string, embed: string, method: string, params: Json | undefined, done: (answer: AppAnswer) => void): () => void;
 }
 
@@ -33,6 +34,7 @@ const messageBytes = 4096;
 const messageGapMs = 1000;
 const openAppCalls = 4;
 const proxiedMethods = ["tools/call", "resources/read"];
+const contextMethod = "ui/update-model-context";
 const cspKeys = ["connectDomains", "resourceDomains", "frameDomains", "baseUriDomains"];
 const sourcePattern = /^(https|wss):\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*(:\d{1,5})?$/i;
 
@@ -123,12 +125,19 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
       sentResult = result;
     };
 
+    const hostCapabilities = (): JsonObject => {
+      if (!context.appCalls()) return { openLinks: {} };
+      const server = { openLinks: {}, serverTools: {}, serverResources: {} };
+      return context.appContext() ? { ...server, updateModelContext: { text: {} } } : server;
+    };
+    const forwarded = (method: string): boolean => context.appCalls() && (proxiedMethods.includes(method) || (method === contextMethod && context.appContext()));
+
     const request = (id: Json, method: string, params: Json | undefined): void => {
       if (method === "ui/initialize") {
         reply(id, {
           protocolVersion: "2026-01-26",
           hostInfo: { name: "polyui-web", version: "0.1.0" },
-          hostCapabilities: context.appCalls() ? { openLinks: {}, serverTools: {}, serverResources: {} } : { openLinks: {} },
+          hostCapabilities: hostCapabilities(),
           hostContext: {
             theme: (theme = themeOf(node)),
             displayMode: "inline",
@@ -161,7 +170,7 @@ export function createEmbedRenderer(context: EmbedContext): ComponentRenderer {
           context.openLink(href);
           reply(id, {});
         });
-      } else if (proxiedMethods.includes(method) && context.appCalls()) {
+      } else if (forwarded(method)) {
         if (calls.size >= openAppCalls) return fail(id, -32000, "Too many requests are still open");
         const cancel = context.callApp(api.surface, api.id, method, params, (answer) => {
           calls.delete(cancel);

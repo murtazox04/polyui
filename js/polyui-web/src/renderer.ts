@@ -45,6 +45,8 @@ function asBatch(value: Json | undefined): RenderBatch | null {
 }
 
 export const appCallsFeature = "app_calls";
+export const dismissFeature = "dismiss";
+export const appContextFeature = "app_context";
 const appCallTimeoutMs = 90_000;
 
 function appKey(surface: string, embed: string, id: string): string {
@@ -87,6 +89,8 @@ export class Renderer implements SurfaceHost {
   #frame = 0;
   #destroyed = false;
   #appCalls = false;
+  #dismiss = false;
+  #appContext = false;
   #appReplies = new Map<string, (answer: AppAnswer) => void>();
   #appCounter = 0;
 
@@ -113,6 +117,7 @@ export class Renderer implements SurfaceHost {
           ),
         openLink,
         appCalls: () => this.#appCalls,
+        appContext: () => this.#appCalls && this.#appContext,
         callApp: (surface, embed, method, params, done) => this.#callApp(surface, embed, method, params, done),
       }),
     );
@@ -130,7 +135,10 @@ export class Renderer implements SurfaceHost {
     if (peeked?.["t"] === "app.result") return this.#appResult(peeked);
     if (peeked) {
       const features = peeked["features"];
-      this.#appCalls = Array.isArray(features) && features.includes(appCallsFeature);
+      const listed = (feature: string): boolean => Array.isArray(features) && features.includes(feature);
+      this.#appCalls = listed(appCallsFeature);
+      this.#dismiss = listed(dismissFeature);
+      this.#appContext = listed(appContextFeature);
     }
     this.#accept(this.#call("", () => this.#core.receive(text)));
   }
@@ -250,6 +258,7 @@ export class Renderer implements SurfaceHost {
       },
       onDismiss: () => {
         this.#confirms.delete(surface);
+        if (this.#dismiss && op.action_id !== "") this.#transmit({ v: 1, t: "ui.dismiss", surface, action_id: op.action_id, nonce: op.nonce });
       },
     });
     this.#confirms.set(surface, handle);
