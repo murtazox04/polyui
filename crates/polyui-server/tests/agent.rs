@@ -401,6 +401,46 @@ async fn confirm_flow_runs_the_action_once_with_host_text() {
 }
 
 #[tokio::test]
+async fn a_no_ends_the_question_and_pays_nothing() {
+    let mut harness = start(ScriptedProvider::new());
+    let open = open_bill(&mut harness).await;
+    let action_id = handle_of(&open, "pay", "on_press");
+    harness.act("s1", &action_id, None).await;
+    let confirm = harness.next().await;
+    let nonce = confirm["nonce"].as_str().unwrap().to_string();
+    let calls_before = harness.provider.requests().len();
+
+    let forged = json!({ "v": 1, "t": "ui.dismiss", "surface": "s1", "action_id": action_id, "nonce": "n_forged" });
+    harness.session.receive(&forged.to_string()).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), harness.outgoing.recv())
+            .await
+            .is_err(),
+        "a no with the wrong nonce gets no answer"
+    );
+
+    let no = json!({ "v": 1, "t": "ui.dismiss", "surface": "s1", "action_id": action_id, "nonce": nonce });
+    harness.session.receive(&no.to_string()).await;
+    let result = harness.next().await;
+    assert_eq!(result["t"], "ui.action.result");
+    assert_eq!(result["status"], "rejected");
+    assert_eq!(result["message"], "Cancelled.");
+
+    harness.act("s1", &action_id, Some(&nonce)).await;
+    assert_eq!(harness.next().await["status"], "rejected");
+    assert!(!harness.host.is_paid(GAS_BILL));
+    assert_eq!(harness.provider.requests().len(), calls_before);
+
+    harness.session.receive(&no.to_string()).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), harness.outgoing.recv())
+            .await
+            .is_err(),
+        "a second no is ignored"
+    );
+}
+
+#[tokio::test]
 async fn expired_nonce_is_rejected() {
     let config = AgentConfig {
         confirm_ttl: Duration::from_millis(50),

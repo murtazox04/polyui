@@ -683,6 +683,10 @@ Internet tariffs:
         self.tariff_app
     }
 
+    fn app_context(&self, user: &User, app: &str) -> bool {
+        self.tariff_app && user.id == HOUSEHOLD_USER && app == TARIFF_APP_URI
+    }
+
     fn app_confirm(
         &self,
         user: &User,
