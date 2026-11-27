@@ -47,7 +47,7 @@ sequenceDiagram
 6. **The model does not see it.** App calls and their results never enter the conversation. That matches the specification, where `tools/call` from an app is for "UI-only interactions". When an app wants the model to know something it sends `ui/message`, as today.
 7. **Client side.** The core does not change. It already ignores `t` values it does not know (`spec/protocol.md`, section 3). The renderer session looks at `welcome` and `app.result` before the core sees them: `welcome.features` turns app calls on or off, and `app.result` goes straight back to the frame it belongs to by `surface`, `embed` and `id`. The embed bridge sends `app.call` through the same `send` callback as `ui.action`. A result for an embed that is gone, or for a frame that reloaded with a new nonce, is dropped. The server reads `app.call` itself, the way it reads `user.say`, so neither the client core nor the wasm build changes.
 
-`ui/update-model-context` stays refused with `-32601`. It would put text written by third-party app code into the model's context on the next turn, which is a prompt injection path that needs its own decision.
+`ui/update-model-context` stays refused with `-32601`. It would put text written by third-party app code into the model's context on the next turn, which is a prompt injection path that needs its own decision. [ADR 6](0006-model-context-from-an-app.md) makes that decision.
 
 ## Failure modes
 
