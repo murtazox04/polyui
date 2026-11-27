@@ -27,7 +27,7 @@ public struct PolyUISurfaceView: View {
                 PolyUIConfirmRequestSheet(request: request) {
                     session.confirm(surface: surface.id, request: request)
                 } onDismiss: {
-                    session.dismissConfirm(surface: surface.id)
+                    session.cancelConfirm(surface: surface.id)
                 }
             case .link(let link):
                 PolyUIConfirmRequestSheet(request: linkQuestion(link)) {
@@ -45,7 +45,7 @@ public struct PolyUISurfaceView: View {
         } set: { next in
             guard next == nil else { return }
             switch surface.presentedSheet {
-            case .confirm: session.dismissConfirm(surface: surface.id)
+            case .confirm: session.cancelConfirm(surface: surface.id)
             case .link(let link): session.answerLink(surface: surface.id, id: link.id, accepted: false)
             case nil: break
             }
