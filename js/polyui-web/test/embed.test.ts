@@ -374,7 +374,7 @@ describe("embed:Embed app calls", () => {
     try {
       await view.send({ id: 9, method: "tools/call", params: { name: "forecast" } });
       expect(view.replies.at(-1)?.["id"]).not.toBe(9);
-      vi.advanceTimersByTime(40_000);
+      vi.advanceTimersByTime(90_000);
       await tick();
     } finally {
       vi.useRealTimers();

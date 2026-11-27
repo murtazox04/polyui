@@ -320,7 +320,7 @@ void main() {
   });
 
   group('session app call timeout', () {
-    test('an unanswered call times out after 40 seconds', () {
+    test('an unanswered call times out after 90 seconds', () {
       fakeAsync((async) {
         final harness = Harness();
         harness.session.receive(welcome(['app_calls']));
@@ -332,7 +332,7 @@ void main() {
           params: {'name': 'forecast'},
           done: answers.add,
         );
-        async.elapse(const Duration(seconds: 39));
+        async.elapse(const Duration(seconds: 89));
         expect(answers, isEmpty);
         async.elapse(const Duration(seconds: 1));
         expect(answers, [

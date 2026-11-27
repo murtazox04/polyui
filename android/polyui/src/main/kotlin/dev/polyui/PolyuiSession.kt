@@ -181,7 +181,7 @@ class PolyuiSession(
 
     companion object {
         const val APP_CALLS_FEATURE = "app_calls"
-        internal const val APP_CALL_TIMEOUT_MILLIS = 40_000L
+        internal const val APP_CALL_TIMEOUT_MILLIS = 90_000L
         private const val REFUSED_CODE = -32000
 
         private fun peek(text: String): JsonObject? {

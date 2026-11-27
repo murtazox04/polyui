@@ -16,7 +16,7 @@ public final class PolyUISession {
     public private(set) var surfaceIDs: [String] = []
     public private(set) var lastError: String?
     public private(set) var appCalls = false
-    @ObservationIgnored public var appCallTimeout: Duration = .seconds(40)
+    @ObservationIgnored public var appCallTimeout: Duration = .seconds(90)
     @ObservationIgnored private var surfaces: [String: PolyUISurfaceModel] = [:]
     @ObservationIgnored private var reportedTypes: Set<String> = []
     @ObservationIgnored private var appWaiters: [AppCallKey: AppWaiter] = [:]

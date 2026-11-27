@@ -105,7 +105,7 @@ class AppCallsTest {
         assertEquals("resources/read", calls()[1]["method"].stringValue)
         assertTrue(first["id"].stringValue!!.isNotEmpty())
         assertTrue(first["id"] != calls()[1]["id"])
-        assertEquals(listOf(40_000L, 40_000L), timer.scheduled.map { it.first })
+        assertEquals(listOf(90_000L, 90_000L), timer.scheduled.map { it.first })
     }
 
     @Test
