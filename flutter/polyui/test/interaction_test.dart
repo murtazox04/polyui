@@ -416,4 +416,156 @@ void main() {
       }
     });
   });
+
+  group('dismiss', () {
+    void welcome(List<String> features) => harness.session.receiveJson({
+      'v': 1,
+      't': 'welcome',
+      'session': 'sess_1',
+      'catalogs': ['core@1'],
+      'features': features,
+    });
+
+    List<Map<String, Object?>> dismissals() => harness.messages
+        .where((message) => message['t'] == 'ui.dismiss')
+        .toList();
+
+    Future<void> showFresh(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(BottomSheet), findsOneWidget);
+    }
+
+    Future<void> openSheet(WidgetTester tester, String nonce) async {
+      harness.open('pay', [
+        component(
+          'pay',
+          'Button',
+          props: {'label': 'Pay', 'on_press': handle('act_pay', confirm: true)},
+        ),
+      ]);
+      await tester.pumpWidget(harness.app());
+      await tester.pumpAndSettle();
+      harness.confirm(actionId: 'act_pay', nonce: nonce);
+      await showFresh(tester);
+    }
+
+    Future<void> settle(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(harness.session.surface('s1').pendingConfirm, isNull);
+    }
+
+    test('the welcome turns the feature on and off', () {
+      expect(PolyuiSession.dismissFeature, 'dismiss');
+      expect(harness.session.sendsDismiss, isFalse);
+      welcome(['stream', 'dismiss']);
+      expect(harness.session.sendsDismiss, isTrue);
+      welcome(['app_calls']);
+      expect(harness.session.sendsDismiss, isFalse);
+      welcome(['dismiss']);
+      harness.session.receiveJson({
+        'v': 1,
+        't': 'welcome',
+        'session': 'sess_2',
+        'catalogs': ['core@1'],
+      });
+      expect(harness.session.sendsDismiss, isFalse);
+    });
+
+    testWidgets('cancel sends one ui.dismiss with the confirm fields', (
+      tester,
+    ) async {
+      welcome(['dismiss']);
+      await openSheet(tester, 'n_77ad');
+      await tester.tap(find.byKey(const ValueKey('polyui-cancel')));
+      await settle(tester);
+      expect(dismissals(), [
+        {
+          'v': 1,
+          't': 'ui.dismiss',
+          'surface': 's1',
+          'action_id': 'act_pay',
+          'nonce': 'n_77ad',
+        },
+      ]);
+      expect(harness.actions, isEmpty);
+      harness.session.cancelConfirm(
+        surface: 's1',
+        request: const ConfirmRequest(
+          actionId: 'act_pay',
+          nonce: 'n_77ad',
+          title: 'Pay Hududgaz',
+        ),
+      );
+      expect(dismissals(), hasLength(1));
+    });
+
+    testWidgets('a tap on the barrier sends ui.dismiss', (tester) async {
+      welcome(['dismiss']);
+      await openSheet(tester, 'n_barrier');
+      await tester.tapAt(const Offset(20, 20));
+      await settle(tester);
+      expect(dismissals().single['nonce'], 'n_barrier');
+    });
+
+    testWidgets('back sends ui.dismiss', (tester) async {
+      welcome(['dismiss']);
+      await openSheet(tester, 'n_back');
+      await tester.binding.handlePopRoute();
+      await settle(tester);
+      expect(dismissals().single['nonce'], 'n_back');
+    });
+
+    testWidgets('without the feature cancel sends nothing', (tester) async {
+      welcome(['resume']);
+      await openSheet(tester, 'n_off');
+      await tester.tap(find.byKey(const ValueKey('polyui-cancel')));
+      await settle(tester);
+      expect(dismissals(), isEmpty);
+      expect(harness.sent.where((text) => text.contains('n_off')), isEmpty);
+    });
+
+    testWidgets('confirming sends the action and no ui.dismiss', (
+      tester,
+    ) async {
+      welcome(['dismiss']);
+      await openSheet(tester, 'n_yes');
+      await tester.tap(find.byKey(const ValueKey('polyui-confirm')));
+      await settle(tester);
+      expect(harness.actions.single['confirm'], 'n_yes');
+      expect(dismissals(), isEmpty);
+    });
+
+    testWidgets('a new confirm replaces the sheet without a ui.dismiss', (
+      tester,
+    ) async {
+      welcome(['dismiss']);
+      await openSheet(tester, 'n_first');
+      harness.confirm(actionId: 'act_pay', nonce: 'n_second');
+      await showFresh(tester);
+      expect(dismissals(), isEmpty);
+      await tester.tap(find.byKey(const ValueKey('polyui-cancel')));
+      await settle(tester);
+      expect(dismissals().single['nonce'], 'n_second');
+    });
+
+    testWidgets('closing the surface sends no ui.dismiss', (tester) async {
+      welcome(['dismiss']);
+      await openSheet(tester, 'n_close');
+      harness.seq += 1;
+      harness.session.receiveJson({
+        'v': 1,
+        't': 'ui.close',
+        'surface': 's1',
+        'seq': harness.seq,
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(dismissals(), isEmpty);
+    });
+  });
 }

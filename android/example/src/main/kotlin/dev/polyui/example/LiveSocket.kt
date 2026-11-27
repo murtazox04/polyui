@@ -154,7 +154,13 @@ class LiveSocket(
 
     companion object {
         const val RESUME_FEATURE = "resume"
-        private val DECLARED_FEATURES = listOf(RESUME_FEATURE, PolyuiSession.APP_CALLS_FEATURE)
+        private val DECLARED_FEATURES =
+            listOf(
+                RESUME_FEATURE,
+                PolyuiSession.APP_CALLS_FEATURE,
+                PolyuiSession.APP_CONTEXT_FEATURE,
+                PolyuiSession.DISMISS_FEATURE,
+            )
         private const val NORMAL_CLOSURE = 1000
         private val RETRY_SECONDS = listOf(1L, 2L, 4L, 8L, 16L)
 

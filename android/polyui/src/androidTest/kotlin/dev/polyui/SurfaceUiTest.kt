@@ -180,6 +180,38 @@ class SurfaceUiTest {
     }
 
     @Test
+    fun cancellingTheSheetSendsADismissWhenTheServerAcceptsIt() {
+        rule.runOnIdle { session.receive(WELCOME_WITH_DISMISS) }
+        show(PAY_BUTTON)
+        rule.runOnIdle { session.receive(CONFIRM) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(PolyuiTestTags.CANCEL_BUTTON).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(PolyuiTestTags.CONFIRM_SHEET).assertDoesNotExist()
+        assertEquals(
+            listOf(Json.parseToJsonElement("""{"v":1,"t":"ui.dismiss","surface":"s1","action_id":"act_4kq9","nonce":"n_77ad"}""")),
+            dismissals(),
+        )
+        assertEquals(emptyList<JsonElement>(), actions())
+    }
+
+    @Test
+    fun confirmingTheSheetSendsNoDismiss() {
+        rule.runOnIdle { session.receive(WELCOME_WITH_DISMISS) }
+        show(PAY_BUTTON)
+        rule.runOnIdle { session.receive(CONFIRM) }
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
+        rule.onNodeWithTag(PolyuiTestTags.CONFIRM_BUTTON).assertIsEnabled().performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(PolyuiTestTags.CONFIRM_SHEET).assertDoesNotExist()
+        assertEquals("n_77ad", actions().single()["confirm"].stringValue)
+        assertEquals(emptyList<JsonElement>(), dismissals())
+    }
+
+    private fun dismissals(): List<JsonElement> = sent.filter { it["t"].stringValue == "ui.dismiss" }
+
+    @Test
     fun customComposablesDrawExtensionTypes() {
         val views = PolyuiViewRegistry().with("Badge") { context -> Text("custom ${context.node.string("text")}") }
         rule.setContent {
@@ -257,6 +289,9 @@ class SurfaceUiTest {
 
         const val PAY_BUTTON =
             """{"v":1,"t":"ui.open","surface":"s1","seq":1,"root":"pay","components":[{"id":"pay","type":"Button","props":{"label":"Pay","tone":"primary","on_press":{"action_id":"act_4kq9","confirm":true}}}],"data":{}}"""
+
+        const val WELCOME_WITH_DISMISS =
+            """{"v":1,"t":"welcome","session":"sess_1","catalogs":["core@1","chart@1","embed@1"],"features":["dismiss"]}"""
 
         const val CONFIRM =
             """{"v":1,"t":"ui.confirm","surface":"s1","action_id":"act_4kq9","nonce":"n_77ad","title":"Pay Hududgaz","body":"29 322,19 so'm from card 4471","confirm_label":"Pay","expires_ms":60000}"""

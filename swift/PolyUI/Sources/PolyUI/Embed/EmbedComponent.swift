@@ -23,6 +23,7 @@ struct EmbedComponent: View {
                     session.askToOpen(url, surface: surface.id, component: node.id, answer: answer)
                 },
                 appCalls: session.appCalls,
+                appContext: session.appContext,
                 onAppCall: { method, params, answer in
                     session.callApp(surface: surface.id, embed: node.id, method: method, params: params, answer: answer)
                 }
@@ -88,6 +89,7 @@ struct EmbedWebView: UIViewRepresentable {
     let onEvent: @MainActor (EmbedEvent) -> Void
     let onLink: @MainActor (URL, @escaping @MainActor (Bool) -> Void) -> Void
     let appCalls: Bool
+    let appContext: Bool
     let onAppCall: @MainActor (String, JSONValue, @escaping @MainActor (JSONValue) -> Void) -> Void
 
     func makeCoordinator() -> EmbedPageController {
@@ -115,6 +117,7 @@ struct EmbedWebView: UIViewRepresentable {
         controller.onEvent = onEvent
         controller.onLink = onLink
         controller.appCalls = appCalls
+        controller.appContext = appContext
         controller.onAppCall = onAppCall
         webView.accessibilityLabel = title
     }

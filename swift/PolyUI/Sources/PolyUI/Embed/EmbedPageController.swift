@@ -11,6 +11,7 @@ final class EmbedPageController: NSObject {
         answer(["error": ["code": -32601, "message": "Method not found"]])
     }
     var appCalls = false
+    var appContext = false
 
     private(set) var webView: WKWebView?
     private(set) var nonce = ""
@@ -110,7 +111,7 @@ final class EmbedPageController: NSObject {
 
     private func load(_ propsJSON: String) {
         guard let webView, let fresh = EmbedNonce.make(),
-            let page = try? PolyUICore.embedPage(propsJSON: propsJSON, nonce: fresh, appCalls: appCalls)
+            let page = try? PolyUICore.embedPage(propsJSON: propsJSON, nonce: fresh, appCalls: appCalls, appContext: appContext)
         else {
             onEvent(.unavailable)
             return

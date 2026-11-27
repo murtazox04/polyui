@@ -101,7 +101,18 @@ class EmbedTest {
         assertNull(read(event("app-call", ""","id":"${"x".repeat(65)}","method":"tools/call","params":{}""")))
         assertNull(read(event("app-call", ""","id":7,"method":"tools/call","params":{}""")))
         assertNull(read(event("app-call", ""","method":"tools/call","params":{}""")))
+        assertEquals(
+            PolyuiEmbedEvent.AppCall(
+                "c-9",
+                "ui/update-model-context",
+                buildJsonObject {
+                    put("structuredContent", buildJsonObject { put("usage", 320) })
+                },
+            ),
+            read(event("app-call", ""","id":"c-9","method":"ui/update-model-context","params":{"structuredContent":{"usage":320}}""")),
+        )
         assertNull(read(event("app-call", ""","id":"c-1","method":"tools/list","params":{}""")))
+        assertNull(read(event("app-call", ""","id":"c-1","method":"ui/message","params":{}""")))
         assertNull(read(event("app-call", ""","id":"c-1","method":"Tools/call","params":{}""")))
         assertNull(read(event("app-call", ""","id":"c-1","params":{}""")))
         assertNull(read(event("app-call", ""","id":"c-1","method":"tools/call","params":[]""")))
@@ -192,10 +203,41 @@ class EmbedTest {
     fun thePageCarriesTheAppCallsOption() {
         val off = PolyuiEmbed.page(props(), nonce)
         val on = PolyuiEmbed.page(props(), nonce, appCalls = true)
-        assertTrue(off.contains("const host = {\"app_calls\":false};"))
-        assertTrue(on.contains("const host = {\"app_calls\":true};"))
+        assertTrue(off.contains("const host = {\"app_calls\":false,\"app_context\":false};"))
+        assertTrue(on.contains("const host = {\"app_calls\":true,\"app_context\":false};"))
         assertFalse(on.contains("POLYUI_HOST_SLOT"))
         assertTrue(on.contains("serverTools"))
+    }
+
+    @Test
+    fun thePageCarriesTheAppContextOptionOnlyWithAppCalls() {
+        val context = PolyuiEmbed.page(props(), nonce, appCalls = true, appContext = true)
+        assertTrue(context.contains("const host = {\"app_calls\":true,\"app_context\":true};"))
+        assertTrue(context.contains("updateModelContext"))
+        val alone = PolyuiEmbed.page(props(), nonce, appCalls = false, appContext = true)
+        assertTrue(alone.contains("const host = {\"app_calls\":false,\"app_context\":false};"))
+    }
+
+    @Test
+    fun aModelContextUpdateIsRefusedLocallyWithoutAppContext() {
+        val update = PolyuiEmbed.UPDATE_MODEL_CONTEXT
+        val notFound =
+            buildJsonObject {
+                putJsonObject("error") {
+                    put("code", -32601)
+                    put("message", "Method not found")
+                }
+            }
+        assertEquals(notFound, PolyuiEmbed.refusal(update, appCalls = true, appContext = false, openCalls = 0))
+        assertEquals(notFound, PolyuiEmbed.refusal(update, appCalls = false, appContext = true, openCalls = 0))
+        assertEquals(notFound, PolyuiEmbed.refusal("tools/call", appCalls = false, appContext = false, openCalls = 0))
+        assertNull(PolyuiEmbed.refusal(update, appCalls = true, appContext = true, openCalls = 0))
+        assertNull(PolyuiEmbed.refusal("tools/call", appCalls = true, appContext = false, openCalls = 3))
+        assertNull(PolyuiEmbed.refusal("resources/read", appCalls = true, appContext = false, openCalls = 0))
+        assertEquals(
+            -32000,
+            PolyuiEmbed.refusal(update, appCalls = true, appContext = true, openCalls = 4)["error"]["code"].doubleValue?.toInt(),
+        )
     }
 
     @Test

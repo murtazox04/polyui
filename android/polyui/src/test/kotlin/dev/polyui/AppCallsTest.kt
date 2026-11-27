@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -83,6 +84,44 @@ class AppCallsTest {
         session.receive(welcome(""""app_calls""""))
         assertFalse(session.appCalls)
         assertEquals(emptyList<JsonObject>(), errors())
+    }
+
+    @Test
+    fun aWelcomeWithAppContextTurnsItOnAndOneWithoutTurnsItOff() {
+        assertFalse(session.appContext)
+        session.receive(welcome("""["app_calls","app_context"]"""))
+        assertTrue(session.appCalls)
+        assertTrue(session.appContext)
+        session.receive(welcome("""["app_calls"]"""))
+        assertTrue(session.appCalls)
+        assertFalse(session.appContext)
+        session.receive(welcome("""["app_context"]"""))
+        assertTrue(session.appContext)
+        session.receive(welcome(null))
+        assertFalse(session.appContext)
+        assertEquals(emptyList<JsonObject>(), errors())
+    }
+
+    @Test
+    fun aModelContextUpdateGoesOutAsAnAppCallWithItsParamsUnchanged() {
+        val update =
+            buildJsonObject {
+                putJsonArray("content") {
+                    add(
+                        buildJsonObject {
+                            put("type", "text")
+                            put("text", "Tashkent, 320 kWh")
+                        },
+                    )
+                }
+            }
+        val answers = mutableListOf<JsonObject>()
+        session.callApp("s1", "forecast", PolyuiEmbed.UPDATE_MODEL_CONTEXT, update) { answers += it }
+        val call = calls().single()
+        assertEquals("ui/update-model-context", call["method"].stringValue)
+        assertEquals(update, call["params"])
+        session.receive(result("s1", "forecast", call["id"].stringValue!!, ""","result":{}"""))
+        assertEquals(listOf(buildJsonObject { put("result", JsonObject(emptyMap())) }), answers)
     }
 
     @Test

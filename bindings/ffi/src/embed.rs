@@ -3,6 +3,7 @@ const NONCE_SLOT: &str = "POLYUI_NONCE_SLOT";
 const PROPS_SLOT: &str = "POLYUI_PROPS_SLOT";
 const HOST_SLOT: &str = "POLYUI_HOST_SLOT";
 const APP_CALLS: &str = "app_calls";
+const APP_CONTEXT: &str = "app_context";
 const SHORTEST_NONCE: usize = 16;
 const LONGEST_NONCE: usize = 128;
 
@@ -32,16 +33,16 @@ fn host_options(host_json: &str) -> Result<String, String> {
     let serde_json::Value::Object(host) = host else {
         return Err("PolyUI embed_page: the host options must be a JSON object".to_string());
     };
-    let app_calls = match host.get(APP_CALLS) {
-        None => false,
-        Some(serde_json::Value::Bool(on)) => *on,
-        Some(_) => {
-            return Err(format!(
-                "PolyUI embed_page: the host option {APP_CALLS} must be true or false"
-            ));
-        }
+    let flag = |name: &str| match host.get(name) {
+        None => Ok(false),
+        Some(serde_json::Value::Bool(on)) => Ok(*on),
+        Some(_) => Err(format!(
+            "PolyUI embed_page: the host option {name} must be true or false"
+        )),
     };
-    Ok(serde_json::json!({ APP_CALLS: app_calls }).to_string())
+    let app_calls = flag(APP_CALLS)?;
+    let app_context = app_calls && flag(APP_CONTEXT)?;
+    Ok(serde_json::json!({ APP_CALLS: app_calls, APP_CONTEXT: app_context }).to_string())
 }
 
 pub(crate) fn embed_page_with(

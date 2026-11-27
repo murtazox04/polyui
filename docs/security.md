@@ -208,6 +208,8 @@ The model names a `ui://` resource and nothing more. The host supplies the HTML,
 | An app call for a component that is not an embed on an open surface, or with bad params | server `app_calls.rs` `calls_need_an_embed_that_is_on_screen`, `bad_params_are_refused_before_the_host` |
 | An app floods the host or a slow MCP server holds every slot | server `app_calls.rs` `each_embed_has_a_rate_limit`, `slow_hosts_time_out_and_open_calls_are_capped` |
 | An app call that needs a person runs without a yes, with a forged or reused nonce, or after the question expired | server `app_calls.rs` `a_switch_waits_for_the_person_and_then_runs`, `a_wrong_or_missing_nonce_does_not_count_as_a_yes`, `an_unanswered_question_expires_and_the_app_hears_no`, `one_question_at_a_time_and_quotes_still_flow` |
+| A no to an app question or an action confirm with a forged nonce, or a second no | server `agent.rs` `a_no_ends_the_question_and_pays_nothing`, `app_calls.rs` `a_no_answers_the_app_at_once_and_frees_the_question` |
+| App context from an app the host does not allow, without the feature, too long, or unmarked in the model's input | server `app_calls.rs` `app_context_needs_the_feature_the_host_and_a_short_text`, `app_context_reaches_the_next_turn_once_and_marked_as_the_apps` |
 | App calls without the `app_calls` feature, or app results leaking into the model | server `app_calls.rs` `without_the_feature_every_call_is_method_not_found`, `the_app_gets_a_quote_without_a_model_turn` |
 
 The core tests are in `crates/polyui-core/tests/embed.rs`, the server tests in `crates/polyui-server/tests/embed.rs` and `crates/polyui-server/tests/app_calls.rs`, and the renderer tests in `js/polyui-web/test/embed.test.ts` (run with `npm test` in `js/polyui-web`).

@@ -63,7 +63,7 @@ The client speaks first.
 
 - `catalogs`: what the renderer can draw, as `id@major`. The server must only send components from these catalogs. Anything else is sent as its `alt` text inside a `Text` component.
 - `modalities`: any non-empty subset of `screen` and `voice`.
-- `features`: optional abilities. `sync` means the client handles `ui.sync`. `stream` means it accepts surfaces that grow while the model is still writing (section 8.1). `resume` means the client can come back to its session after the connection drops (section 8.2). `app_calls` means the client forwards `tools/call` and `resources/read` from an embedded MCP App to the server (section 8.3).
+- `features`: optional abilities. `sync` means the client handles `ui.sync`. `stream` means it accepts surfaces that grow while the model is still writing (section 8.1). `resume` means the client can come back to its session after the connection drops (section 8.2). `app_calls` means the client forwards `tools/call` and `resources/read` from an embedded MCP App to the server (section 8.3). `app_context` means it also forwards the app's `ui/update-model-context` (section 8.3). `dismiss` means the client tells the server when the person cancels a confirmation (section 7.2).
 - `resume`: optional, `{ "session": "...", "token": "..." }`, sent by a client that lost its connection and wants its old session back (section 8.2).
 - `locale`: BCP 47 tag. Used for `alt` and `say` templates and for voice matching.
 
@@ -198,6 +198,14 @@ The renderer shows this in its own confirm sheet, drawn by the renderer and not 
 
 A nonce works once and expires. The model has no tool that fires actions, so it cannot skip this step.
 
+When the person cancels the sheet, a client whose `dismiss` feature the server accepted says so:
+
+```json
+{ "v": 1, "t": "ui.dismiss", "surface": "s1", "action_id": "act_4kq9", "nonce": "n_77ad" }
+```
+
+The server ends the question at once and answers `ui.action.result` with `rejected` and the message "Cancelled.". A `ui.dismiss` that matches no open question (wrong nonce, already answered or expired) is ignored without an answer. A no does not start a model turn. Without `dismiss` the question simply expires.
+
 ### 7.3 Result
 
 ```json
@@ -301,7 +309,8 @@ An MCP App inside `embed:Embed` may ask for fresh data with `tools/call` or `res
 - The host decides what an app may do. It must refuse a tool whose `_meta.ui.visibility` does not include `"app"`, and any tool or resource that is not on the MCP server the app came from.
 - App calls and their results never reach the model. `app.result` has no `seq` and is not covered by `ui.snapshot`, so after a resume it arrives with the other held messages. A client drops a result for an embed that is gone.
 - The host may ask a person first. The server then sends a `ui.confirm` for the app's surface with a fresh `action_id` starting with `app_` and a fresh nonce, and calls the host only after a `ui.action` with that `action_id`, the same surface and the matching nonce. The question lives for the app call timeout (30 seconds in the reference server) and is sent again after a resume. When it runs out, the server sends `ui.action.result` `expired` for it and an `app.result` error `-32000`. One such question is open per session at a time; another app call that needs one is refused at once. Clients wait at least 90 seconds for an `app.result`.
-- `ui/update-model-context` from an app is not forwarded.
+- With the `app_context` feature (accepted only together with `app_calls`), the client also forwards `ui/update-model-context` as an `app.call` with that `method`. The server answers it itself with `{}`, without asking the host for a result, but only for apps the host allows. It keeps the text blocks of `content` and the JSON of `structuredContent`, at most 4096 characters, keeps only the latest update per embed, and adds it once to the user message of the next model turn, in a block that starts with `[App context]` and says the app wrote it. Without the feature it is answered `-32601`.
+- A person's no to an app question (with `dismiss`) answers the app at once with `-32000` "The person said no.".
 
 ## 9. Client to server messages
 
@@ -311,7 +320,8 @@ An MCP App inside `embed:Embed` may ask for fresh data with `tools/call` or `res
 | `ui.action` | `surface`, `action_id`, `values`, `confirm`, `source`, `detail` (section 7.1) | User tapped, typed or spoke. |
 | `ui.resync` | `surface` | Client saw a `seq` gap or lost state. |
 | `ui.error` | `surface`, `reason`, `detail` | Client could not draw something. Reasons: `unsupported_version`, `unknown_component`, `render_failed`, `bad_message`. |
-| `app.call` | `surface`, `embed`, `id`, `method`, `params` (section 8.3) | An embedded app asked for `tools/call` or `resources/read`. Only with the `app_calls` feature. |
+| `app.call` | `surface`, `embed`, `id`, `method`, `params` (section 8.3) | An embedded app asked for `tools/call`, `resources/read` or `ui/update-model-context`. Only with the `app_calls` feature (and `app_context` for the last one). |
+| `ui.dismiss` | `surface`, `action_id`, `nonce` (section 7.2) | The person cancelled a confirmation. Only with the `dismiss` feature. |
 
 The transport is not part of the protocol. The reference server speaks WebSocket (both directions on one connection) and Server-Sent Events plus HTTP POST (server messages on the event stream, client messages as POST bodies). Both carry the same JSON.
 

@@ -37,7 +37,7 @@ final class ChatModel {
     @ObservationIgnored private let hello = PolyUIHello(
         client: PolyUIHello.ClientInfo(name: "polyui-ios-example", version: "0.1.0"),
         catalogs: ["core@1", "chart@1", "embed@1"],
-        features: ["sync", PolyUISession.appCallsFeature],
+        features: ["sync", PolyUISession.appCallsFeature, PolyUISession.appContextFeature, PolyUISession.dismissFeature],
         locale: "en"
     )
     @ObservationIgnored let instant: Bool

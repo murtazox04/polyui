@@ -12,10 +12,14 @@ public final class PolyUISession {
         UIApplication.shared.open(url)
     }
     public static let appCallsFeature = "app_calls"
+    public static let dismissFeature = "dismiss"
+    public static let appContextFeature = "app_context"
 
     public private(set) var surfaceIDs: [String] = []
     public private(set) var lastError: String?
     public private(set) var appCalls = false
+    public private(set) var dismisses = false
+    public private(set) var appContext = false
     @ObservationIgnored public var appCallTimeout: Duration = .seconds(90)
     @ObservationIgnored private var surfaces: [String: PolyUISurfaceModel] = [:]
     @ObservationIgnored private var reportedTypes: Set<String> = []
@@ -62,7 +66,10 @@ public final class PolyUISession {
                 appResult(peeked)
                 return
             }
-            appCalls = peeked["features"]?.arrayValue?.contains(.string(Self.appCallsFeature)) ?? false
+            let features = peeked["features"]?.arrayValue ?? []
+            appCalls = features.contains(.string(Self.appCallsFeature))
+            dismisses = features.contains(.string(Self.dismissFeature))
+            appContext = appCalls && features.contains(.string(Self.appContextFeature))
         }
         accept(attempt(surface: "") { try core.receive(message) })
     }
@@ -143,6 +150,16 @@ public final class PolyUISession {
         if let message = attempt(surface: surface, { try core.confirm(surface: surface, actionID: request.actionID, nonce: request.nonce) }) ?? nil {
             send(message)
         }
+    }
+
+    public func cancelConfirm(surface: String) {
+        guard let request = surfaces[surface]?.pendingConfirm else { return }
+        dismissConfirm(surface: surface)
+        guard dismisses else { return }
+        transmit([
+            "v": 1, "t": "ui.dismiss", "surface": .string(surface), "action_id": .string(request.actionID),
+            "nonce": .string(request.nonce),
+        ])
     }
 
     public func dismissConfirm(surface: String) {

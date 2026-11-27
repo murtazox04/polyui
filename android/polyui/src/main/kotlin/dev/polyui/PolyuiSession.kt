@@ -37,6 +37,12 @@ class PolyuiSession(
     internal var appCalls: Boolean = false
         private set
 
+    internal var appContext: Boolean = false
+        private set
+
+    internal var dismiss: Boolean = false
+        private set
+
     val surfaceIds: List<String>
         get() = surfaces.keys.toList()
 
@@ -52,7 +58,10 @@ class PolyuiSession(
                 appResult(peeked)
                 return
             }
-            appCalls = peeked["features"].arrayValue?.any { it.stringValue == APP_CALLS_FEATURE } == true
+            val features = peeked["features"].arrayValue?.mapNotNull { it.stringValue }.orEmpty()
+            appCalls = APP_CALLS_FEATURE in features
+            appContext = APP_CONTEXT_FEATURE in features
+            dismiss = DISMISS_FEATURE in features
         }
         accept(attempt("") { core.receive(message) })
     }
@@ -88,6 +97,25 @@ class PolyuiSession(
 
     fun dismissConfirm(surface: String) {
         surfaces[surface]?.pendingConfirm = null
+    }
+
+    fun cancelConfirm(
+        surface: String,
+        request: ConfirmRequest,
+    ) {
+        val model = surfaces[surface] ?: return
+        if (model.pendingConfirm != request) return
+        model.pendingConfirm = null
+        if (!dismiss) return
+        transmit(
+            buildJsonObject {
+                put("v", 1)
+                put("t", "ui.dismiss")
+                put("surface", surface)
+                put("action_id", request.actionId)
+                put("nonce", request.nonce)
+            },
+        )
     }
 
     fun say(surface: String): List<Utterance> = attempt(surface) { core.say(surface) }.orEmpty()
@@ -181,6 +209,8 @@ class PolyuiSession(
 
     companion object {
         const val APP_CALLS_FEATURE = "app_calls"
+        const val APP_CONTEXT_FEATURE = "app_context"
+        const val DISMISS_FEATURE = "dismiss"
         internal const val APP_CALL_TIMEOUT_MILLIS = 90_000L
         private const val REFUSED_CODE = -32000
 

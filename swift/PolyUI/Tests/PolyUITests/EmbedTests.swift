@@ -46,7 +46,7 @@ struct EmbedEventTests {
         let read = { (fields: JSONValue) in EmbedEvent.read(body(fields), isMainFrame: true, nonce: nonce) }
         #expect(read(["kind": "app-call", "id": "", "method": "tools/call", "params": [:], "nonce": .string(nonce)]) == nil)
         #expect(read(["kind": "app-call", "id": .string(String(repeating: "a", count: 65)), "method": "tools/call", "params": [:], "nonce": .string(nonce)]) == nil)
-        #expect(read(["kind": "app-call", "id": "c-1", "method": "ui/update-model-context", "params": [:], "nonce": .string(nonce)]) == nil)
+        #expect(read(["kind": "app-call", "id": "c-1", "method": "ui/message", "params": [:], "nonce": .string(nonce)]) == nil)
         #expect(read(["kind": "app-call", "id": "c-1", "method": "tools/call", "params": "x", "nonce": .string(nonce)]) == nil)
         #expect(read(["kind": "app-call", "id": "c-1", "method": "tools/call", "nonce": .string(nonce)]) == nil)
     }
@@ -176,6 +176,35 @@ struct AppCallSessionTests {
         #expect(answers.isEmpty)
     }
 
+    @Test func aNoGoesToTheServerOnlyWhenItAcceptedDismiss() throws {
+        let (session, messages) = try session()
+        let open = #"{"v":1,"t":"ui.open","surface":"s1","seq":1,"root":"pay","components":[{"id":"pay","type":"Button","props":{"label":"Pay","on_press":{"action_id":"act_pay","confirm":true}}}],"data":{}}"#
+        let ask = #"{"v":1,"t":"ui.confirm","surface":"s1","action_id":"act_pay","nonce":"n_1","title":"Pay"}"#
+        session.receive(open)
+        session.receive(ask)
+        session.cancelConfirm(surface: "s1")
+        #expect(!messages().contains { $0["t"] == "ui.dismiss" })
+
+        session.receive(#"{"v":1,"t":"welcome","session":"sess_1","catalogs":["core@1"],"features":["dismiss","app_calls","app_context"]}"#)
+        #expect(session.dismisses && session.appCalls && session.appContext)
+        session.receive(ask)
+        session.cancelConfirm(surface: "s1")
+        session.cancelConfirm(surface: "s1")
+        let sent = messages().filter { $0["t"] == "ui.dismiss" }
+        #expect(sent == [["v": 1, "t": "ui.dismiss", "surface": "s1", "action_id": "act_pay", "nonce": "n_1"]])
+        #expect(session.surface("s1").pendingConfirm == nil)
+
+        session.receive(ask)
+        session.dismissConfirm(surface: "s1")
+        #expect(messages().filter { $0["t"] == "ui.dismiss" }.count == 1)
+    }
+
+    @Test func appContextNeedsAppCalls() throws {
+        let (session, _) = try session()
+        session.receive(#"{"v":1,"t":"welcome","session":"sess_1","catalogs":["core@1"],"features":["app_context"]}"#)
+        #expect(!session.appContext)
+    }
+
     @Test func aCallTheServerNeverAnswersTimesOut() async throws {
         let (session, _) = try session()
         session.appCallTimeout = .milliseconds(50)
@@ -195,6 +224,8 @@ struct EmbedPageTests {
         let page = try PolyUICore.embedPage(propsJSON: #"{"resource":"ui://a/b","title":"T"}"#, nonce: nonce)
         #expect(page.contains(nonce))
         #expect(page.hasPrefix("<!doctype html>"))
+        let context = try PolyUICore.embedPage(propsJSON: "{}", nonce: nonce, appCalls: true, appContext: true)
+        #expect(context.contains(#"const host = {"app_calls":true,"app_context":true};"#))
     }
 
     @Test func badInputIsAnError() {

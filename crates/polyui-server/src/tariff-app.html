@@ -43,6 +43,7 @@
         let current = "";
         let best = null;
         let serverTools = false;
+        let modelContext = false;
         let quoteTimer = 0;
         let quoteAsked = 0;
         const byId = (id) => document.getElementById(id);
@@ -96,7 +97,14 @@
             byId("quote").textContent = text;
           };
           request("tools/call", { name: "quote_tariffs", arguments: { usage_gb: Number(byId("usage").value), people: Number(byId("people").value) } })
-            .then((result) => show(`Provider quote: ${result.content.map((block) => block.text).join(" ")}`))
+            .then((result) => {
+              const quoted = result.content.map((block) => block.text).join(" ");
+              show(`Provider quote: ${quoted}`);
+              if (modelContext) {
+                const text = `The family set the calculator to ${byId("usage").value} GB a month with ${byId("people").value} people online at once. ${quoted}`;
+                request("ui/update-model-context", { content: [{ type: "text", text }] }).catch(() => undefined);
+              }
+            })
             .catch((error) => show(`Could not get a quote: ${error.message}`));
         };
 
@@ -153,6 +161,7 @@
         request("ui/initialize", { appInfo: { name: "Bills tariff calculator", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then((result) => {
           applyTheme(result && result.hostContext && result.hostContext.theme);
           serverTools = Boolean(result && result.hostCapabilities && result.hostCapabilities.serverTools);
+          modelContext = Boolean(result && result.hostCapabilities && result.hostCapabilities.updateModelContext);
           notify("ui/notifications/initialized", {});
           const report = () => notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
           new ResizeObserver(report).observe(document.body);

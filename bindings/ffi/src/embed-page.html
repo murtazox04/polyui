@@ -23,8 +23,9 @@
         const messageGapMs = 1000;
         const openAppCalls = 4;
         const paramsBytes = 65536;
-        const proxiedMethods = ["tools/call", "resources/read"];
         const appCalls = host.app_calls === true;
+        const appContext = appCalls && host.app_context === true;
+        const proxiedMethods = appContext ? ["tools/call", "resources/read", "ui/update-model-context"] : ["tools/call", "resources/read"];
         const callPrefix = Array.from(crypto.getRandomValues(new Uint8Array(6)), (byte) => byte.toString(16).padStart(2, "0")).join("");
         const reserved = "ui/notifications/sandbox-";
         const cspKeys = ["connectDomains", "resourceDomains", "frameDomains", "baseUriDomains"];
@@ -158,7 +159,9 @@
             reply(id, {
               protocolVersion: "2026-01-26",
               hostInfo: { name: "polyui-native", version: "0.1.0" },
-              hostCapabilities: appCalls ? { openLinks: {}, serverTools: {}, serverResources: {} } : { openLinks: {} },
+              hostCapabilities: appContext
+                ? { openLinks: {}, serverTools: {}, serverResources: {}, updateModelContext: { text: {} } }
+                : appCalls ? { openLinks: {}, serverTools: {}, serverResources: {} } : { openLinks: {} },
               hostContext: {
                 theme: (theme = currentTheme()),
                 displayMode: "inline",

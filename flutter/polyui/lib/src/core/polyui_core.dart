@@ -187,6 +187,7 @@ final class PolyuiCore implements Finalizable {
     required String propsJson,
     required String nonce,
     bool appCalls = false,
+    bool appContext = false,
   }) => using((arena) {
     final error = arena<Pointer<Utf8>>()..value = nullptr;
     final props = nativeText(propsJson, arena, 'the embed props');
@@ -196,7 +197,7 @@ final class PolyuiCore implements Finalizable {
             props,
             pageNonce,
             nativeText(
-              jsonEncode({'app_calls': true}),
+              jsonEncode({'app_calls': true, 'app_context': appContext}),
               arena,
               'the embed host options',
             ),

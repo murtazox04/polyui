@@ -186,9 +186,14 @@ public final class PolyUICore {
         return raw == "null" ? nil : try Self.decode(VoiceMatch.self, from: raw)
     }
 
-    public nonisolated static func embedPage(propsJSON: String, nonce: String, appCalls: Bool = false) throws -> String {
+    public nonisolated static func embedPage(
+        propsJSON: String,
+        nonce: String,
+        appCalls: Bool = false,
+        appContext: Bool = false
+    ) throws -> String {
         var error: UnsafeMutablePointer<CChar>?
-        let host = appCalls ? #"{"app_calls":true}"# : #"{"app_calls":false}"#
+        let host = #"{"app_calls":\#(appCalls),"app_context":\#(appContext)}"#
         let page = propsJSON.withCString { props in
             nonce.withCString { nonceText in
                 host.withCString { polyui_embed_page_with(props, nonceText, $0, &error) }

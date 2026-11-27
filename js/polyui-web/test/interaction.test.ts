@@ -161,6 +161,23 @@ describe("Button and confirm", () => {
     expect(h.core.calls.some((call) => call.method === "confirm")).toBe(false);
   });
 
+  it("tells a server that accepted dismiss when the person says no, and only then", () => {
+    const h = harness();
+    h.renderer.receive(JSON.stringify({ v: 1, t: "welcome", session: "sess_1", catalogs: ["core@1"], features: ["dismiss"] }));
+    h.play({ surface: "s1", ops: [{ op: "confirm", action_id: "act_1", nonce: "n1", title: "Delete card?" }] });
+    h.find<HTMLButtonElement>("dialog.pui-confirm .pui-button").click();
+    expect(h.messages().filter((message) => message["t"] === "ui.dismiss")).toEqual([{ v: 1, t: "ui.dismiss", surface: "s1", action_id: "act_1", nonce: "n1" }]);
+
+    h.play({ surface: "s1", ops: [{ op: "confirm", action_id: "act_2", nonce: "n2", title: "Pay?" }] });
+    h.find<HTMLButtonElement>("dialog.pui-confirm .pui-button[data-tone=primary]").click();
+    expect(h.messages().filter((message) => message["t"] === "ui.dismiss")).toHaveLength(1);
+
+    h.renderer.receive(JSON.stringify({ v: 1, t: "welcome", session: "sess_2", catalogs: ["core@1"] }));
+    h.play({ surface: "s1", ops: [{ op: "confirm", action_id: "act_3", nonce: "n3", title: "Delete?" }] });
+    h.find<HTMLButtonElement>("dialog.pui-confirm .pui-button").click();
+    expect(h.messages().filter((message) => message["t"] === "ui.dismiss")).toHaveLength(1);
+  });
+
   it("arms the confirm button after a delay and disables it on expiry", () => {
     vi.useFakeTimers();
     const h = harness({ confirmDelayMs: 400 });

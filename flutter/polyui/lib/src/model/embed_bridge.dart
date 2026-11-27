@@ -11,7 +11,12 @@ const embedChannelName = 'polyui';
 const embedNonceLength = 32;
 const embedMinHeight = 80.0;
 const embedAppCallIdLength = 64;
-const embedAppCallMethods = {'tools/call', 'resources/read'};
+const embedAppContextMethod = 'ui/update-model-context';
+const embedAppCallMethods = {
+  'tools/call',
+  'resources/read',
+  embedAppContextMethod,
+};
 
 const nonceAlphabet =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';

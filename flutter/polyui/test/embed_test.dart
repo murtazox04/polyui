@@ -405,7 +405,10 @@ void main() {
       harness.session.receive(welcome(['resume']));
       await show(tester, embed());
       final page = web.last;
-      expect(page.pages.single, contains('const host = {"app_calls":false};'));
+      expect(
+        page.pages.single,
+        contains('const host = {"app_calls":false,"app_context":false};'),
+      );
 
       page.post(forecastCall(page.nonce));
       await tester.pumpAndSettle();
@@ -424,7 +427,10 @@ void main() {
       harness.session.receive(welcome(['stream', 'app_calls']));
       await show(tester, embed());
       final page = web.last;
-      expect(page.pages.single, contains('const host = {"app_calls":true};'));
+      expect(
+        page.pages.single,
+        contains('const host = {"app_calls":true,"app_context":false};'),
+      );
 
       page.post(forecastCall(page.nonce));
       page.post({
@@ -596,6 +602,79 @@ void main() {
       expect(
         page.scripts.where((script) => script.contains('answerApp')),
         isEmpty,
+      );
+    });
+
+    Map<String, Object?> contextUpdate(String nonce) => {
+      'kind': 'app-call',
+      'id': 'p-ctx',
+      'method': 'ui/update-model-context',
+      'params': {
+        'content': [
+          {'type': 'text', 'text': 'Picked Samarkand'},
+        ],
+      },
+      'nonce': nonce,
+    };
+
+    testWidgets('with app context the page offers it and updates go out', (
+      tester,
+    ) async {
+      harness.session.receive(welcome(['app_calls', 'app_context']));
+      await show(tester, embed());
+      final page = web.last;
+      expect(
+        page.pages.single,
+        contains('const host = {"app_calls":true,"app_context":true};'),
+      );
+      expect(page.pages.single, contains('updateModelContext: { text: {} }'));
+
+      page.post(contextUpdate(page.nonce));
+      await tester.pumpAndSettle();
+      expect(calls(), [
+        {
+          'v': 1,
+          't': 'app.call',
+          'surface': 's1',
+          'embed': 'forecast',
+          'id': 'a1',
+          'method': 'ui/update-model-context',
+          'params': {
+            'content': [
+              {'type': 'text', 'text': 'Picked Samarkand'},
+            ],
+          },
+        },
+      ]);
+      harness.session.receiveJson({
+        'v': 1,
+        't': 'app.result',
+        'surface': 's1',
+        'embed': 'forecast',
+        'id': 'a1',
+        'result': <String, Object?>{},
+      });
+      await tester.pumpAndSettle();
+      expect(
+        page.scripts.last,
+        answerScript('p-ctx', {'result': <String, Object?>{}}),
+      );
+    });
+
+    testWidgets('without app context an update is refused on the device', (
+      tester,
+    ) async {
+      harness.session.receive(welcome(['app_calls']));
+      await show(tester, embed());
+      final page = web.last;
+      page.post(contextUpdate(page.nonce));
+      await tester.pumpAndSettle();
+      expect(calls(), isEmpty);
+      expect(
+        page.scripts.last,
+        answerScript('p-ctx', {
+          'error': {'code': -32601, 'message': 'Method not found'},
+        }),
       );
     });
 

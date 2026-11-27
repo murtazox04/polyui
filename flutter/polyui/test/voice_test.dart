@@ -145,6 +145,13 @@ void main() {
   testWidgets('a spoken yes confirms the open sheet and closes it', (
     tester,
   ) async {
+    harness.session.receiveJson({
+      'v': 1,
+      't': 'welcome',
+      'session': 'sess_1',
+      'catalogs': ['core@1'],
+      'features': ['dismiss'],
+    });
     await tester.pumpWidget(harness.app());
     await tester.pumpAndSettle();
     await tester.tap(find.text('Gas'));
@@ -163,9 +170,17 @@ void main() {
     expect(confirmed['source'], 'voice');
     expect(harness.session.surface('s1').pendingConfirm, isNull);
     expect(find.byKey(const ValueKey('polyui-confirm')), findsNothing);
+    expect(harness.messages.where((m) => m['t'] == 'ui.dismiss'), isEmpty);
   });
 
   testWidgets('a spoken no closes the sheet and sends nothing', (tester) async {
+    harness.session.receiveJson({
+      'v': 1,
+      't': 'welcome',
+      'session': 'sess_1',
+      'catalogs': ['core@1'],
+      'features': ['dismiss'],
+    });
     await tester.pumpWidget(harness.app());
     await tester.pumpAndSettle();
     harness.confirm(actionId: 'act_pay', nonce: 'n_voice');
@@ -175,6 +190,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(harness.actions, hasLength(before));
     expect(find.byKey(const ValueKey('polyui-confirm')), findsNothing);
+    expect(harness.messages.where((m) => m['t'] == 'ui.dismiss'), isEmpty);
   });
 
   test('listening hands the final transcript to match_voice', () async {

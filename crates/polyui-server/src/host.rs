@@ -211,6 +211,11 @@ pub trait Host: Send + Sync + 'static {
         false
     }
 
+    fn app_context(&self, user: &User, app: &str) -> bool {
+        let _ = (user, app);
+        false
+    }
+
     fn app_confirm(
         &self,
         user: &User,

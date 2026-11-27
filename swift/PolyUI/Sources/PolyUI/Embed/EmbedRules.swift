@@ -74,7 +74,7 @@ enum EmbedEvent: Equatable, Sendable {
 
     static let longestBody = 98_304
     static let longestCallID = 64
-    static let appMethods: Set<String> = ["tools/call", "resources/read"]
+    static let appMethods: Set<String> = ["tools/call", "resources/read", "ui/update-model-context"]
 
     static func read(_ body: Any, isMainFrame: Bool, nonce: String) -> EmbedEvent? {
         guard isMainFrame, let text = body as? String, text.utf8.count <= longestBody,

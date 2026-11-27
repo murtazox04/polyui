@@ -287,6 +287,33 @@ class EmbedUiTest {
     }
 
     @Test
+    fun aModelContextUpdateGoesToTheServerWhenAppContextIsOn() {
+        rule.runOnIdle { session.receive(welcome("""["app_calls","app_context"]""")) }
+        show(open(app()))
+        waitForWebText("Mild days ahead.")
+        clickWebButton("Share context")
+        rule.waitUntil(WEB_TIMEOUT) { appCalls().isNotEmpty() }
+        val call = appCalls().single()
+        assertEquals("ui/update-model-context", call["method"].stringValue)
+        assertEquals("Usage 320 kWh", call["params"]["content"].arrayValue?.single()["text"].stringValue)
+        val id = call["id"].stringValue.orEmpty()
+        rule.runOnIdle {
+            session.receive("""{"v":1,"t":"app.result","seq":2,"surface":"s1","embed":"forecast","id":"$id","result":{}}""")
+        }
+        waitForWebText("Context shared")
+    }
+
+    @Test
+    fun withoutAppContextAModelContextUpdateIsRefusedAndNothingIsSent() {
+        rule.runOnIdle { session.receive(welcome("""["app_calls"]""")) }
+        show(open(app()))
+        waitForWebText("Mild days ahead.")
+        clickWebButton("Share context")
+        waitForWebText("Method not found")
+        assertEquals(emptyList<JsonElement>(), appCalls())
+    }
+
+    @Test
     fun withoutAnAppTheTitleShowsAndNoWebViewIsMade() {
         show(open(null))
         rule.onNodeWithContentDescription(TITLE).assertIsDisplayed()

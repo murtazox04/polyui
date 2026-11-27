@@ -109,7 +109,8 @@ private fun EmbedFrame(
     val nonce = remember { PolyuiEmbed.newNonce() }
     val firstProps = remember { node.props }
     val appCalls = remember { scope.session.appCalls }
-    val page = remember { runCatching { PolyuiEmbed.page(firstProps, nonce, appCalls) }.getOrNull() }
+    val appContext = remember { appCalls && scope.session.appContext }
+    val page = remember { runCatching { PolyuiEmbed.page(firstProps, nonce, appCalls, appContext) }.getOrNull() }
     val reload by rememberUpdatedState(onReload)
     val giveUp by rememberUpdatedState(onUnavailable)
     if (page == null) {
@@ -122,6 +123,7 @@ private fun EmbedFrame(
                 nonce = nonce,
                 heights = heights,
                 appCalls = appCalls,
+                appContext = appContext,
                 onHeight = { height = it },
                 onMessage = { text ->
                     scope.session.fire(scope.surface.id, node.id, "on_message", buildJsonObject { put("text", text) })
@@ -183,6 +185,7 @@ internal class EmbedBridge(
     private val onLink: (PolyuiLinkRequest) -> Unit,
     private val onUnavailable: () -> Unit,
     private val appCalls: Boolean,
+    private val appContext: Boolean,
     private val onAppCall: (PolyuiEmbedEvent.AppCall, (JsonObject) -> Unit) -> () -> Unit,
 ) {
     private val gate = PolyuiMessageGate()
@@ -343,26 +346,19 @@ internal class EmbedBridge(
         call: PolyuiEmbedEvent.AppCall,
     ) {
         if (call.id in openCalls) return
-        when {
-            !appCalls -> {
-                answerApp(view, call.id, refusal(METHOD_NOT_FOUND, "Method not found"))
-            }
-
-            openCalls.size >= PolyuiEmbed.OPEN_APP_CALLS -> {
-                answerApp(view, call.id, refusal(REFUSED, "Too many requests are still open"))
-            }
-
-            else -> {
-                var finished = false
-                val cancel =
-                    onAppCall(call) { answer ->
-                        finished = true
-                        openCalls.remove(call.id)
-                        answerApp(view, call.id, answer)
-                    }
-                if (!finished) openCalls[call.id] = cancel
-            }
+        val refused = PolyuiEmbed.refusal(call.method, appCalls, appContext, openCalls.size)
+        if (refused != null) {
+            answerApp(view, call.id, refused)
+            return
         }
+        var finished = false
+        val cancel =
+            onAppCall(call) { answer ->
+                finished = true
+                openCalls.remove(call.id)
+                answerApp(view, call.id, answer)
+            }
+        if (!finished) openCalls[call.id] = cancel
     }
 
     private fun answerApp(
@@ -382,22 +378,6 @@ internal class EmbedBridge(
 
     private companion object {
         const val TEARDOWN_MILLIS = 500L
-        const val METHOD_NOT_FOUND = -32601
-        const val REFUSED = -32000
-
-        fun refusal(
-            code: Int,
-            message: String,
-        ): JsonObject =
-            buildJsonObject {
-                put(
-                    "error",
-                    buildJsonObject {
-                        put("code", code)
-                        put("message", message)
-                    },
-                )
-            }
     }
 }
 
