@@ -1,3 +1,8 @@
+## 0.1.8
+
+- Cancel on a confirm sheet tells the server at once (`ui.dismiss`) when the server accepts the `dismiss` feature.
+- An embedded MCP App can send `ui/update-model-context` when the server accepts the `app_context` feature.
+
 ## 0.1.7
 
 - An app call that the server asks a person about waits in the renderer's confirm sheet; the session waits 90 seconds for an app call answer instead of 40.
