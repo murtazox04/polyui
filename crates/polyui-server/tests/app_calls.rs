@@ -2,8 +2,10 @@ use futures_util::future::BoxFuture;
 use polyui_core::protocol::{self, Hello};
 use polyui_core::{ActionRegistry, CatalogSet, Locale, RefResolver};
 use polyui_server::apps::callable_by_app;
-use polyui_server::bills::{BillsHost, HOUSEHOLD_USER, QUOTE_TARIFFS, TARIFF_APP_URI};
-use polyui_server::session::{APP_CALLS_FEATURE, APP_RESULT};
+use polyui_server::bills::{
+    BillsHost, HOUSEHOLD_USER, QUOTE_TARIFFS, SWITCH_TARIFF, TARIFF_APP_URI,
+};
+use polyui_server::session::{APP_CALLS_FEATURE, APP_NOT_CONFIRMED, APP_QUESTION_OPEN, APP_RESULT};
 use polyui_server::{
     ActionCall, ActionOutcome, Agent, AgentConfig, AppError, AppRequest, ConfirmText, Host,
     ScriptedProvider, ScriptedReply, Session, TurnRate, UiResource, User,
@@ -80,6 +82,15 @@ impl Host for TestHost {
 
     fn app_calls(&self) -> bool {
         self.inner.app_calls()
+    }
+
+    fn app_confirm(
+        &self,
+        user: &User,
+        request: AppRequest<'_>,
+        locale: Locale,
+    ) -> Option<ConfirmText> {
+        self.inner.app_confirm(user, request, locale)
     }
 
     fn app_request<'a>(
@@ -472,4 +483,143 @@ async fn answers_that_do_not_fit_are_replaced() {
             .unwrap()
             .contains("too large")
     );
+}
+
+impl Harness {
+    async fn switch(&self, id: &str, offer: &str) {
+        self.call(
+            "calc",
+            id,
+            "tools/call",
+            json!({ "name": SWITCH_TARIFF, "arguments": { "offer": offer } }),
+        )
+        .await;
+    }
+
+    async fn confirm(&self, action_id: &str, nonce: &str) {
+        let message = json!({ "v": 1, "t": "ui.action", "surface": self.surface, "action_id": action_id, "confirm": nonce, "source": "tap" });
+        self.session.receive(&message.to_string()).await;
+    }
+
+    async fn question(&mut self) -> Value {
+        let message = self.next().await;
+        assert_eq!(message["t"], "ui.confirm", "{message}");
+        message
+    }
+}
+
+#[tokio::test]
+async fn a_switch_waits_for_the_person_and_then_runs() {
+    let mut harness = open(&[APP_CALLS_FEATURE]).await;
+    let calls_before = harness.provider.requests().len();
+    harness.switch("s1", "oila_100").await;
+    let question = harness.question().await;
+    assert_eq!(question["surface"], harness.surface);
+    let action_id = question["action_id"].as_str().unwrap().to_string();
+    assert!(action_id.starts_with("app_"), "{action_id}");
+    assert!(question["title"].as_str().unwrap().contains("Oila 100"));
+    assert!(question["body"].as_str().unwrap().contains("149 000,00"));
+    assert_eq!(question["confirm_label"], "Switch");
+    assert_eq!(question["expires_ms"], 30_000);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), harness.outgoing.recv())
+            .await
+            .is_err(),
+        "nothing runs before the person answers"
+    );
+
+    harness
+        .confirm(&action_id, question["nonce"].as_str().unwrap())
+        .await;
+    let accepted = harness.next().await;
+    assert_eq!(accepted["t"], "ui.action.result");
+    assert_eq!(accepted["action_id"], action_id.as_str());
+    assert_eq!(accepted["status"], "ok");
+    let result = harness.result().await;
+    assert_eq!(result["id"], "s1");
+    assert_eq!(result["result"]["structuredContent"]["offer"], "oila_100");
+    assert_eq!(harness.provider.requests().len(), calls_before);
+}
+
+#[tokio::test]
+async fn a_wrong_or_missing_nonce_does_not_count_as_a_yes() {
+    let mut harness = open(&[APP_CALLS_FEATURE]).await;
+    harness.switch("s1", "turbo_200").await;
+    let question = harness.question().await;
+    let action_id = question["action_id"].as_str().unwrap().to_string();
+    let nonce = question["nonce"].as_str().unwrap().to_string();
+
+    harness.confirm(&action_id, "n_forged").await;
+    let forged = harness.next().await;
+    assert_eq!(forged["status"], "rejected");
+    let unconfirmed = json!({ "v": 1, "t": "ui.action", "surface": harness.surface, "action_id": action_id, "source": "tap" });
+    harness.session.receive(&unconfirmed.to_string()).await;
+    assert_eq!(harness.next().await["status"], "rejected");
+
+    harness.confirm(&action_id, &nonce).await;
+    assert_eq!(harness.next().await["status"], "ok");
+    let result = harness.result().await;
+    assert_eq!(result["result"]["structuredContent"]["offer"], "turbo_200");
+
+    harness.confirm(&action_id, &nonce).await;
+    assert_eq!(harness.next().await["status"], "rejected");
+}
+
+#[tokio::test]
+async fn an_unanswered_question_expires_and_the_app_hears_no() {
+    let config = AgentConfig {
+        app_call_timeout: Duration::from_millis(150),
+        ..AgentConfig::default()
+    };
+    let mut harness = open_with(TestHost::new(Answer::Bills), config, &[APP_CALLS_FEATURE]).await;
+    harness.switch("s1", "oila_100").await;
+    let question = harness.question().await;
+    assert_eq!(question["expires_ms"], 150);
+    let expired = harness.next().await;
+    assert_eq!(expired["t"], "ui.action.result");
+    assert_eq!(expired["status"], "expired");
+    let refused = harness.result().await;
+    assert_eq!(error_code(&refused), -32000);
+    assert_eq!(refused["error"]["message"], APP_NOT_CONFIRMED);
+
+    harness
+        .confirm(
+            question["action_id"].as_str().unwrap(),
+            question["nonce"].as_str().unwrap(),
+        )
+        .await;
+    assert_eq!(harness.next().await["status"], "rejected");
+}
+
+#[tokio::test]
+async fn one_question_at_a_time_and_quotes_still_flow() {
+    let mut harness = open(&[APP_CALLS_FEATURE]).await;
+    harness.switch("s1", "oila_100").await;
+    let question = harness.question().await;
+    harness.switch("s2", "turbo_200").await;
+    let second = harness.result().await;
+    assert_eq!(second["id"], "s2");
+    assert_eq!(second["error"]["message"], APP_QUESTION_OPEN);
+
+    harness
+        .quote("q1", json!({ "usage_gb": 240, "people": 3 }))
+        .await;
+    assert!(harness.result().await.get("error").is_none());
+
+    let resumed = harness.session.resume_messages(Vec::new());
+    let again = resumed
+        .iter()
+        .find(|message| message["t"] == "ui.confirm")
+        .expect("the open question is sent again on resume");
+    assert_eq!(again["action_id"], question["action_id"]);
+    assert!(again["expires_ms"].as_u64().unwrap() <= 30_000);
+
+    harness
+        .confirm(
+            question["action_id"].as_str().unwrap(),
+            question["nonce"].as_str().unwrap(),
+        )
+        .await;
+    assert_eq!(harness.next().await["status"], "ok");
+    assert_eq!(harness.result().await["id"], "s1");
 }

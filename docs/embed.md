@@ -220,13 +220,19 @@ sequenceDiagram
 
 - refuse a tool whose `_meta.ui.visibility` leaves out `"app"`; `polyui_server::apps::callable_by_app(&tool)` reads it with the spec's default of `["model", "app"]`,
 - refuse any tool or resource that is not on the MCP server the app URI came from,
-- keep tools that move money or delete things out of `"app"` visibility: an app call has no confirmation sheet yet.
+- for tools that move money, change a contract or delete things, return a `ConfirmText` from `Host::app_confirm` so a person says yes first (below).
 
-The bills host shows the whole shape in `crates/polyui-server/src/bills.rs` (`app_tools`, `quote_tariffs` and its `app_request`).
+The bills host shows the whole shape in `crates/polyui-server/src/bills.rs` (`app_tools`, `quote_tariffs`, `switch_tariff`, `app_confirm` and `app_request`).
+
+**A person says yes first.** `Host::app_confirm(user, request, locale)` runs after the server's checks and before `app_request`. Return `None` to go on, or a `ConfirmText` built from the tool name and arguments you know, never from text the app sent. The server then sends a normal `ui.confirm` with an `action_id` that starts with `app_`, every renderer shows it in its own sheet outside the app's frame, and only a `ui.action` with the matching nonce runs the call ([ADR 4](adr/0004-confirming-an-app-call.md)). The question lives for `app_call_timeout` (30 seconds) and only one app question is open per session. When nobody says yes in time, the confirm gets `ui.action.result` `expired` and the app gets `-32000` "The person did not confirm this request." Cancel in the sheet does not reach the server, so after a cancel the app hears this answer when the 30 seconds are over.
+
+| Web | iOS | Android |
+|---|---|---|
+| ![The renderer's own sheet asking to switch the internet tariff to Oila 100, over the tariff app in the web chat](images/web-app-confirm.png) | ![The same question in the iOS example's sheet](images/ios-app-confirm.png) | ![The same question in the Android example's sheet](images/android-app-confirm.png) |
 
 **Server.** The session accepts app calls when the host says yes, the client declared `app_calls` and `embed@1` was negotiated; `welcome.features` then lists `app_calls`. `AgentConfig` holds the limits: `open_app_calls` (4 per session), `app_call_rate` (30 a minute per embed), `app_call_timeout` (30 seconds) and `max_app_params_bytes` (64 KiB). Calls and results never enter the model's history.
 
-**Renderers.** The web renderer, `PolyUISession` on iOS, and the Android and Flutter sessions read `welcome.features` and route `app.result` back to the right frame by surface, embed and their own call id. They advertise `serverTools` and `serverResources` to the app only when app calls are on, allow 4 open calls per embed, and answer a call the server never answers with a timeout error after 40 seconds. A host app that handles server messages itself, like the web chat example, has to pass `app.result` to the renderer the same way it passes `ui.*` messages. Native pages are built with `polyui_embed_page_with(props, nonce, host)`, where `host` is `{"app_calls": true}` or `false`.
+**Renderers.** The web renderer, `PolyUISession` on iOS, and the Android and Flutter sessions read `welcome.features` and route `app.result` back to the right frame by surface, embed and their own call id. They advertise `serverTools` and `serverResources` to the app only when app calls are on, allow 4 open calls per embed, and answer a call the server never answers with a timeout error after 90 seconds, which leaves room for a 30 second question and a 30 second host call. A host app that handles server messages itself, like the web chat example, has to pass `app.result` to the renderer the same way it passes `ui.*` messages. Native pages are built with `polyui_embed_page_with(props, nonce, host)`, where `host` is `{"app_calls": true}` or `false`.
 
 The Python and Node bindings have no transport, so app calls are a feature of `polyui-server` and of hosts that implement the same messages.
 

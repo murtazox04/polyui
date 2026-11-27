@@ -25,7 +25,7 @@ class PolyuiSession extends ChangeNotifier {
   );
 
   static const appCallsFeature = 'app_calls';
-  static const appCallTimeout = Duration(seconds: 40);
+  static const appCallTimeout = Duration(seconds: 90);
   static const Map<String, Object?> appCallTimedOut = {
     'error': {'code': -32000, 'message': 'The app request timed out.'},
   };

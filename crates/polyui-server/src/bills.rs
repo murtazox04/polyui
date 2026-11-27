@@ -22,6 +22,7 @@ pub const TARIFF_APP_URI: &str = "ui://bills/tariff";
 pub const TARIFF_APP_HTML: &str = include_str!("tariff-app.html");
 pub const TARIFF_MESSAGE: &str = "tariff_message";
 pub const QUOTE_TARIFFS: &str = "quote_tariffs";
+pub const SWITCH_TARIFF: &str = "switch_tariff";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Service {
@@ -257,20 +258,44 @@ pub fn tariff_app() -> UiResource {
 }
 
 pub fn app_tools() -> Vec<Value> {
-    vec![json!({
-        "name": QUOTE_TARIFFS,
-        "description": "Quote the internet tariffs for a household: the cheapest offer fast enough for the given usage and people online at once.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "usage_gb": { "type": "number", "minimum": 0, "maximum": 10000 },
-                "people": { "type": "integer", "minimum": 1, "maximum": 50 }
+    vec![
+        json!({
+            "name": QUOTE_TARIFFS,
+            "description": "Quote the internet tariffs for a household: the cheapest offer fast enough for the given usage and people online at once.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "usage_gb": { "type": "number", "minimum": 0, "maximum": 10000 },
+                    "people": { "type": "integer", "minimum": 1, "maximum": 50 }
+                },
+                "required": ["usage_gb", "people"],
+                "additionalProperties": false
             },
-            "required": ["usage_gb", "people"],
-            "additionalProperties": false
-        },
-        "_meta": { "ui": { "resourceUri": TARIFF_APP_URI, "visibility": ["app"] } }
-    })]
+            "_meta": { "ui": { "resourceUri": TARIFF_APP_URI, "visibility": ["app"] } }
+        }),
+        json!({
+            "name": SWITCH_TARIFF,
+            "description": "Switch the family's internet to another tariff from next month. A person confirms first.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "offer": { "type": "string", "enum": OFFERS.iter().map(|offer| offer.id).collect::<Vec<_>>() }
+                },
+                "required": ["offer"],
+                "additionalProperties": false
+            },
+            "_meta": { "ui": { "resourceUri": TARIFF_APP_URI, "visibility": ["app"] } }
+        }),
+    ]
+}
+
+fn offer_argument(request: &AppRequest<'_>) -> Option<&'static Offer> {
+    let wanted = request
+        .params
+        .get("arguments")
+        .and_then(|arguments| arguments.get("offer"))
+        .and_then(Value::as_str)?;
+    OFFERS.iter().find(|offer| offer.id == wanted)
 }
 
 pub fn quote_tariffs(arguments: &Map<String, Value>) -> Result<Value, AppError> {
@@ -403,6 +428,18 @@ impl BillsHost {
             ))
     }
 
+    fn switch_tariff(&self, request: &AppRequest<'_>) -> Result<Value, AppError> {
+        let offer = offer_argument(request)
+            .ok_or_else(|| AppError::invalid_params("offer must be one of the tariff ids"))?;
+        if let Ok(mut picked) = self.picked.lock() {
+            *picked = Some(offer.id.to_string());
+        }
+        Ok(json!({
+            "content": [{ "type": "text", "text": format!("Switched to {} from 2026-12-01.", offer.name) }],
+            "structuredContent": { "offer": offer.id, "starts": "2026-12-01" }
+        }))
+    }
+
     fn pick(&self, call: &ActionCall<'_>) -> ActionOutcome {
         let chosen = call
             .args
@@ -443,6 +480,8 @@ enum Phrase {
     FromCard,
     BadPhone,
     PhoneSaved,
+    SwitchTitle,
+    SwitchLabel,
 }
 
 fn text(locale: Locale, phrase: Phrase) -> &'static str {
@@ -460,6 +499,8 @@ fn text(locale: Locale, phrase: Phrase) -> &'static str {
             "Telefon raqamini to'liq kiriting, masalan +998 90 123 45 67."
         }
         (Locale::UzLatn, Phrase::PhoneSaved) => "Raqam saqlandi.",
+        (Locale::UzLatn, Phrase::SwitchTitle) => "Internet tarifini almashtirish",
+        (Locale::UzLatn, Phrase::SwitchLabel) => "Almashtirish",
         (Locale::UzCyrl, Phrase::UnknownBill) => "Бундай ҳисоб топилмади.",
         (Locale::UzCyrl, Phrase::AlreadyPaid) => "Бу ҳисоб аллақачон тўланган.",
         (Locale::UzCyrl, Phrase::TryLater) => "Кейинроқ қайта уриниб кўринг.",
@@ -473,6 +514,8 @@ fn text(locale: Locale, phrase: Phrase) -> &'static str {
             "Телефон рақамини тўлиқ киритинг, масалан +998 90 123 45 67."
         }
         (Locale::UzCyrl, Phrase::PhoneSaved) => "Рақам сақланди.",
+        (Locale::UzCyrl, Phrase::SwitchTitle) => "Интернет тарифини алмаштириш",
+        (Locale::UzCyrl, Phrase::SwitchLabel) => "Алмаштириш",
         (Locale::Ru, Phrase::UnknownBill) => "Такой счёт не найден.",
         (Locale::Ru, Phrase::AlreadyPaid) => "Этот счёт уже оплачен.",
         (Locale::Ru, Phrase::TryLater) => "Попробуйте позже.",
@@ -484,6 +527,8 @@ fn text(locale: Locale, phrase: Phrase) -> &'static str {
         (Locale::Ru, Phrase::FromCard) => "карта",
         (Locale::Ru, Phrase::BadPhone) => "Введите номер полностью, например +998 90 123 45 67.",
         (Locale::Ru, Phrase::PhoneSaved) => "Номер сохранён.",
+        (Locale::Ru, Phrase::SwitchTitle) => "Сменить тариф интернета",
+        (Locale::Ru, Phrase::SwitchLabel) => "Сменить",
         (Locale::En, Phrase::UnknownBill) => "This bill was not found.",
         (Locale::En, Phrase::AlreadyPaid) => "This bill is already paid.",
         (Locale::En, Phrase::TryLater) => "Please try again later.",
@@ -495,6 +540,8 @@ fn text(locale: Locale, phrase: Phrase) -> &'static str {
         (Locale::En, Phrase::FromCard) => "card",
         (Locale::En, Phrase::BadPhone) => "Enter the full number, for example +998 90 123 45 67.",
         (Locale::En, Phrase::PhoneSaved) => "Number saved.",
+        (Locale::En, Phrase::SwitchTitle) => "Switch internet tariff",
+        (Locale::En, Phrase::SwitchLabel) => "Switch",
     }
 }
 
@@ -636,6 +683,30 @@ Internet tariffs:
         self.tariff_app
     }
 
+    fn app_confirm(
+        &self,
+        user: &User,
+        request: AppRequest<'_>,
+        locale: Locale,
+    ) -> Option<ConfirmText> {
+        if !self.tariff_app
+            || user.id != HOUSEHOLD_USER
+            || request.tool_name() != Some(SWITCH_TARIFF)
+        {
+            return None;
+        }
+        let offer = offer_argument(&request)?;
+        Some(ConfirmText {
+            title: format!("{}: {}", text(locale, Phrase::SwitchTitle), offer.name),
+            body: Some(format!(
+                "{} Mbit/s, {} so'm, 2026-12-01",
+                offer.speed_mbps,
+                format_som(offer.price_tiyin)
+            )),
+            confirm_label: Some(text(locale, Phrase::SwitchLabel).to_string()),
+        })
+    }
+
     fn app_request<'a>(
         &'a self,
         user: &'a User,
@@ -653,6 +724,9 @@ Internet tariffs:
                         .any(|tool| tool["name"] == name && apps::callable_by_app(tool));
                     if !callable {
                         return Err(AppError::refused(format!("unknown tool \"{name}\"")));
+                    }
+                    if name == SWITCH_TARIFF {
+                        return self.switch_tariff(&request);
                     }
                     let empty = Map::new();
                     let arguments = request

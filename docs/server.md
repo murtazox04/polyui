@@ -200,7 +200,7 @@ Memory, CPU and model spend have to stay bounded whatever a client sends. These 
 | `turn_rate` | 8 at once, then one more every 4 s | Each `user.say` and each action that runs takes one. When none is left, a `user.say` gets `agent.error` "You are sending messages too quickly. Please wait a moment and try again." and an action is refused before it runs. Set `refill` to zero to turn the limit off. |
 | `open_app_calls` | 4 | App calls (`app.call`, [App calls](embed.md#app-calls)) waiting for the host at once, per session. One more is answered with a `-32000` error before the host is asked. |
 | `app_call_rate` | 30 at once, then one more every 2 s | App calls per embed. When none is left, the call is answered with a `-32000` error. |
-| `app_call_timeout` | 30 s | How long the server waits for `Host::app_request`. After that the app gets a `-32000` "timed out" error. |
+| `app_call_timeout` | 30 s | How long the server waits for `Host::app_request`. After that the app gets a `-32000` "timed out" error. It is also how long a person has to confirm an app call that `Host::app_confirm` asked about. |
 | `max_app_params_bytes` | 64 KiB | The largest `params` an app call may carry. Larger ones get `-32602`. |
 | `max_open_surfaces` | 16 | A `show_ui` that would open one more surface fails like any other invalid call, and the model reads "16 surfaces are already open, which is the most one conversation can have. Close one with close_ui or change one with update_ui." with the list of open surfaces. |
 

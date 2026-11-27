@@ -507,14 +507,14 @@ void main() {
       expect(calls(), isEmpty);
     });
 
-    testWidgets('an unanswered call times out after 40 seconds', (
+    testWidgets('an unanswered call times out after 90 seconds', (
       tester,
     ) async {
       harness.session.receive(welcome(['app_calls']));
       await show(tester, embed());
       final page = web.last;
       page.post(forecastCall(page.nonce));
-      await tester.pump(const Duration(seconds: 39));
+      await tester.pump(const Duration(seconds: 89));
       expect(
         page.scripts.where((script) => script.contains('answerApp')),
         isEmpty,

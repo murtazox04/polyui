@@ -211,6 +211,16 @@ pub trait Host: Send + Sync + 'static {
         false
     }
 
+    fn app_confirm(
+        &self,
+        user: &User,
+        request: AppRequest<'_>,
+        locale: Locale,
+    ) -> Option<ConfirmText> {
+        let _ = (user, request, locale);
+        None
+    }
+
     fn app_request<'a>(
         &'a self,
         user: &'a User,

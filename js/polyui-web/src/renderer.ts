@@ -45,7 +45,7 @@ function asBatch(value: Json | undefined): RenderBatch | null {
 }
 
 export const appCallsFeature = "app_calls";
-const appCallTimeoutMs = 40_000;
+const appCallTimeoutMs = 90_000;
 
 function appKey(surface: string, embed: string, id: string): string {
   return JSON.stringify([surface, embed, id]);
