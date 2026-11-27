@@ -2,6 +2,7 @@ package dev.polyui.example
 
 import android.os.Handler
 import android.os.Looper
+import dev.polyui.PolyuiSession
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -153,6 +154,7 @@ class LiveSocket(
 
     companion object {
         const val RESUME_FEATURE = "resume"
+        private val DECLARED_FEATURES = listOf(RESUME_FEATURE, PolyuiSession.APP_CALLS_FEATURE)
         private const val NORMAL_CLOSURE = 1000
         private val RETRY_SECONDS = listOf(1L, 2L, 4L, 8L, 16L)
 
@@ -169,10 +171,11 @@ class LiveSocket(
         ): String {
             val fields = runCatching { Json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return text
             val features = (fields["features"] as? JsonArray).orEmpty()
-            val hasResume = features.any { it.jsonPrimitive.contentOrNull == RESUME_FEATURE }
+            val named = features.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            val missing = DECLARED_FEATURES.filter { it !in named }.map(::JsonPrimitive)
             return buildJsonObject {
                 fields.forEach { (key, value) -> if (key != "features" && key != "resume") put(key, value) }
-                put("features", JsonArray(if (hasResume) features else features + JsonPrimitive(RESUME_FEATURE)))
+                put("features", JsonArray(features + missing))
                 if (session != null && token != null) {
                     putJsonObject("resume") {
                         put("session", session)

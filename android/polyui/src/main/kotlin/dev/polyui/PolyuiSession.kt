@@ -1,5 +1,7 @@
 package dev.polyui
 
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +29,13 @@ class PolyuiSession(
 
     private val surfaces = LinkedHashMap<String, PolyuiSurfaceModel>()
     private val reportedTypes = HashSet<String>()
+    private val appWaiters = HashMap<AppCallKey, AppWaiter>()
+    private var appCounter = 0
+
+    internal var timer: PolyuiTimer = MainThreadTimer
+
+    internal var appCalls: Boolean = false
+        private set
 
     val surfaceIds: List<String>
         get() = surfaces.keys.toList()
@@ -37,6 +46,14 @@ class PolyuiSession(
     fun surface(id: String): PolyuiSurfaceModel = surfaces.getOrPut(id) { PolyuiSurfaceModel(id) }
 
     fun receive(message: String) {
+        val peeked = peek(message)
+        if (peeked != null) {
+            if (peeked["t"].stringValue == "app.result") {
+                appResult(peeked)
+                return
+            }
+            appCalls = peeked["features"].arrayValue?.any { it.stringValue == APP_CALLS_FEATURE } == true
+        }
         accept(attempt("") { core.receive(message) })
     }
 
@@ -93,7 +110,54 @@ class PolyuiSession(
     }
 
     override fun close() {
+        appWaiters.values.forEach { it.cancelTimer() }
+        appWaiters.clear()
         core.close()
+    }
+
+    internal fun callApp(
+        surface: String,
+        embed: String,
+        method: String,
+        params: JsonObject,
+        done: (JsonObject) -> Unit,
+    ): () -> Unit {
+        appCounter += 1
+        val key = AppCallKey(surface, embed, "a$appCounter")
+        val waiter = AppWaiter(done)
+        appWaiters[key] = waiter
+        waiter.cancelTimer =
+            timer.after(APP_CALL_TIMEOUT_MILLIS) {
+                finishApp(key, appError(JsonPrimitive(REFUSED_CODE), "The app request timed out."))
+            }
+        transmit(
+            buildJsonObject {
+                put("v", 1)
+                put("t", "app.call")
+                put("surface", surface)
+                put("embed", embed)
+                put("id", key.id)
+                put("method", method)
+                put("params", params)
+            },
+        )
+        return { appWaiters.remove(key)?.cancelTimer?.invoke() }
+    }
+
+    private fun finishApp(
+        key: AppCallKey,
+        answer: JsonObject,
+    ) {
+        val waiter = appWaiters.remove(key) ?: return
+        waiter.cancelTimer()
+        waiter.done(answer)
+    }
+
+    private fun appResult(message: JsonObject) {
+        val surface = message["surface"].stringValue ?: return
+        val embed = message["embed"].stringValue ?: return
+        val id = message["id"].stringValue ?: return
+        finishApp(AppCallKey(surface, embed, id), answerOf(message))
     }
 
     internal fun reportUnknown(
@@ -101,6 +165,54 @@ class PolyuiSession(
         type: String,
     ) {
         if (reportedTypes.add(type)) reportError(surface, "unknown_component", type)
+    }
+
+    private class AppWaiter(
+        val done: (JsonObject) -> Unit,
+    ) {
+        var cancelTimer: () -> Unit = {}
+    }
+
+    private data class AppCallKey(
+        val surface: String,
+        val embed: String,
+        val id: String,
+    )
+
+    companion object {
+        const val APP_CALLS_FEATURE = "app_calls"
+        internal const val APP_CALL_TIMEOUT_MILLIS = 40_000L
+        private const val REFUSED_CODE = -32000
+
+        private fun peek(text: String): JsonObject? {
+            if (!text.contains("\"welcome\"") && !text.contains("\"app.result\"")) return null
+            val value = runCatching { parseJson(text, "a server message") }.getOrNull() as? JsonObject ?: return null
+            val type = value["t"].stringValue
+            return value.takeIf { type == "welcome" || type == "app.result" }
+        }
+
+        private fun answerOf(message: JsonObject): JsonObject {
+            val error = message["error"].objectValue
+            if (error != null) {
+                val code = error["code"]?.takeIf { it.doubleValue != null } ?: JsonPrimitive(REFUSED_CODE)
+                return appError(code, error["message"].stringValue ?: "The app request failed.")
+            }
+            return buildJsonObject { message["result"]?.let { put("result", it) } }
+        }
+
+        private fun appError(
+            code: JsonElement,
+            text: String,
+        ): JsonObject =
+            buildJsonObject {
+                put(
+                    "error",
+                    buildJsonObject {
+                        put("code", code)
+                        put("message", text)
+                    },
+                )
+            }
     }
 
     private fun accept(batch: RenderBatch?) {
@@ -143,5 +255,25 @@ class PolyuiSession(
                 put("detail", detail)
             },
         )
+    }
+}
+
+internal fun interface PolyuiTimer {
+    fun after(
+        delayMillis: Long,
+        run: () -> Unit,
+    ): () -> Unit
+}
+
+internal object MainThreadTimer : PolyuiTimer {
+    private val handler by lazy { Handler(Looper.getMainLooper()) }
+
+    override fun after(
+        delayMillis: Long,
+        run: () -> Unit,
+    ): () -> Unit {
+        val task = Runnable(run)
+        handler.postDelayed(task, delayMillis)
+        return { handler.removeCallbacks(task) }
     }
 }

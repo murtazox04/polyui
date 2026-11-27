@@ -229,6 +229,63 @@ class EmbedUiTest {
         assertEquals(emptyList<JsonElement>(), actions())
     }
 
+    private fun appCalls(): List<JsonElement> = sent.filter { it["t"].stringValue == "app.call" }
+
+    private fun welcome(features: String): String =
+        """{"v":1,"t":"welcome","session":"sess_1","catalogs":["core@1","chart@1","embed@1"],"features":$features}"""
+
+    @Test
+    fun aToolCallGoesToTheServerAndItsResultReachesTheApp() {
+        rule.runOnIdle { session.receive(welcome("""["app_calls"]""")) }
+        show(open(app()))
+        waitForWebText("Mild days ahead.")
+        clickWebButton("Price")
+        rule.waitUntil(WEB_TIMEOUT) { appCalls().isNotEmpty() }
+        val call = appCalls().single()
+        assertEquals("s1", call["surface"].stringValue)
+        assertEquals("forecast", call["embed"].stringValue)
+        assertEquals("tools/call", call["method"].stringValue)
+        assertEquals("quote_tariffs", call["params"]["name"].stringValue)
+        assertEquals(320, call["params"]["arguments"]["usage"].doubleValue?.toInt())
+        val id = call["id"].stringValue.orEmpty()
+        rule.runOnIdle {
+            session.receive(
+                """{"v":1,"t":"app.result","seq":2,"surface":"s1","embed":"forecast","id":"other","result":{"content":[{"type":"text","text":"Wrong"}]}}""",
+            )
+            session.receive(
+                """{"v":1,"t":"app.result","seq":3,"surface":"s1","embed":"forecast","id":"$id","result":{"content":[{"type":"text","text":"Price 42 per month"}]}}""",
+            )
+        }
+        waitForWebText("Price 42 per month")
+        assertEquals(emptyList<JsonElement>(), sent.filter { it["t"].stringValue == "ui.error" })
+    }
+
+    @Test
+    fun aServerErrorReachesTheAppAsItsMessage() {
+        rule.runOnIdle { session.receive(welcome("""["resume","app_calls"]""")) }
+        show(open(app()))
+        waitForWebText("Mild days ahead.")
+        clickWebButton("Price")
+        rule.waitUntil(WEB_TIMEOUT) { appCalls().isNotEmpty() }
+        val id = appCalls().single()["id"].stringValue.orEmpty()
+        rule.runOnIdle {
+            session.receive(
+                """{"v":1,"t":"app.result","seq":2,"surface":"s1","embed":"forecast","id":"$id","error":{"code":-32000,"message":"Tool \"quote_tariffs\" is not for apps"}}""",
+            )
+        }
+        waitForWebText("Tool \"quote_tariffs\" is not for apps")
+    }
+
+    @Test
+    fun withoutTheFeatureTheAppCallIsRefusedAndNothingIsSent() {
+        rule.runOnIdle { session.receive(welcome("""["resume"]""")) }
+        show(open(app()))
+        waitForWebText("Mild days ahead.")
+        clickWebButton("Price")
+        waitForWebText("Method not found")
+        assertEquals(emptyList<JsonElement>(), appCalls())
+    }
+
     @Test
     fun withoutAnAppTheTitleShowsAndNoWebViewIsMade() {
         show(open(null))

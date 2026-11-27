@@ -15,9 +15,12 @@ class LiveSocketTest {
     private fun read(text: String) = Json.parseToJsonElement(text).jsonObject
 
     @Test
-    fun theFirstHelloDeclaresResumeWithoutAToken() {
+    fun theFirstHelloDeclaresResumeAndAppCallsWithoutAToken() {
         val sent = read(LiveSocket.helloWith(hello, null, null))
-        assertEquals(JsonArray(listOf(JsonPrimitive("stream"), JsonPrimitive("resume"))), sent["features"])
+        assertEquals(
+            JsonArray(listOf(JsonPrimitive("stream"), JsonPrimitive("resume"), JsonPrimitive("app_calls"))),
+            sent["features"],
+        )
         assertNull(sent["resume"])
         assertEquals("hello", sent["t"]?.jsonPrimitive?.content)
     }
@@ -29,7 +32,7 @@ class LiveSocketTest {
         assertEquals("sess_1", resume?.get("session")?.jsonPrimitive?.content)
         assertEquals("rt_2", resume?.get("token")?.jsonPrimitive?.content)
         val again = read(LiveSocket.helloWith(LiveSocket.helloWith(hello, "sess_1", "rt_2"), null, null))
-        assertEquals(2, (again["features"] as JsonArray).size)
+        assertEquals(3, (again["features"] as JsonArray).size)
         assertNull(again["resume"])
     }
 
