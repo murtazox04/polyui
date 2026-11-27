@@ -113,7 +113,7 @@ The spec and the SDK types disagree on the shape of `ui/message`: the spec shows
 
 ### What the renderer does not do yet
 
-`tools/call`, `resources/read` and `ui/update-model-context` from the app are answered with JSON-RPC error `-32601`, and `hostCapabilities` does not advertise `serverTools` or `serverResources`. `ui/request-display-mode` always answers `inline`. Proxying tool calls needs a server message that does not exist in protocol version 1.
+`tools/call`, `resources/read` and `ui/update-model-context` from the app are answered with JSON-RPC error `-32601`, and `hostCapabilities` does not advertise `serverTools` or `serverResources`. `ui/request-display-mode` always answers `inline`. Proxying tool calls needs a server message that does not exist in protocol version 1. [ADR 3](adr/0003-tool-calls-from-an-embedded-app.md) proposes one.
 
 ## Hosting the sandbox page
 
