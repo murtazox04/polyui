@@ -75,7 +75,7 @@ fun PolyuiSurface(
         PolyuiConfirmRequestSheet(
             request = confirm,
             onConfirm = { session.confirm(model.id, confirm) },
-            onDismiss = { session.dismissConfirm(model.id) },
+            onDismiss = { session.cancelConfirm(model.id, confirm) },
         )
     } else if (link != null) {
         PolyuiLinkSheet(link, model)

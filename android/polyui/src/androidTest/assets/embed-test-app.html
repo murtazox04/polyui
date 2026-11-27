@@ -6,17 +6,18 @@
     <style>
       html, body { margin: 0; height: 200px; overflow: hidden; font: 16px/1.4 sans-serif; background: #ffffff; color: #111111; }
       p { margin: 4px 8px; }
-      button { margin: 4px 8px; padding: 8px 12px; font: inherit; }
+      button { margin: 2px 6px; padding: 2px 8px; font: 14px/1.2 sans-serif; }
     </style>
   </head>
   <body>
     <p>Embedded test app</p>
     <p id="city">Waiting for the tool input</p>
     <p id="summary">Waiting for the tool result.</p>
+    <p id="status">Nothing yet</p>
     <button id="ask" type="button">Ask the assistant</button>
     <button id="docs" type="button">Open the docs</button>
     <button id="price" type="button">Price</button>
-    <p id="status">Nothing yet</p>
+    <button id="share" type="button">Share context</button>
     <script>
       (() => {
         const pending = new Map();
@@ -74,6 +75,12 @@
           byId("status").textContent = "Asking for the price";
           request("tools/call", { name: "quote_tariffs", arguments: { usage: 320 } })
             .then((result) => { byId("status").textContent = result.content.map((block) => block.text).join(" "); })
+            .catch((error) => { byId("status").textContent = error.message; });
+        });
+        byId("share").addEventListener("click", () => {
+          byId("status").textContent = "Sharing the context";
+          request("ui/update-model-context", { content: [{ type: "text", text: "Usage 320 kWh" }] })
+            .then(() => { byId("status").textContent = "Context shared"; })
             .catch((error) => { byId("status").textContent = error.message; });
         });
         request("ui/initialize", { appInfo: { name: "Embed test app", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then((result) => {

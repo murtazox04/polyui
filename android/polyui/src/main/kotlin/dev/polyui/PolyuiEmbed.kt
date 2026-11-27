@@ -67,7 +67,10 @@ internal object PolyuiEmbed {
     const val MESSAGE_GAP_MILLIS = 1000L
     const val CALL_ID_LENGTH = 64
     const val OPEN_APP_CALLS = 4
-    val APP_CALL_METHODS = setOf("tools/call", "resources/read")
+    const val UPDATE_MODEL_CONTEXT = "ui/update-model-context"
+    const val METHOD_NOT_FOUND = -32601
+    const val REFUSED = -32000
+    val APP_CALL_METHODS = setOf("tools/call", "resources/read", UPDATE_MODEL_CONTEXT)
 
     private const val NONCE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
     private const val APP_MIME_TYPE = "text/html;profile=mcp-app"
@@ -81,13 +84,18 @@ internal object PolyuiEmbed {
         props: JsonObject,
         nonce: String,
         appCalls: Boolean = false,
+        appContext: Boolean = false,
     ): String {
         val slot = arrayOfNulls<ByteArray>(1)
         val propsText = props.toString()
         if (propsText.indexOf('\u0000') >= 0 || nonce.indexOf('\u0000') >= 0) {
             throw PolyuiException("PolyUI embed_page: an argument contains a NUL character")
         }
-        val host = buildJsonObject { put("app_calls", appCalls) }.toString()
+        val host =
+            buildJsonObject {
+                put("app_calls", appCalls)
+                put("app_context", appContext)
+            }.toString()
         val page =
             PolyuiNative.embedPageWith(
                 propsText.encodeToByteArray(),
@@ -98,6 +106,33 @@ internal object PolyuiEmbed {
         return page?.decodeToString()
             ?: throw PolyuiException(slot.first()?.decodeToString() ?: "PolyUI embed_page failed without a message")
     }
+
+    fun refusal(
+        method: String,
+        appCalls: Boolean,
+        appContext: Boolean,
+        openCalls: Int,
+    ): JsonObject? =
+        when {
+            !appCalls -> failure(METHOD_NOT_FOUND, "Method not found")
+            method == UPDATE_MODEL_CONTEXT && !appContext -> failure(METHOD_NOT_FOUND, "Method not found")
+            openCalls >= OPEN_APP_CALLS -> failure(REFUSED, "Too many requests are still open")
+            else -> null
+        }
+
+    private fun failure(
+        code: Int,
+        message: String,
+    ): JsonObject =
+        buildJsonObject {
+            put(
+                "error",
+                buildJsonObject {
+                    put("code", code)
+                    put("message", message)
+                },
+            )
+        }
 
     fun appHtml(props: JsonObject): String? {
         val resource = props["app"]["resource"]

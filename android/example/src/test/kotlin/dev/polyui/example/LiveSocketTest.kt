@@ -15,10 +15,10 @@ class LiveSocketTest {
     private fun read(text: String) = Json.parseToJsonElement(text).jsonObject
 
     @Test
-    fun theFirstHelloDeclaresResumeAndAppCallsWithoutAToken() {
+    fun theFirstHelloDeclaresItsFeaturesWithoutAToken() {
         val sent = read(LiveSocket.helloWith(hello, null, null))
         assertEquals(
-            JsonArray(listOf(JsonPrimitive("stream"), JsonPrimitive("resume"), JsonPrimitive("app_calls"))),
+            JsonArray(listOf("stream", "resume", "app_calls", "app_context", "dismiss").map(::JsonPrimitive)),
             sent["features"],
         )
         assertNull(sent["resume"])
@@ -32,8 +32,18 @@ class LiveSocketTest {
         assertEquals("sess_1", resume?.get("session")?.jsonPrimitive?.content)
         assertEquals("rt_2", resume?.get("token")?.jsonPrimitive?.content)
         val again = read(LiveSocket.helloWith(LiveSocket.helloWith(hello, "sess_1", "rt_2"), null, null))
-        assertEquals(3, (again["features"] as JsonArray).size)
+        assertEquals(5, (again["features"] as JsonArray).size)
         assertNull(again["resume"])
+    }
+
+    @Test
+    fun featuresAlreadyNamedAreNotAddedTwice() {
+        val named = """{"v":1,"t":"hello","catalogs":["core@1"],"features":["dismiss","app_calls"]}"""
+        val sent = read(LiveSocket.helloWith(named, null, null))
+        assertEquals(
+            JsonArray(listOf("dismiss", "app_calls", "resume", "app_context").map(::JsonPrimitive)),
+            sent["features"],
+        )
     }
 
     @Test
