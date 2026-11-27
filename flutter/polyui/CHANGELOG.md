@@ -1,3 +1,7 @@
+## 0.1.7
+
+- An app call that the server asks a person about waits in the renderer's confirm sheet; the session waits 90 seconds for an app call answer instead of 40.
+
 ## 0.1.6
 
 - An MCP App inside `embed:Embed` can call `tools/call` and `resources/read` on its own MCP server through the PolyUI server, when the server accepts the `app_calls` feature.

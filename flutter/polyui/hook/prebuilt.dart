@@ -1,4 +1,4 @@
-const prebuiltVersion = '0.1.6';
+const prebuiltVersion = '0.1.7';
 
 const prebuiltHashes = <String, String>{
   'libpolyui_ffi-aarch64-apple-darwin.dylib':

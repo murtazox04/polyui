@@ -68,4 +68,4 @@ Both workflows also run on pull requests that touch them, the release scripts, t
 
 ## What has not happened yet
 
-PyPI is the only registry that is set up. `RELEASE_REGISTRIES` is `pypi`, and `polyui` 0.1.0 to 0.1.6 are on PyPI. The other registry jobs (`crates`, `npm`, `maven`, `pub`) have not run, because they still need the setup above. For those registries, the dry runs and the build jobs are what the pull request checks prove.
+PyPI is the only registry that is set up. `RELEASE_REGISTRIES` is `pypi`, and `polyui` 0.1.0 to 0.1.7 are on PyPI. The other registry jobs (`crates`, `npm`, `maven`, `pub`) have not run, because they still need the setup above. For those registries, the dry runs and the build jobs are what the pull request checks prove.
