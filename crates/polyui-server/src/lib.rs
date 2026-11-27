@@ -16,7 +16,9 @@ pub mod session;
 pub mod shop;
 
 pub use anthropic::{AnthropicProvider, ApiKey};
-pub use host::{ActionCall, ActionOutcome, ConfirmText, Host, UiResource, User};
+pub use host::{
+    ActionCall, ActionOutcome, AppError, AppMethod, AppRequest, ConfirmText, Host, UiResource, User,
+};
 pub use openai::OpenAiCompatProvider;
 pub use provider::{ModelEvent, ModelProvider, ModelRequest, ProviderError, StopReason, Usage};
 pub use scripted::{ScriptedProvider, ScriptedReply};

@@ -1,4 +1,7 @@
-use crate::host::{ActionCall, ActionOutcome, ConfirmText, Host, UiResource, User};
+use crate::apps;
+use crate::host::{
+    ActionCall, ActionOutcome, AppError, AppMethod, AppRequest, ConfirmText, Host, UiResource, User,
+};
 use axum::http::HeaderMap;
 use futures_util::future::BoxFuture;
 use polyui_core::client::MCP_APP_MIME_TYPE;
@@ -18,6 +21,7 @@ pub const CARD_MASK: &str = "**** 4471";
 pub const TARIFF_APP_URI: &str = "ui://bills/tariff";
 pub const TARIFF_APP_HTML: &str = include_str!("tariff-app.html");
 pub const TARIFF_MESSAGE: &str = "tariff_message";
+pub const QUOTE_TARIFFS: &str = "quote_tariffs";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Service {
@@ -250,6 +254,66 @@ pub fn tariff_app() -> UiResource {
     UiResource::new(content)
         .with_tool_input(input)
         .with_tool_result(result)
+}
+
+pub fn app_tools() -> Vec<Value> {
+    vec![json!({
+        "name": QUOTE_TARIFFS,
+        "description": "Quote the internet tariffs for a household: the cheapest offer fast enough for the given usage and people online at once.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "usage_gb": { "type": "number", "minimum": 0, "maximum": 10000 },
+                "people": { "type": "integer", "minimum": 1, "maximum": 50 }
+            },
+            "required": ["usage_gb", "people"],
+            "additionalProperties": false
+        },
+        "_meta": { "ui": { "resourceUri": TARIFF_APP_URI, "visibility": ["app"] } }
+    })]
+}
+
+pub fn quote_tariffs(arguments: &Map<String, Value>) -> Result<Value, AppError> {
+    let usage = arguments
+        .get("usage_gb")
+        .and_then(Value::as_f64)
+        .filter(|usage| (0.0..=10_000.0).contains(usage))
+        .ok_or_else(|| AppError::invalid_params("usage_gb must be a number from 0 to 10000"))?;
+    let people = arguments
+        .get("people")
+        .and_then(Value::as_u64)
+        .filter(|people| (1..=50).contains(people))
+        .ok_or_else(|| AppError::invalid_params("people must be a whole number from 1 to 50"))?;
+    let needed = people as f64 * 20.0 + usage / 10.0;
+    let fitting: Vec<&Offer> = OFFERS
+        .iter()
+        .filter(|offer| f64::from(offer.speed_mbps) >= needed)
+        .collect();
+    let best = fitting
+        .iter()
+        .copied()
+        .min_by_key(|offer| offer.price_tiyin)
+        .unwrap_or(&OFFERS[OFFERS.len() - 1]);
+    let text = if fitting.is_empty() {
+        format!(
+            "No tariff reaches {needed:.0} Mbit/s; {} is the fastest.",
+            best.name
+        )
+    } else {
+        format!(
+            "{} is the cheapest tariff that fits, at {} so'm a month.",
+            best.name,
+            format_som(best.price_tiyin)
+        )
+    };
+    Ok(json!({
+        "content": [{ "type": "text", "text": text }],
+        "structuredContent": {
+            "best": best.id,
+            "needed_mbps": needed.ceil(),
+            "fits": !fitting.is_empty()
+        }
+    }))
 }
 
 pub struct BillsHost {
@@ -565,6 +629,44 @@ Internet tariffs:
     ) -> BoxFuture<'a, Option<UiResource>> {
         Box::pin(async move {
             (self.tariff_app && user.id == HOUSEHOLD_USER && uri == TARIFF_APP_URI).then(tariff_app)
+        })
+    }
+
+    fn app_calls(&self) -> bool {
+        self.tariff_app
+    }
+
+    fn app_request<'a>(
+        &'a self,
+        user: &'a User,
+        request: AppRequest<'a>,
+    ) -> BoxFuture<'a, Result<Value, AppError>> {
+        Box::pin(async move {
+            if !self.tariff_app || user.id != HOUSEHOLD_USER || request.app != TARIFF_APP_URI {
+                return Err(AppError::refused("This app may not make requests."));
+            }
+            match request.method {
+                AppMethod::CallTool => {
+                    let name = request.tool_name().unwrap_or_default();
+                    let callable = app_tools()
+                        .iter()
+                        .any(|tool| tool["name"] == name && apps::callable_by_app(tool));
+                    if !callable {
+                        return Err(AppError::refused(format!("unknown tool \"{name}\"")));
+                    }
+                    let empty = Map::new();
+                    let arguments = request
+                        .params
+                        .get("arguments")
+                        .and_then(Value::as_object)
+                        .unwrap_or(&empty);
+                    quote_tariffs(arguments)
+                }
+                AppMethod::ReadResource if request.resource_uri() == Some(TARIFF_APP_URI) => {
+                    Ok(json!({ "contents": [tariff_app().content] }))
+                }
+                AppMethod::ReadResource => Err(AppError::refused("unknown resource")),
+            }
         })
     }
 

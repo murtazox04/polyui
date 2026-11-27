@@ -29,6 +29,7 @@
     <label for="people">People online at the same time: <output id="crowd">3</output></label>
     <input id="people" type="range" min="1" max="8" step="1" value="3">
     <ul id="offers"></ul>
+    <p id="quote" hidden></p>
     <footer>
       <button id="ask" type="button" disabled>Ask the assistant to switch</button>
       <small id="status"></small>
@@ -40,6 +41,9 @@
         let offers = [];
         let current = "";
         let best = null;
+        let serverTools = false;
+        let quoteTimer = 0;
+        let quoteAsked = 0;
         const byId = (id) => document.getElementById(id);
         const applyTheme = (theme) => {
           if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
@@ -74,6 +78,22 @@
           const ask = byId("ask");
           ask.disabled = !best || best.id === current;
           ask.textContent = best && best.id !== current ? `Ask the assistant to switch to ${best.name}` : "Your tariff already fits";
+          if (serverTools) {
+            clearTimeout(quoteTimer);
+            quoteTimer = setTimeout(quote, 300);
+          }
+        };
+
+        const quote = () => {
+          const asked = ++quoteAsked;
+          const show = (text) => {
+            if (asked !== quoteAsked) return;
+            byId("quote").hidden = false;
+            byId("quote").textContent = text;
+          };
+          request("tools/call", { name: "quote_tariffs", arguments: { usage_gb: Number(byId("usage").value), people: Number(byId("people").value) } })
+            .then((result) => show(`Provider quote: ${result.content.map((block) => block.text).join(" ")}`))
+            .catch((error) => show(`Could not get a quote: ${error.message}`));
         };
 
         window.addEventListener("message", (event) => {
@@ -113,6 +133,7 @@
 
         request("ui/initialize", { appInfo: { name: "Bills tariff calculator", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then((result) => {
           applyTheme(result && result.hostContext && result.hostContext.theme);
+          serverTools = Boolean(result && result.hostCapabilities && result.hostCapabilities.serverTools);
           notify("ui/notifications/initialized", {});
           const report = () => notify("ui/notifications/size-changed", { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
           new ResizeObserver(report).observe(document.body);
