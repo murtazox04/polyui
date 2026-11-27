@@ -39,6 +39,14 @@ final class LiveTransport implements ChatTransport {
   static const connectTimeout = Duration(seconds: 8);
   static const resumeFeature = 'resume';
   static const appCallsFeature = PolyuiSession.appCallsFeature;
+  static const appContextFeature = PolyuiSession.appContextFeature;
+  static const dismissFeature = PolyuiSession.dismissFeature;
+  static const declaredFeatures = [
+    resumeFeature,
+    appCallsFeature,
+    appContextFeature,
+    dismissFeature,
+  ];
   static const retryDelays = [
     Duration(seconds: 1),
     Duration(seconds: 2),
@@ -182,7 +190,7 @@ final class LiveTransport implements ChatTransport {
     }
     final fields = Map<String, Object?>.of(parsed);
     final features = [...?(fields['features'] as List<Object?>?)];
-    for (final feature in [resumeFeature, appCallsFeature]) {
+    for (final feature in declaredFeatures) {
       if (!features.contains(feature)) {
         features.add(feature);
       }

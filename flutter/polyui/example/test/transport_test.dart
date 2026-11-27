@@ -7,29 +7,50 @@ void main() {
   const hello =
       '{"v":1,"t":"hello","catalogs":["core@1"],"modalities":["screen"],"features":["stream"]}';
 
-  test('the first hello declares resume and app calls without a token', () {
-    final sent =
-        jsonDecode(LiveTransport.helloWith(hello, null, null))
-            as Map<String, Object?>;
-    expect(sent['features'], ['stream', 'resume', 'app_calls']);
-    expect(sent.containsKey('resume'), isFalse);
-  });
+  test(
+    'the first hello declares resume, app calls, app context and dismiss without a token',
+    () {
+      final sent =
+          jsonDecode(LiveTransport.helloWith(hello, null, null))
+              as Map<String, Object?>;
+      expect(sent['features'], [
+        'stream',
+        'resume',
+        'app_calls',
+        'app_context',
+        'dismiss',
+      ]);
+      expect(sent.containsKey('resume'), isFalse);
+    },
+  );
 
   test('a reconnect carries the session and token', () {
     final sent =
         jsonDecode(LiveTransport.helloWith(hello, 'sess_1', 'rt_2'))
             as Map<String, Object?>;
     expect(sent['resume'], {'session': 'sess_1', 'token': 'rt_2'});
-    expect(sent['features'], ['stream', 'resume', 'app_calls']);
+    expect(sent['features'], [
+      'stream',
+      'resume',
+      'app_calls',
+      'app_context',
+      'dismiss',
+    ]);
   });
 
   test('features already in the hello are not repeated', () {
     const declared =
-        '{"v":1,"t":"hello","features":["app_calls","stream","resume"]}';
+        '{"v":1,"t":"hello","features":["app_calls","dismiss","stream","resume"]}';
     final sent =
         jsonDecode(LiveTransport.helloWith(declared, null, null))
             as Map<String, Object?>;
-    expect(sent['features'], ['app_calls', 'stream', 'resume']);
+    expect(sent['features'], [
+      'app_calls',
+      'dismiss',
+      'stream',
+      'resume',
+      'app_context',
+    ]);
   });
 
   test('only hello messages are recognized', () {

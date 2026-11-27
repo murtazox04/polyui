@@ -147,6 +147,7 @@ class EmbedComponentState extends State<EmbedComponent> {
         propsJson: jsonEncode(node.props),
         nonce: fresh,
         appCalls: scope.session.appCalls,
+        appContext: scope.session.appContext,
       );
       nonce = fresh;
       return page;

@@ -70,6 +70,40 @@ void main() {
       expect((read as EmbedAppCall).method, 'resources/read');
     });
 
+    test('a ui/update-model-context is read with its params', () {
+      final update = EmbedEvent.parse(
+        appEvent({
+          'id': 'f00d-3',
+          'method': 'ui/update-model-context',
+          'params': {
+            'content': [
+              {'type': 'text', 'text': 'Picked Samarkand'},
+            ],
+          },
+        }),
+        nonce,
+      );
+      expect(update, isA<EmbedAppCall>());
+      update as EmbedAppCall;
+      expect(update.method, 'ui/update-model-context');
+      expect(update.params, {
+        'content': [
+          {'type': 'text', 'text': 'Picked Samarkand'},
+        ],
+      });
+      expect(
+        EmbedEvent.parse(
+          appEvent({
+            'id': 'f00d-4',
+            'method': 'ui/update-model-context',
+            'params': [],
+          }),
+          nonce,
+        ),
+        isNull,
+      );
+    });
+
     test('an id of 64 characters is kept and one of 65 is dropped', () {
       final longest = 'x' * 64;
       final kept = EmbedEvent.parse(
@@ -92,7 +126,6 @@ void main() {
         {'id': 7, 'method': 'tools/call', 'params': {}},
         {'method': 'tools/call', 'params': {}},
         {'id': 'c-1', 'method': 'tools/list', 'params': {}},
-        {'id': 'c-1', 'method': 'ui/update-model-context', 'params': {}},
         {'id': 'c-1', 'method': 'Tools/Call', 'params': {}},
         {'id': 'c-1', 'params': {}},
         {'id': 'c-1', 'method': 'tools/call'},
@@ -158,6 +191,79 @@ void main() {
       });
       expect(harness.session.appCalls, isFalse);
       expect(PolyuiSession.appCallsFeature, 'app_calls');
+    });
+
+    test(
+      'app context is on only after a welcome that lists it with app calls',
+      () {
+        expect(PolyuiSession.appContextFeature, 'app_context');
+        expect(harness.session.appContext, isFalse);
+        harness.session.receive(welcome(['app_calls', 'app_context']));
+        expect(harness.session.appContext, isTrue);
+        harness.session.receive(welcome(['app_context']));
+        expect(harness.session.appContext, isFalse);
+        harness.session.receive(welcome(['app_calls']));
+        expect(harness.session.appContext, isFalse);
+        harness.session.receive(welcome(['app_calls', 'app_context']));
+        harness.session.receive(welcome(['resume']));
+        expect(harness.session.appContext, isFalse);
+      },
+    );
+
+    test('a context update without app context is refused and not sent', () {
+      harness.session.receive(welcome(['app_calls']));
+      final answers = <Map<String, Object?>>[];
+      harness.session.callApp(
+        surface: 's1',
+        embed: 'forecast',
+        method: 'ui/update-model-context',
+        params: {
+          'content': [
+            {'type': 'text', 'text': 'Picked Samarkand'},
+          ],
+        },
+        done: answers.add,
+      );
+      expect(answers, [
+        {
+          'error': {'code': -32601, 'message': 'Method not found'},
+        },
+      ]);
+      expect(calls(), isEmpty);
+      expect(harness.session.openAppCalls, 0);
+    });
+
+    test('a context update with app context goes out as app.call', () {
+      harness.session.receive(welcome(['app_calls', 'app_context']));
+      final answers = <Map<String, Object?>>[];
+      const params = {
+        'content': [
+          {'type': 'text', 'text': 'Picked Samarkand'},
+        ],
+      };
+      harness.session.callApp(
+        surface: 's1',
+        embed: 'forecast',
+        method: 'ui/update-model-context',
+        params: params,
+        done: answers.add,
+      );
+      expect(calls(), [
+        {
+          'v': 1,
+          't': 'app.call',
+          'surface': 's1',
+          'embed': 'forecast',
+          'id': 'a1',
+          'method': 'ui/update-model-context',
+          'params': params,
+        },
+      ]);
+      harness.session.receiveJson(appResult(result: const {}));
+      expect(answers, [
+        {'result': <String, Object?>{}},
+      ]);
+      expect(harness.session.openAppCalls, 0);
     });
 
     test(

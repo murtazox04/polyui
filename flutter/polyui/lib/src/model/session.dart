@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/polyui_core.dart';
 import '../core/render_batch.dart';
+import 'embed_bridge.dart';
 import 'surface_model.dart';
 
 typedef PolyuiSend = void Function(String message);
@@ -25,6 +26,9 @@ class PolyuiSession extends ChangeNotifier {
   );
 
   static const appCallsFeature = 'app_calls';
+  static const appContextFeature = 'app_context';
+  static const dismissFeature = 'dismiss';
+  static const appContextMethod = embedAppContextMethod;
   static const appCallTimeout = Duration(seconds: 90);
   static const Map<String, Object?> appCallTimedOut = {
     'error': {'code': -32000, 'message': 'The app request timed out.'},
@@ -38,6 +42,12 @@ class PolyuiSession extends ChangeNotifier {
 
   @internal
   bool acceptedAppCalls = false;
+
+  @internal
+  bool acceptedAppContext = false;
+
+  @internal
+  bool acceptedDismiss = false;
 
   @internal
   final Map<String, PolyuiAppWaiter> appWaiters = {};
@@ -64,6 +74,10 @@ class PolyuiSession extends ChangeNotifier {
   String? get lastError => currentError;
 
   bool get appCalls => acceptedAppCalls;
+
+  bool get appContext => acceptedAppCalls && acceptedAppContext;
+
+  bool get sendsDismiss => acceptedDismiss;
 
   int get openAppCalls => appWaiters.length;
 
@@ -144,7 +158,10 @@ class PolyuiSession extends ChangeNotifier {
     }
     if (peeked != null) {
       final features = peeked['features'];
-      acceptedAppCalls = features is List && features.contains(appCallsFeature);
+      final listed = features is List ? features : const <Object?>[];
+      acceptedAppCalls = listed.contains(appCallsFeature);
+      acceptedAppContext = listed.contains(appContextFeature);
+      acceptedDismiss = listed.contains(dismissFeature);
     }
     accept(attempt('', () => core.receive(message)));
   }
@@ -156,7 +173,7 @@ class PolyuiSession extends ChangeNotifier {
     required Map<String, Object?> params,
     required PolyuiAppAnswer done,
   }) {
-    if (!acceptedAppCalls) {
+    if (!acceptedAppCalls || (method == appContextMethod && !appContext)) {
       done(appCallsOff);
       return ignoreCancel;
     }
@@ -246,6 +263,28 @@ class PolyuiSession extends ChangeNotifier {
 
   void dismissConfirm(String surface) {
     surfaces[surface]?.clearConfirm();
+  }
+
+  void cancelConfirm({
+    required String surface,
+    required ConfirmRequest request,
+  }) {
+    if (surfaces[surface]?.pendingConfirm?.key != request.key) {
+      return;
+    }
+    dismissConfirm(surface);
+    if (!acceptedDismiss) {
+      return;
+    }
+    send(
+      jsonEncode({
+        'v': 1,
+        't': 'ui.dismiss',
+        'surface': surface,
+        'action_id': request.actionId,
+        'nonce': request.nonce,
+      }),
+    );
   }
 
   List<Utterance> say(String surface) =>

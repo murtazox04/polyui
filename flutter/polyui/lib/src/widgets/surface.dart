@@ -109,8 +109,8 @@ class PolyuiSurfaceState extends State<PolyuiSurface> {
     sheetKey = null;
     if (confirmed ?? false) {
       widget.session.confirm(surface: model.id, request: request);
-    } else if (model.pendingConfirm?.key == request.key) {
-      widget.session.dismissConfirm(model.id);
+    } else {
+      widget.session.cancelConfirm(surface: model.id, request: request);
     }
   }
 
