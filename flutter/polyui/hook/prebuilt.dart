@@ -2,25 +2,25 @@ const prebuiltVersion = '0.1.5';
 
 const prebuiltHashes = <String, String>{
   'libpolyui_ffi-aarch64-apple-darwin.dylib':
-      '2994ed3e864b4e2b38d5e9d4f0349aa14240813bb7e4a8d47a087957b84c8275',
+      '011a5d16328fa62b7f8416a9d581a86da79a98aff729902c0f0ffa58cef615ed',
   'libpolyui_ffi-aarch64-apple-ios-sim.dylib':
-      'bcd5a3acd6b820025c7ac940956dd3f5890a6049b204272e7fce21c32b0700ed',
+      '36cdbf3344507702272d18d947e9e442d2a1401cb2ec8ccbb366495d96642525',
   'libpolyui_ffi-aarch64-apple-ios.dylib':
-      'b82e7daca764814b348aab1900e56ec44f69cad575020aab523b9daac9cf7234',
+      '5140019762a65c1a93521b35a359414259fb3885d8c97747ea0d83b0b9662cac',
   'libpolyui_ffi-aarch64-linux-android.so':
-      'b02e0874536582c251b2ef4e1330cd2521a158d7bec9170c739a3b45606cfe82',
+      '81596733d3b1ea61abf71d84c4fe75e0c3c764396aabb8d525a66f4f289bf711',
   'libpolyui_ffi-aarch64-unknown-linux-gnu.so':
-      '084fe95b0540cebd6f9172bb32ae9beb9394a74ba8d1b5543650d82ed63a6e71',
+      '95de64a55fa10c3382de1261e07a1cb716aacf556b92e1148bd7978ee6a1d05a',
   'libpolyui_ffi-armv7-linux-androideabi.so':
-      '73ecedf3a12e1b80e4e0cd088b355c01eaadf5bb767fecb66d70edd49930aad0',
+      '588cbfbd4a8c320e963c719cb0813d3ac7551e3ca7fab5f7ddc8db0be88fec6e',
   'libpolyui_ffi-i686-linux-android.so':
-      'c0deab4770303554257dd64b0fc68d1b4be3bb8cd617dc106ec2e9cb2b0f3d9a',
+      '3ff5bf3c61bf1376d765800e7ba3bcffeda96595395cdf10ad0c769ca34d1adc',
   'libpolyui_ffi-x86_64-apple-darwin.dylib':
-      '7372c8457081d38f99ac30ec3fa81656d81b36c0b144430d9b697b78bacad67d',
+      'e69a8398e3833c4c137d55b86d3f7297f03b28b42fed168c88f21c7fc5d474b2',
   'libpolyui_ffi-x86_64-apple-ios.dylib':
-      '6d4685a03fed3888a870d1614d38e66c5bdfd01cf8f8e03f9142e4c96dede960',
+      '4a1fba56973cda68cce4768841edab2e534a67fd7dafe9ba7a54d777a3d92c1b',
   'libpolyui_ffi-x86_64-linux-android.so':
-      '235ee7a969236fa199b3a2cc0b0a7c461af23b375799732ebd57116eb28b78d7',
+      '3b35aa1b90a578287d203200a2b6bb8d9e2ebdc876608a47c78e61d781abb4dc',
   'libpolyui_ffi-x86_64-unknown-linux-gnu.so':
-      '7d7749feadb2be64ec956a2d26fc442094f32a569399f9e04afdf34a30d6b881',
+      '41c680955742b8fde767dac4b3b4bdcb92b0dba84bab11b877348392c73d6fbe',
 };
