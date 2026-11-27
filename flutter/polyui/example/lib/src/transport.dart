@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:polyui/polyui.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/status.dart' as status;
 
@@ -37,6 +38,7 @@ final class LiveTransport implements ChatTransport {
 
   static const connectTimeout = Duration(seconds: 8);
   static const resumeFeature = 'resume';
+  static const appCallsFeature = PolyuiSession.appCallsFeature;
   static const retryDelays = [
     Duration(seconds: 1),
     Duration(seconds: 2),
@@ -180,8 +182,10 @@ final class LiveTransport implements ChatTransport {
     }
     final fields = Map<String, Object?>.of(parsed);
     final features = [...?(fields['features'] as List<Object?>?)];
-    if (!features.contains(resumeFeature)) {
-      features.add(resumeFeature);
+    for (final feature in [resumeFeature, appCallsFeature]) {
+      if (!features.contains(feature)) {
+        features.add(feature);
+      }
     }
     fields['features'] = features;
     if (session != null && token != null) {

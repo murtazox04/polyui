@@ -7,11 +7,11 @@ void main() {
   const hello =
       '{"v":1,"t":"hello","catalogs":["core@1"],"modalities":["screen"],"features":["stream"]}';
 
-  test('the first hello declares resume without a token', () {
+  test('the first hello declares resume and app calls without a token', () {
     final sent =
         jsonDecode(LiveTransport.helloWith(hello, null, null))
             as Map<String, Object?>;
-    expect(sent['features'], ['stream', 'resume']);
+    expect(sent['features'], ['stream', 'resume', 'app_calls']);
     expect(sent.containsKey('resume'), isFalse);
   });
 
@@ -20,7 +20,16 @@ void main() {
         jsonDecode(LiveTransport.helloWith(hello, 'sess_1', 'rt_2'))
             as Map<String, Object?>;
     expect(sent['resume'], {'session': 'sess_1', 'token': 'rt_2'});
-    expect(sent['features'], ['stream', 'resume']);
+    expect(sent['features'], ['stream', 'resume', 'app_calls']);
+  });
+
+  test('features already in the hello are not repeated', () {
+    const declared =
+        '{"v":1,"t":"hello","features":["app_calls","stream","resume"]}';
+    final sent =
+        jsonDecode(LiveTransport.helloWith(declared, null, null))
+            as Map<String, Object?>;
+    expect(sent['features'], ['app_calls', 'stream', 'resume']);
   });
 
   test('only hello messages are recognized', () {

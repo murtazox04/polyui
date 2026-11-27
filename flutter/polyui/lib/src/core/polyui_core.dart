@@ -183,22 +183,34 @@ final class PolyuiCore implements Finalizable {
         ),
       );
 
-  static String embedPage({required String propsJson, required String nonce}) =>
-      using((arena) {
-        final error = arena<Pointer<Utf8>>()..value = nullptr;
-        final page = polyuiEmbedPage(
-          nativeText(propsJson, arena, 'the embed props'),
-          nativeText(nonce, arena, 'the embed nonce'),
-          error,
-        );
-        if (page == nullptr) {
-          throw PolyuiException(
-            takeText(error.value) ?? 'PolyUI could not build the embed page',
-          );
-        }
-        releaseText(error.value);
-        return takeText(page)!;
-      });
+  static String embedPage({
+    required String propsJson,
+    required String nonce,
+    bool appCalls = false,
+  }) => using((arena) {
+    final error = arena<Pointer<Utf8>>()..value = nullptr;
+    final props = nativeText(propsJson, arena, 'the embed props');
+    final pageNonce = nativeText(nonce, arena, 'the embed nonce');
+    final page = appCalls
+        ? polyuiEmbedPageWith(
+            props,
+            pageNonce,
+            nativeText(
+              jsonEncode({'app_calls': true}),
+              arena,
+              'the embed host options',
+            ),
+            error,
+          )
+        : polyuiEmbedPage(props, pageNonce, error);
+    if (page == nullptr) {
+      throw PolyuiException(
+        takeText(error.value) ?? 'PolyUI could not build the embed page',
+      );
+    }
+    releaseText(error.value);
+    return takeText(page)!;
+  });
 
   RenderBatch receive(String message) =>
       RenderBatch.fromJson(decode(receiveJson(message)));

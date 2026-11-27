@@ -128,6 +128,16 @@ external Pointer<Utf8> polyuiEmbedPage(
   ErrorSlot error,
 );
 
+@Native<
+  Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, ErrorSlot)
+>(symbol: 'polyui_embed_page_with')
+external Pointer<Utf8> polyuiEmbedPageWith(
+  Pointer<Utf8> props,
+  Pointer<Utf8> nonce,
+  Pointer<Utf8> host,
+  ErrorSlot error,
+);
+
 @Native<Void Function(Pointer<Utf8>)>(symbol: 'polyui_string_free')
 external void polyuiStringFree(Pointer<Utf8> text);
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,8 @@ import '../core/render_batch.dart';
 import 'surface_model.dart';
 
 typedef PolyuiSend = void Function(String message);
+
+typedef PolyuiAppAnswer = void Function(Map<String, Object?> answer);
 
 class PolyuiSession extends ChangeNotifier {
   PolyuiSession(this.core, {PolyuiSend? send}) : send = send ?? ignore;
@@ -21,8 +24,26 @@ class PolyuiSession extends ChangeNotifier {
     send: send,
   );
 
+  static const appCallsFeature = 'app_calls';
+  static const appCallTimeout = Duration(seconds: 40);
+  static const Map<String, Object?> appCallTimedOut = {
+    'error': {'code': -32000, 'message': 'The app request timed out.'},
+  };
+  static const Map<String, Object?> appCallsOff = {
+    'error': {'code': -32601, 'message': 'Method not found'},
+  };
+
   final PolyuiCore core;
   PolyuiSend send;
+
+  @internal
+  bool acceptedAppCalls = false;
+
+  @internal
+  final Map<String, PolyuiAppWaiter> appWaiters = {};
+
+  @internal
+  int appCounter = 0;
 
   @internal
   final Map<String, PolyuiSurfaceModel> surfaces = {};
@@ -42,7 +63,67 @@ class PolyuiSession extends ChangeNotifier {
 
   String? get lastError => currentError;
 
+  bool get appCalls => acceptedAppCalls;
+
+  int get openAppCalls => appWaiters.length;
+
   static void ignore(String message) {}
+
+  static void ignoreCancel() {}
+
+  @internal
+  static String appKey(String surface, String embed, String id) =>
+      jsonEncode([surface, embed, id]);
+
+  @internal
+  static Map<String, Object?>? peek(String text) {
+    if (!text.contains('"welcome"') && !text.contains('"app.result"')) {
+      return null;
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(text);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map<String, Object?>) {
+      return null;
+    }
+    final type = decoded['t'];
+    return type == 'welcome' || type == 'app.result' ? decoded : null;
+  }
+
+  @internal
+  static Map<String, Object?> answerOf(Map<String, Object?> message) {
+    final error = message['error'];
+    if (error is Map<String, Object?>) {
+      final code = error['code'];
+      final text = error['message'];
+      return {
+        'error': {
+          'code': code is num ? code : -32000,
+          'message': text is String ? text : 'The app request failed.',
+        },
+      };
+    }
+    return {'result': message['result']};
+  }
+
+  @internal
+  void appResult(Map<String, Object?> message) {
+    final surface = message['surface'];
+    final embed = message['embed'];
+    final id = message['id'];
+    if (surface is! String || embed is! String || id is! String) {
+      return;
+    }
+    final waiter = appWaiters.remove(appKey(surface, embed, id));
+    if (waiter == null) {
+      return;
+    }
+    waiter.cancel();
+    waiter.done(answerOf(message));
+  }
 
   PolyuiSurfaceModel surface(String id) {
     final existing = surfaces[id];
@@ -56,7 +137,56 @@ class PolyuiSession extends ChangeNotifier {
   }
 
   void receive(String message) {
+    final peeked = peek(message);
+    if (peeked?['t'] == 'app.result') {
+      appResult(peeked!);
+      return;
+    }
+    if (peeked != null) {
+      final features = peeked['features'];
+      acceptedAppCalls = features is List && features.contains(appCallsFeature);
+    }
     accept(attempt('', () => core.receive(message)));
+  }
+
+  void Function() callApp({
+    required String surface,
+    required String embed,
+    required String method,
+    required Map<String, Object?> params,
+    required PolyuiAppAnswer done,
+  }) {
+    if (!acceptedAppCalls) {
+      done(appCallsOff);
+      return ignoreCancel;
+    }
+    appCounter += 1;
+    final id = 'a$appCounter';
+    final key = appKey(surface, embed, id);
+    final waiter = PolyuiAppWaiter(done);
+    appWaiters[key] = waiter;
+    waiter.timer = Timer(appCallTimeout, () {
+      if (appWaiters.remove(key) == waiter) {
+        waiter.done(appCallTimedOut);
+      }
+    });
+    send(
+      jsonEncode({
+        'v': 1,
+        't': 'app.call',
+        'surface': surface,
+        'embed': embed,
+        'id': id,
+        'method': method,
+        'params': params,
+      }),
+    );
+    return () {
+      if (appWaiters[key] == waiter) {
+        appWaiters.remove(key);
+      }
+      waiter.cancel();
+    };
   }
 
   void receiveJson(Map<String, Object?> message) =>
@@ -202,10 +332,27 @@ class PolyuiSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    for (final waiter in appWaiters.values) {
+      waiter.cancel();
+    }
+    appWaiters.clear();
     for (final model in surfaces.values) {
       model.dispose();
     }
     core.dispose();
     super.dispose();
+  }
+}
+
+@internal
+final class PolyuiAppWaiter {
+  PolyuiAppWaiter(this.done);
+
+  final PolyuiAppAnswer done;
+  Timer? timer;
+
+  void cancel() {
+    timer?.cancel();
+    timer = null;
   }
 }
