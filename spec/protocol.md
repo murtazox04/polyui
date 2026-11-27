@@ -300,6 +300,7 @@ An MCP App inside `embed:Embed` may ask for fresh data with `tools/call` or `res
 - The reference server allows 4 open calls per session and 30 calls per minute per embed, waits 30 seconds for the host, and replaces an answer that would not fit in one message with a `-32000` error.
 - The host decides what an app may do. It must refuse a tool whose `_meta.ui.visibility` does not include `"app"`, and any tool or resource that is not on the MCP server the app came from.
 - App calls and their results never reach the model. `app.result` has no `seq` and is not covered by `ui.snapshot`, so after a resume it arrives with the other held messages. A client drops a result for an embed that is gone.
+- The host may ask a person first. The server then sends a `ui.confirm` for the app's surface with a fresh `action_id` starting with `app_` and a fresh nonce, and calls the host only after a `ui.action` with that `action_id`, the same surface and the matching nonce. The question lives for the app call timeout (30 seconds in the reference server) and is sent again after a resume. When it runs out, the server sends `ui.action.result` `expired` for it and an `app.result` error `-32000`. One such question is open per session at a time; another app call that needs one is refused at once. Clients wait at least 90 seconds for an `app.result`.
 - `ui/update-model-context` from an app is not forwarded.
 
 ## 9. Client to server messages
