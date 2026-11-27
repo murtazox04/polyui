@@ -63,7 +63,7 @@ The client speaks first.
 
 - `catalogs`: what the renderer can draw, as `id@major`. The server must only send components from these catalogs. Anything else is sent as its `alt` text inside a `Text` component.
 - `modalities`: any non-empty subset of `screen` and `voice`.
-- `features`: optional abilities. `sync` means the client handles `ui.sync`. `stream` means it accepts surfaces that grow while the model is still writing (section 8.1). `resume` means the client can come back to its session after the connection drops (section 8.2).
+- `features`: optional abilities. `sync` means the client handles `ui.sync`. `stream` means it accepts surfaces that grow while the model is still writing (section 8.1). `resume` means the client can come back to its session after the connection drops (section 8.2). `app_calls` means the client forwards `tools/call` and `resources/read` from an embedded MCP App to the server (section 8.3).
 - `resume`: optional, `{ "session": "...", "token": "..." }`, sent by a client that lost its connection and wants its old session back (section 8.2).
 - `locale`: BCP 47 tag. Used for `alt` and `say` templates and for voice matching.
 
@@ -73,7 +73,7 @@ The server answers with `welcome`:
 { "v": 1, "t": "welcome", "session": "sess_8f2c", "catalogs": ["core@1", "chart@1"] }
 ```
 
-`catalogs` in `welcome` is the intersection the server will actually use. When the client declared `resume`, `welcome` also carries `resume_token`, and, when the `hello` asked to resume, `resumed`:
+`catalogs` in `welcome` is the intersection the server will actually use. `features` in `welcome`, when present, lists the features from the `hello` that the server accepted; a client turns a feature on only when it is listed there. When the client declared `resume`, `welcome` also carries `resume_token`, and, when the `hello` asked to resume, `resumed`:
 
 ```json
 { "v": 1, "t": "welcome", "session": "sess_8f2c", "catalogs": ["core@1", "chart@1"], "resume_token": "rt_3b9e...", "resumed": true }
@@ -286,6 +286,22 @@ If any check fails, the server starts a new session and answers `welcome` with `
 
 The token is a secret like a password. A client keeps it in memory only, never in storage, and sends it only in `hello`.
 
+### 8.3 App calls
+
+An MCP App inside `embed:Embed` may ask for fresh data with `tools/call` or `resources/read`. A client that declared `app_calls`, and saw it accepted in `welcome`, forwards such a request as `app.call` (section 9) and gets one `app.result` back:
+
+```json
+{ "v": 1, "t": "app.result", "surface": "s1", "embed": "calc", "id": "a1", "result": { "content": [{ "type": "text", "text": "Oila 100 fits." }] } }
+```
+
+- `surface`, `embed` and `id` repeat the request. `id` is the client's own id for the call, not the app's JSON-RPC id, so two apps cannot collide.
+- Exactly one of `result` (the MCP result, unchanged) and `error` (`{ "code", "message" }`) is present. Codes follow JSON-RPC: `-32601` the method is not available, `-32602` the params are invalid, `-32000` the call was refused, timed out, was rate limited or its answer was too large.
+- The server answers at once, without asking the host, when app calls are not on for the session, the method is not `tools/call` or `resources/read`, `params` is not an object or is larger than 64 KiB, `tools/call` has no `name` or non-object `arguments`, `resources/read` has no `uri`, or the surface is not open or still streaming, or the component is not an `embed:Embed` sent with an `app`. An `app.call` without non-empty `surface`, `embed` and `id` (at most 64 characters) cannot be answered and gets `ui.error` with `bad_message`.
+- The reference server allows 4 open calls per session and 30 calls per minute per embed, waits 30 seconds for the host, and replaces an answer that would not fit in one message with a `-32000` error.
+- The host decides what an app may do. It must refuse a tool whose `_meta.ui.visibility` does not include `"app"`, and any tool or resource that is not on the MCP server the app came from.
+- App calls and their results never reach the model. `app.result` has no `seq` and is not covered by `ui.snapshot`, so after a resume it arrives with the other held messages. A client drops a result for an embed that is gone.
+- `ui/update-model-context` from an app is not forwarded.
+
 ## 9. Client to server messages
 
 | `t` | Fields | When |
@@ -294,6 +310,7 @@ The token is a secret like a password. A client keeps it in memory only, never i
 | `ui.action` | `surface`, `action_id`, `values`, `confirm`, `source`, `detail` (section 7.1) | User tapped, typed or spoke. |
 | `ui.resync` | `surface` | Client saw a `seq` gap or lost state. |
 | `ui.error` | `surface`, `reason`, `detail` | Client could not draw something. Reasons: `unsupported_version`, `unknown_component`, `render_failed`, `bad_message`. |
+| `app.call` | `surface`, `embed`, `id`, `method`, `params` (section 8.3) | An embedded app asked for `tools/call` or `resources/read`. Only with the `app_calls` feature. |
 
 The transport is not part of the protocol. The reference server speaks WebSocket (both directions on one connection) and Server-Sent Events plus HTTP POST (server messages on the event stream, client messages as POST bodies). Both carry the same JSON.
 
@@ -373,7 +390,7 @@ If the user talks over the assistant (barge-in), the client stops speech and kee
 5. `$ref` values are resolved on the server, per user, and never enter the model's context.
 6. Actions run on the server, from handles, with server-built confirm text when the host marks them risky.
 7. Limits in section 5.2 are checked before full parsing.
-8. The one place HTML reaches a client is `embed:Embed`, and the model does not write it. The model names a `ui://` resource; the server asks the host for that resource and puts the host's answer in the server-only `app` prop, which the model cannot set. The HTML runs only in a sandbox on an origin separate from the client's, with scripts allowed and same-origin access denied, under a CSP built from the resource's `_meta.ui.csp` with a restrictive default. A client with no such sandbox shows the component's `title` instead. Details are in [Embedding MCP Apps](../docs/embed.md).
+8. The one place HTML reaches a client is `embed:Embed`, and the model does not write it. The model names a `ui://` resource; the server asks the host for that resource and puts the host's answer in the server-only `app` prop, which the model cannot set. The HTML runs only in a sandbox on an origin separate from the client's, with scripts allowed and same-origin access denied, under a CSP built from the resource's `_meta.ui.csp` with a restrictive default. A client with no such sandbox shows the component's `title` instead. An app's own requests reach the host only as `app.call` (section 8.3), and the host refuses tools the app may not call. Details are in [Embedding MCP Apps](../docs/embed.md).
 
 ## 14. Chat extras used by the reference server
 
