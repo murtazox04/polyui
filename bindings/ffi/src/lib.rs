@@ -294,6 +294,23 @@ pub unsafe extern "C" fn polyui_embed_page(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn polyui_embed_page_with(
+    props_json: *const c_char,
+    nonce: *const c_char,
+    host_json: *const c_char,
+    error_out: *mut *mut c_char,
+) -> *mut c_char {
+    unsafe {
+        guarded(error_out, ptr::null_mut(), || {
+            let props = text_arg(props_json, "embed_page", "the props")?;
+            let nonce = text_arg(nonce, "embed_page", "the nonce")?;
+            let host = text_arg(host_json, "embed_page", "the host options")?;
+            embed::embed_page_with(props, nonce, host).map(owned)
+        })
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn polyui_string_free(text: *mut c_char) {
     if text.is_null() {
         return;
