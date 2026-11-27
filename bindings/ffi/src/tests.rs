@@ -193,13 +193,22 @@ fn page_with(props: &str, host: &str) -> Result<String, String> {
 #[test]
 fn embed_page_takes_app_calls_only_from_the_host() {
     let off = page(r#"{"title":"Forecast"}"#, NONCE).expect("page");
-    assert!(off.contains(r#"const host = {"app_calls":false};"#));
+    assert!(off.contains(r#"const host = {"app_calls":false,"app_context":false};"#));
     let on = page_with(
         r#"{"title":"Forecast"}"#,
         r#"{"app_calls":true,"other":"x"}"#,
     )
     .expect("page");
-    assert!(on.contains(r#"const host = {"app_calls":true};"#));
+    assert!(on.contains(r#"const host = {"app_calls":true,"app_context":false};"#));
+    let context = page_with("{}", r#"{"app_calls":true,"app_context":true}"#).expect("page");
+    assert!(context.contains(r#"const host = {"app_calls":true,"app_context":true};"#));
+    let without_calls = page_with("{}", r#"{"app_context":true}"#).expect("page");
+    assert!(without_calls.contains(r#"const host = {"app_calls":false,"app_context":false};"#));
+    assert!(
+        page_with("{}", r#"{"app_calls":true,"app_context":1}"#)
+            .unwrap_err()
+            .contains("app_context")
+    );
     assert!(!on.contains("POLYUI_HOST_SLOT"));
     let props_text =
         page_with(r#"{"title":"POLYUI_HOST_SLOT"}"#, r#"{"app_calls":true}"#).expect("page");
