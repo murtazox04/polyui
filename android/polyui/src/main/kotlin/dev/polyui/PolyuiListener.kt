@@ -161,7 +161,7 @@ class PolyuiListener(
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, MAX_RESULTS)
                 .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-                .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, onDevice)
         current.locale?.let { intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, it.toLanguageTag()) }
         created.startListening(intent)
     }
