@@ -1,6 +1,6 @@
 use crate::apps::{self, Apps};
 use crate::charts;
-use crate::host::{ActionCall, ActionOutcome, Host, User};
+use crate::host::{ActionCall, ActionOutcome, AppError, AppMethod, AppRequest, Host, User};
 use crate::ids;
 use crate::provider::{ModelEvent, ModelProvider, ModelRequest, StopReason, Usage};
 use futures_util::StreamExt;
@@ -19,6 +19,7 @@ use polyui_core::validate::{
 use polyui_core::{Catalog, CatalogSet, Limits, Locale, PropKind, RefResolver, pointer, summary};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TrySendError;
@@ -32,6 +33,10 @@ pub const UI_TOOLS: [&str; 3] = ["show_ui", "update_ui", "close_ui"];
 pub const MAX_SAY_CHARS: usize = 4000;
 pub const STREAM_FEATURE: &str = "stream";
 pub const RESUME_FEATURE: &str = "resume";
+pub const APP_CALLS_FEATURE: &str = "app_calls";
+pub const APP_CALL: &str = "app.call";
+pub const APP_RESULT: &str = "app.result";
+pub const MAX_APP_CALL_ID_CHARS: usize = 64;
 const COVERED_BY_SNAPSHOT: [&str; 5] = ["ui.open", "ui.patch", "ui.data", "ui.sync", "ui.confirm"];
 pub const BUSY: &str =
     "The assistant is still working on your earlier messages. Please wait for it to finish.";
@@ -95,6 +100,10 @@ pub struct AgentConfig {
     pub waiting_turns: usize,
     pub turn_rate: TurnRate,
     pub tool_profile: ToolProfile,
+    pub open_app_calls: usize,
+    pub app_call_rate: TurnRate,
+    pub app_call_timeout: Duration,
+    pub max_app_params_bytes: usize,
 }
 
 impl Default for AgentConfig {
@@ -114,6 +123,13 @@ impl Default for AgentConfig {
                 refill: Duration::from_secs(4),
             },
             tool_profile: ToolProfile::Compact,
+            open_app_calls: 4,
+            app_call_rate: TurnRate {
+                burst: 30,
+                refill: Duration::from_secs(2),
+            },
+            app_call_timeout: Duration::from_secs(30),
+            max_app_params_bytes: 64 * 1024,
         }
     }
 }
@@ -388,6 +404,106 @@ pub struct Session {
     closing: watch::Sender<Option<CloseReason>>,
     resumable: bool,
     resume_token: Mutex<Option<String>>,
+    app_calls: bool,
+    open_app_calls: Arc<AtomicUsize>,
+    app_buckets: Mutex<HashMap<(String, String), Bucket>>,
+    me: Weak<Session>,
+}
+
+struct OpenAppCall(Arc<AtomicUsize>);
+
+impl Drop for OpenAppCall {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+struct AppCall {
+    surface: String,
+    embed: String,
+    id: String,
+    method: Option<String>,
+    params: Option<Value>,
+}
+
+impl AppCall {
+    fn parse(text: &str) -> Option<Self> {
+        let Value::Object(mut fields) = serde_json::from_str::<Value>(text).ok()? else {
+            return None;
+        };
+        let mut text_field = |key: &str| match fields.remove(key) {
+            Some(Value::String(value)) if !value.is_empty() => Some(value),
+            _ => None,
+        };
+        let surface = text_field("surface")?;
+        let embed = text_field("embed")?;
+        let id = text_field("id").filter(|id| id.chars().count() <= MAX_APP_CALL_ID_CHARS)?;
+        let method = text_field("method");
+        Some(Self {
+            surface,
+            embed,
+            id,
+            method,
+            params: fields.remove("params"),
+        })
+    }
+
+    fn reply(&self, outcome: Result<Value, AppError>) -> Value {
+        let mut message = json!({
+            "v": protocol::VERSION,
+            "t": APP_RESULT,
+            "surface": self.surface,
+            "embed": self.embed,
+            "id": self.id,
+        });
+        if let Some(fields) = message.as_object_mut() {
+            match outcome {
+                Ok(result) => fields.insert("result".into(), result),
+                Err(error) => fields.insert(
+                    "error".into(),
+                    json!({ "code": error.code, "message": error.message }),
+                ),
+            };
+        }
+        message
+    }
+}
+
+fn app_params(
+    method: AppMethod,
+    params: Option<Value>,
+    max_bytes: usize,
+) -> Result<Map<String, Value>, AppError> {
+    let params = match params {
+        None => Map::new(),
+        Some(Value::Object(params)) => params,
+        Some(_) => return Err(AppError::invalid_params("params must be an object")),
+    };
+    if serde_json::to_vec(&params).map_or(usize::MAX, |bytes| bytes.len()) > max_bytes {
+        return Err(AppError::invalid_params("params are too large"));
+    }
+    let named = |key: &str| {
+        params
+            .get(key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
+    };
+    match method {
+        AppMethod::CallTool if !named("name") => {
+            Err(AppError::invalid_params("name must be a non-empty string"))
+        }
+        AppMethod::CallTool
+            if params
+                .get("arguments")
+                .is_some_and(|arguments| !arguments.is_object()) =>
+        {
+            Err(AppError::invalid_params("arguments must be an object"))
+        }
+        AppMethod::ReadResource if !named("uri") => {
+            Err(AppError::invalid_params("uri must be a non-empty string"))
+        }
+        _ => Ok(params),
+    }
 }
 
 fn same_secret(expected: &str, given: &str) -> bool {
@@ -585,11 +701,17 @@ impl Session {
             .features
             .iter()
             .any(|feature| feature == RESUME_FEATURE);
+        let app_calls = embeds
+            && agent.host.app_calls()
+            && hello
+                .features
+                .iter()
+                .any(|feature| feature == APP_CALLS_FEATURE);
         let config = agent.config;
         let (out, outgoing) = mpsc::channel(config.outgoing_queue.max(1));
         let (turns, mut incoming) = mpsc::channel(config.waiting_turns.max(1));
         let (closing, _) = watch::channel(None);
-        let session = Arc::new(Self {
+        let session = Arc::new_cyclic(|me| Self {
             id: ids::session_id(),
             user,
             agent,
@@ -612,6 +734,10 @@ impl Session {
             closing,
             resumable,
             resume_token: Mutex::new(None),
+            app_calls,
+            open_app_calls: Arc::new(AtomicUsize::new(0)),
+            app_buckets: Mutex::new(HashMap::new()),
+            me: me.clone(),
         });
         let weak: Weak<Self> = Arc::downgrade(&session);
         tokio::spawn(async move {
@@ -678,6 +804,18 @@ impl Session {
             }
             if let Some(resumed) = resumed {
                 fields.insert("resumed".into(), Value::Bool(resumed));
+            }
+            let accepted: Vec<Value> = [
+                (self.streams, STREAM_FEATURE),
+                (self.resumable, RESUME_FEATURE),
+                (self.app_calls, APP_CALLS_FEATURE),
+            ]
+            .into_iter()
+            .filter(|(on, _)| *on)
+            .map(|(_, feature)| Value::String(feature.into()))
+            .collect();
+            if !accepted.is_empty() {
+                fields.insert("features".into(), Value::Array(accepted));
             }
         }
         welcome
@@ -860,6 +998,9 @@ impl Session {
                     _ => self.send(chat_text(ERROR, "message", SAY_EMPTY)),
                 }
             }
+            Ok(Incoming::UnknownType { message_type, .. }) if message_type == APP_CALL => {
+                self.on_app_call(text);
+            }
             Ok(Incoming::UnknownType {
                 message_type,
                 surface,
@@ -892,6 +1033,120 @@ impl Session {
                 ),
             },
         }
+    }
+
+    pub fn app_calls(&self) -> bool {
+        self.app_calls
+    }
+
+    fn on_app_call(&self, text: &str) {
+        let Some(call) = AppCall::parse(text) else {
+            self.send_error(
+                None,
+                ErrorReason::BadMessage,
+                format!(
+                    "{APP_CALL} needs non-empty string fields surface, embed and id, with id at most {MAX_APP_CALL_ID_CHARS} characters"
+                ),
+            );
+            return;
+        };
+        match self.plan_app_call(&call) {
+            Ok((app, method, params, slot)) => self.run_app_call(call, app, method, params, slot),
+            Err(error) => self.send(call.reply(Err(error))),
+        }
+    }
+
+    fn plan_app_call(
+        &self,
+        call: &AppCall,
+    ) -> Result<(String, AppMethod, Map<String, Value>, OpenAppCall), AppError> {
+        if !self.app_calls {
+            return Err(AppError::not_available());
+        }
+        let method = call
+            .method
+            .as_deref()
+            .and_then(AppMethod::parse)
+            .ok_or_else(AppError::not_available)?;
+        let config = self.agent.config;
+        let params = app_params(method, call.params.clone(), config.max_app_params_bytes)?;
+        let app = {
+            let ui = self.lock();
+            self.app_buckets
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .retain(|(surface, _), _| ui.surfaces.contains_key(surface));
+            let state = ui
+                .surfaces
+                .get(&call.surface)
+                .filter(|state| !state.pending)
+                .ok_or_else(|| AppError::refused("This app is no longer on screen."))?;
+            state
+                .client
+                .get(&call.embed)
+                .filter(|component| component.type_name == apps::EMBED_TYPE)
+                .and_then(|component| component.props.get(apps::APP_PROP))
+                .and_then(|app| app.pointer("/resource/uri"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| AppError::refused("This app is no longer on screen."))?
+        };
+        let allowed = self
+            .app_buckets
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .entry((call.surface.clone(), call.embed.clone()))
+            .or_insert_with(|| Bucket::full(config.app_call_rate))
+            .take(config.app_call_rate, Instant::now());
+        if !allowed {
+            return Err(AppError::refused(
+                "This app is sending requests too quickly. Please wait a moment.",
+            ));
+        }
+        let open = self.open_app_calls.fetch_add(1, Ordering::AcqRel);
+        let slot = OpenAppCall(Arc::clone(&self.open_app_calls));
+        if open >= config.open_app_calls {
+            return Err(AppError::refused(
+                "Too many app requests are still open. Please wait for one to finish.",
+            ));
+        }
+        Ok((app, method, params, slot))
+    }
+
+    fn run_app_call(
+        &self,
+        call: AppCall,
+        app: String,
+        method: AppMethod,
+        params: Map<String, Value>,
+        slot: OpenAppCall,
+    ) {
+        let weak = self.me.clone();
+        let host = Arc::clone(&self.agent.host);
+        let user = self.user.clone();
+        let timeout = self.agent.config.app_call_timeout;
+        let max_bytes = self.agent.config.limits.max_message_bytes;
+        tokio::spawn(async move {
+            let request = AppRequest {
+                app: &app,
+                method,
+                params: &params,
+            };
+            let outcome = tokio::time::timeout(timeout, host.app_request(&user, request))
+                .await
+                .unwrap_or_else(|_| Err(AppError::refused("The app request timed out.")));
+            drop(slot);
+            let Some(session) = weak.upgrade() else {
+                return;
+            };
+            let mut reply = call.reply(outcome);
+            if reply.to_string().len() > max_bytes {
+                reply = call.reply(Err(AppError::refused(
+                    "The answer is too large to send to the app.",
+                )));
+            }
+            session.send(reply);
+        });
     }
 
     fn queue_say(&self, text: String) {

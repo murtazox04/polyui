@@ -37,6 +37,18 @@ struct EmbedEventTests {
         #expect(read(["kind": "message", "text": "Hi", "nonce": .string(nonce)]) == .message("Hi"))
         #expect(read(["kind": "unavailable", "nonce": .string(nonce)]) == .unavailable)
         #expect(read(["kind": "open-link", "url": "https://example.com/a?b=1", "nonce": .string(nonce)]) == .openLink(URL(string: "https://example.com/a?b=1")!))
+        #expect(
+            read(["kind": "app-call", "id": "c0ffee-1", "method": "tools/call", "params": ["name": "quote"], "nonce": .string(nonce)])
+                == .appCall(id: "c0ffee-1", method: "tools/call", params: ["name": "quote"]))
+    }
+
+    @Test func refusesAppCallsThatCannotBeForwarded() {
+        let read = { (fields: JSONValue) in EmbedEvent.read(body(fields), isMainFrame: true, nonce: nonce) }
+        #expect(read(["kind": "app-call", "id": "", "method": "tools/call", "params": [:], "nonce": .string(nonce)]) == nil)
+        #expect(read(["kind": "app-call", "id": .string(String(repeating: "a", count: 65)), "method": "tools/call", "params": [:], "nonce": .string(nonce)]) == nil)
+        #expect(read(["kind": "app-call", "id": "c-1", "method": "ui/update-model-context", "params": [:], "nonce": .string(nonce)]) == nil)
+        #expect(read(["kind": "app-call", "id": "c-1", "method": "tools/call", "params": "x", "nonce": .string(nonce)]) == nil)
+        #expect(read(["kind": "app-call", "id": "c-1", "method": "tools/call", "nonce": .string(nonce)]) == nil)
     }
 
     @Test func ignoresSubframesEvenWithTheRightNonce() {
@@ -107,6 +119,73 @@ struct EmbedNavigationTests {
 
     @Test func newWindowsAreRefused() {
         #expect(!EmbedNavigation.allows(targetIsMainFrame: nil, url: URL(string: "https://example.com/"), expectingPageLoad: true))
+    }
+}
+
+@MainActor
+struct AppCallSessionTests {
+    private func session() throws -> (PolyUISession, () -> [JSONValue]) {
+        var sent: [String] = []
+        let session = try PolyUISession(
+            hello: PolyUIHello(catalogs: ["core@1", "embed@1"], features: ["app_calls"]),
+            send: { sent.append($0) }
+        )
+        return (session, { sent.compactMap { try? JSONValue.parse($0) } })
+    }
+
+    @Test func theWelcomeDecidesWhetherAppCallsAreOn() throws {
+        let (session, _) = try session()
+        #expect(!session.appCalls)
+        session.receive(#"{"v":1,"t":"welcome","session":"sess_1","catalogs":["core@1","embed@1"],"features":["resume","app_calls"]}"#)
+        #expect(session.appCalls)
+        session.receive(#"{"v":1,"t":"welcome","session":"sess_2","catalogs":["core@1","embed@1"]}"#)
+        #expect(!session.appCalls)
+    }
+
+    @Test func callsGoToTheServerAndAnswersComeBackToTheirEmbed() throws {
+        let (session, messages) = try session()
+        var first: [JSONValue] = []
+        var second: [JSONValue] = []
+        session.callApp(surface: "s1", embed: "calc", method: "tools/call", params: ["name": "quote"]) { first.append($0) }
+        session.callApp(surface: "s1", embed: "calc", method: "resources/read", params: ["uri": "ui://a/b"]) { second.append($0) }
+        let calls = messages().filter { $0["t"]?.stringValue == "app.call" }
+        #expect(calls.count == 2)
+        #expect(calls[0]["id"] == "a1" && calls[0]["embed"] == "calc" && calls[0]["method"] == "tools/call")
+        #expect(calls[0]["params"]?["name"] == "quote")
+        #expect(calls[1]["id"] == "a2")
+
+        session.receive(#"{"v":1,"t":"app.result","surface":"s1","embed":"other","id":"a1","result":{"content":[]}}"#)
+        #expect(first.isEmpty)
+        session.receive(#"{"v":1,"t":"app.result","surface":"s1","embed":"calc","id":"a1","result":{"content":[{"type":"text","text":"Rain"}]}}"#)
+        #expect(first == [["result": ["content": [["type": "text", "text": "Rain"]]]]])
+        session.receive(#"{"v":1,"t":"app.result","surface":"s1","embed":"calc","id":"a2","error":{"code":-32000,"message":"unknown resource"}}"#)
+        #expect(second == [["error": ["code": -32000, "message": "unknown resource"]]])
+        session.receive(#"{"v":1,"t":"app.result","surface":"s1","embed":"calc","id":"a1","result":{}}"#)
+        #expect(first.count == 1)
+        #expect(session.lastError == nil)
+        #expect(!messages().contains { $0["t"]?.stringValue == "ui.error" })
+    }
+
+    @Test func withdrawnCallsAreNeverAnswered() throws {
+        let (session, _) = try session()
+        var answers: [JSONValue] = []
+        session.callApp(surface: "s1", embed: "calc", method: "tools/call", params: [:]) { answers.append($0) }
+        session.withdrawAppCalls(surface: "s1", embed: "calc")
+        #expect(session.openAppCalls == 0)
+        session.receive(#"{"v":1,"t":"app.result","surface":"s1","embed":"calc","id":"a1","result":{}}"#)
+        #expect(answers.isEmpty)
+    }
+
+    @Test func aCallTheServerNeverAnswersTimesOut() async throws {
+        let (session, _) = try session()
+        session.appCallTimeout = .milliseconds(50)
+        var answers: [JSONValue] = []
+        session.callApp(surface: "s1", embed: "calc", method: "tools/call", params: [:]) { answers.append($0) }
+        for _ in 0..<40 where answers.isEmpty {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(answers == [["error": ["code": -32000, "message": "The app request timed out."]]])
+        #expect(session.openAppCalls == 0)
     }
 }
 
@@ -274,6 +353,70 @@ struct EmbedSessionTests {
         #expect(await waitFor { events.contains(.message("theme light")) })
         controller.tearDown()
         window.isHidden = true
+    }
+
+    static let callingApp = """
+        <!doctype html><html><body><script>
+        const send = (message) => window.parent.postMessage(Object.assign({ jsonrpc: "2.0" }, message), "*");
+        const say = (id, text) => send({ id, method: "ui/message", params: { role: "user", content: [{ type: "text", text }] } });
+        window.addEventListener("message", (event) => {
+          const data = event.data;
+          if (data && data.id === 1 && data.result) {
+            send({ method: "ui/notifications/initialized", params: {} });
+            const tools = data.result.hostCapabilities.serverTools ? "tools on" : "tools off";
+            say(2, tools);
+            send({ id: 3, method: "tools/call", params: { name: "quote", arguments: { usage_gb: 240 } } });
+          }
+          if (data && data.id === 3) setTimeout(() => say(4, data.result ? "got " + data.result.content[0].text : "failed " + data.error.code), 1100);
+        });
+        send({ id: 1, method: "ui/initialize", params: { protocolVersion: "2026-01-26", appInfo: { name: "t", version: "1" }, appCapabilities: {} } });
+        </script></body></html>
+        """
+
+    @Test func aRealWebViewCarriesAnAppCallAndItsAnswer() async throws {
+        let controller = EmbedPageController()
+        var events: [EmbedEvent] = []
+        var calls: [(String, JSONValue)] = []
+        controller.onEvent = { events.append($0) }
+        controller.appCalls = true
+        controller.onAppCall = { method, params, answer in
+            calls.append((method, params))
+            answer(["result": ["content": [["type": "text", "text": "Oila 100"]]]])
+        }
+        let webView = controller.makeWebView()
+        webView.frame = CGRect(x: 0, y: 0, width: 320, height: 320)
+        var props = Self.props()
+        props["app"] = [
+            "resource": ["uri": "ui://test/app", "mimeType": "text/html;profile=mcp-app", "text": .string(Self.callingApp)],
+            "tool_input": [:],
+        ]
+        controller.show(try JSONValue.object(props).jsonText())
+        #expect(await waitFor { events.contains(.message("tools on")) })
+        #expect(await waitFor { events.contains(.message("got Oila 100")) })
+        #expect(calls.count == 1)
+        #expect(calls.first?.0 == "tools/call")
+        #expect(calls.first?.1["name"] == "quote")
+        controller.tearDown()
+    }
+
+    @Test func aRealWebViewRefusesAppCallsWhenTheServerDidNotAcceptThem() async throws {
+        let controller = EmbedPageController()
+        var events: [EmbedEvent] = []
+        var calls = 0
+        controller.onEvent = { events.append($0) }
+        controller.onAppCall = { _, _, _ in calls += 1 }
+        let webView = controller.makeWebView()
+        webView.frame = CGRect(x: 0, y: 0, width: 320, height: 320)
+        var props = Self.props()
+        props["app"] = [
+            "resource": ["uri": "ui://test/app", "mimeType": "text/html;profile=mcp-app", "text": .string(Self.callingApp)],
+            "tool_input": [:],
+        ]
+        controller.show(try JSONValue.object(props).jsonText())
+        #expect(await waitFor { events.contains(.message("tools off")) })
+        #expect(await waitFor { events.contains(.message("failed -32601")) })
+        #expect(calls == 0)
+        controller.tearDown()
     }
 
     @Test func aRealWebViewRunsTheAppAndFiltersMessages() async throws {

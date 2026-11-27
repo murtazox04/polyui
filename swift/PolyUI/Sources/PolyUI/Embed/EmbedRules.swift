@@ -69,9 +69,12 @@ enum EmbedEvent: Equatable, Sendable {
     case height(Double)
     case message(String)
     case openLink(URL)
+    case appCall(id: String, method: String, params: JSONValue)
     case unavailable
 
-    static let longestBody = 65_536
+    static let longestBody = 98_304
+    static let longestCallID = 64
+    static let appMethods: Set<String> = ["tools/call", "resources/read"]
 
     static func read(_ body: Any, isMainFrame: Bool, nonce: String) -> EmbedEvent? {
         guard isMainFrame, let text = body as? String, text.utf8.count <= longestBody,
@@ -88,6 +91,12 @@ enum EmbedEvent: Equatable, Sendable {
             return .message(said)
         case "open-link":
             return SafeURL.check(fields["url"]?.stringValue).map(EmbedEvent.openLink)
+        case "app-call":
+            guard let id = fields["id"]?.stringValue, !id.isEmpty, id.count <= longestCallID,
+                let method = fields["method"]?.stringValue, appMethods.contains(method),
+                let params = fields["params"], params.objectValue != nil
+            else { return nil }
+            return .appCall(id: id, method: method, params: params)
         case "unavailable":
             return .unavailable
         default:

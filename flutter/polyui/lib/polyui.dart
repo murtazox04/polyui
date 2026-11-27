@@ -23,7 +23,7 @@ export 'src/model/chart_scene.dart'
         ChartTextAnchor,
         ChartTextMark;
 export 'src/model/component_node.dart' show ComponentNode;
-export 'src/model/session.dart' show PolyuiSend, PolyuiSession;
+export 'src/model/session.dart' show PolyuiAppAnswer, PolyuiSend, PolyuiSession;
 export 'src/model/surface_model.dart' show PolyuiSurfaceModel;
 export 'src/model/voice.dart'
     show

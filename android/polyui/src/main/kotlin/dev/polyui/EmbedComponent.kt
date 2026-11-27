@@ -55,6 +55,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.ByteArrayInputStream
@@ -107,7 +108,8 @@ private fun EmbedFrame(
     var height by remember { mutableIntStateOf(heights.start) }
     val nonce = remember { PolyuiEmbed.newNonce() }
     val firstProps = remember { node.props }
-    val page = remember { runCatching { PolyuiEmbed.page(firstProps, nonce) }.getOrNull() }
+    val appCalls = remember { scope.session.appCalls }
+    val page = remember { runCatching { PolyuiEmbed.page(firstProps, nonce, appCalls) }.getOrNull() }
     val reload by rememberUpdatedState(onReload)
     val giveUp by rememberUpdatedState(onUnavailable)
     if (page == null) {
@@ -119,11 +121,13 @@ private fun EmbedFrame(
             EmbedBridge(
                 nonce = nonce,
                 heights = heights,
+                appCalls = appCalls,
                 onHeight = { height = it },
                 onMessage = { text ->
                     scope.session.fire(scope.surface.id, node.id, "on_message", buildJsonObject { put("text", text) })
                 },
                 onLink = { request -> scope.surface.askLink(request) },
+                onAppCall = { call, done -> scope.session.callApp(scope.surface.id, node.id, call.method, call.params, done) },
                 onUnavailable = { giveUp() },
             )
         }
@@ -178,8 +182,11 @@ internal class EmbedBridge(
     private val onMessage: (String) -> Unit,
     private val onLink: (PolyuiLinkRequest) -> Unit,
     private val onUnavailable: () -> Unit,
+    private val appCalls: Boolean,
+    private val onAppCall: (PolyuiEmbedEvent.AppCall, (JsonObject) -> Unit) -> () -> Unit,
 ) {
     private val gate = PolyuiMessageGate()
+    private val openCalls = HashMap<String, () -> Unit>()
     private var pushed: JsonObject? = null
     private var released = false
     private var dark: Boolean? = null
@@ -281,6 +288,8 @@ internal class EmbedBridge(
     fun release(view: WebView) {
         if (released) return
         released = true
+        openCalls.values.forEach { cancel -> cancel() }
+        openCalls.clear()
         var destroyed = false
         val destroy = {
             if (!destroyed) {
@@ -319,10 +328,49 @@ internal class EmbedBridge(
                 answerLink(view, false)
             }
 
+            is PolyuiEmbedEvent.AppCall -> {
+                callApp(view, event)
+            }
+
             PolyuiEmbedEvent.Unavailable -> {
                 onUnavailable()
             }
         }
+    }
+
+    private fun callApp(
+        view: WebView,
+        call: PolyuiEmbedEvent.AppCall,
+    ) {
+        if (call.id in openCalls) return
+        when {
+            !appCalls -> {
+                answerApp(view, call.id, refusal(METHOD_NOT_FOUND, "Method not found"))
+            }
+
+            openCalls.size >= PolyuiEmbed.OPEN_APP_CALLS -> {
+                answerApp(view, call.id, refusal(REFUSED, "Too many requests are still open"))
+            }
+
+            else -> {
+                var finished = false
+                val cancel =
+                    onAppCall(call) { answer ->
+                        finished = true
+                        openCalls.remove(call.id)
+                        answerApp(view, call.id, answer)
+                    }
+                if (!finished) openCalls[call.id] = cancel
+            }
+        }
+    }
+
+    private fun answerApp(
+        view: WebView,
+        id: String,
+        answer: JsonObject,
+    ) {
+        if (!released) view.evaluateJavascript("window.polyuiHost.answerApp(${JsonPrimitive(id)}, $answer)", null)
     }
 
     private fun answerLink(
@@ -334,6 +382,22 @@ internal class EmbedBridge(
 
     private companion object {
         const val TEARDOWN_MILLIS = 500L
+        const val METHOD_NOT_FOUND = -32601
+        const val REFUSED = -32000
+
+        fun refusal(
+            code: Int,
+            message: String,
+        ): JsonObject =
+            buildJsonObject {
+                put(
+                    "error",
+                    buildJsonObject {
+                        put("code", code)
+                        put("message", message)
+                    },
+                )
+            }
     }
 }
 

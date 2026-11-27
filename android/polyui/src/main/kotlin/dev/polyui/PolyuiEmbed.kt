@@ -1,6 +1,8 @@
 package dev.polyui
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.security.MessageDigest
 import java.security.SecureRandom
 
@@ -47,6 +49,12 @@ internal sealed interface PolyuiEmbedEvent {
 
     data object RefusedLink : PolyuiEmbedEvent
 
+    data class AppCall(
+        val id: String,
+        val method: String,
+        val params: JsonObject,
+    ) : PolyuiEmbedEvent
+
     data object Unavailable : PolyuiEmbedEvent
 }
 
@@ -57,6 +65,9 @@ internal object PolyuiEmbed {
     const val BRIDGE_NAME = "polyui"
     const val NONCE_LENGTH = 32
     const val MESSAGE_GAP_MILLIS = 1000L
+    const val CALL_ID_LENGTH = 64
+    const val OPEN_APP_CALLS = 4
+    val APP_CALL_METHODS = setOf("tools/call", "resources/read")
 
     private const val NONCE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
     private const val APP_MIME_TYPE = "text/html;profile=mcp-app"
@@ -69,13 +80,21 @@ internal object PolyuiEmbed {
     fun page(
         props: JsonObject,
         nonce: String,
+        appCalls: Boolean = false,
     ): String {
         val slot = arrayOfNulls<ByteArray>(1)
         val propsText = props.toString()
         if (propsText.indexOf('\u0000') >= 0 || nonce.indexOf('\u0000') >= 0) {
             throw PolyuiException("PolyUI embed_page: an argument contains a NUL character")
         }
-        val page = PolyuiNative.embedPage(propsText.encodeToByteArray(), nonce.encodeToByteArray(), slot)
+        val host = buildJsonObject { put("app_calls", appCalls) }.toString()
+        val page =
+            PolyuiNative.embedPageWith(
+                propsText.encodeToByteArray(),
+                nonce.encodeToByteArray(),
+                host.encodeToByteArray(),
+                slot,
+            )
         return page?.decodeToString()
             ?: throw PolyuiException(slot.first()?.decodeToString() ?: "PolyUI embed_page failed without a message")
     }
@@ -116,6 +135,10 @@ internal object PolyuiEmbed {
                 if (url == null) PolyuiEmbedEvent.RefusedLink else PolyuiEmbedEvent.OpenLink(url.toString())
             }
 
+            "app-call" -> {
+                appCall(message)
+            }
+
             "unavailable" -> {
                 PolyuiEmbedEvent.Unavailable
             }
@@ -124,6 +147,13 @@ internal object PolyuiEmbed {
                 null
             }
         }
+    }
+
+    private fun appCall(message: JsonObject): PolyuiEmbedEvent.AppCall? {
+        val id = message["id"].stringValue?.takeIf { it.isNotEmpty() && it.length <= CALL_ID_LENGTH } ?: return null
+        val method = message["method"].stringValue?.takeIf { it in APP_CALL_METHODS } ?: return null
+        val params = message["params"].objectValue ?: return null
+        return PolyuiEmbedEvent.AppCall(id, method, params)
     }
 
     private fun sameText(

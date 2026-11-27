@@ -28,6 +28,10 @@ class EmbedComponent extends StatefulWidget {
 class EmbedComponentState extends State<EmbedComponent> {
   static EmbedComponentState? linkOwner;
   static const messageGap = Duration(seconds: 1);
+  static const openAppCallLimit = 4;
+  static const Map<String, Object?> tooManyAppCalls = {
+    'error': {'code': -32000, 'message': 'Too many requests are still open'},
+  };
 
   late PolyuiScope scope;
   WebViewController? controller;
@@ -41,6 +45,8 @@ class EmbedComponentState extends State<EmbedComponent> {
   String themeName = 'light';
   String? sentTheme;
   bool pageReady = false;
+  bool started = false;
+  final Map<String, void Function()> openCalls = {};
 
   ComponentNode get node => widget.node;
 
@@ -50,13 +56,16 @@ class EmbedComponentState extends State<EmbedComponent> {
   void initState() {
     super.initState();
     seenRevision = node.revision;
-    start();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     scope = PolyuiScope.of(context);
+    if (!started) {
+      started = true;
+      start();
+    }
     final background = PolyuiTheme.of(context).background;
     themeName =
         ThemeData.estimateBrightnessForColor(background) == Brightness.dark
@@ -137,6 +146,7 @@ class EmbedComponentState extends State<EmbedComponent> {
       final page = PolyuiCore.embedPage(
         propsJson: jsonEncode(node.props),
         nonce: fresh,
+        appCalls: scope.session.appCalls,
       );
       nonce = fresh;
       return page;
@@ -147,6 +157,7 @@ class EmbedComponentState extends State<EmbedComponent> {
 
   void stop() {
     closeLinkQuestion();
+    dropAppCalls();
     final current = controller;
     controller = null;
     nonce = '';
@@ -260,6 +271,55 @@ class EmbedComponentState extends State<EmbedComponent> {
         sendMessage(said);
       case EmbedOpenLink(:final url):
         unawaited(askLink(made, url));
+      case final EmbedAppCall call:
+        callApp(made, call);
+    }
+  }
+
+  void callApp(WebViewController made, EmbedAppCall call) {
+    final page = nonce;
+    openCalls.remove(call.id)?.call();
+    if (openCalls.length >= openAppCallLimit) {
+      answerApp(made, page, call.id, tooManyAppCalls);
+      return;
+    }
+    var answered = false;
+    final cancel = scope.session.callApp(
+      surface: scope.surface.id,
+      embed: node.id,
+      method: call.method,
+      params: call.params,
+      done: (answer) {
+        answered = true;
+        openCalls.remove(call.id);
+        answerApp(made, page, call.id, answer);
+      },
+    );
+    if (!answered) {
+      openCalls[call.id] = cancel;
+    }
+  }
+
+  void answerApp(
+    WebViewController made,
+    String page,
+    String id,
+    Map<String, Object?> answer,
+  ) {
+    if (!mounted || controller != made || nonce != page) {
+      return;
+    }
+    final script =
+        'window.polyuiHost.answerApp(${jsonEncode(id)}, '
+        'JSON.parse(${jsonEncode(jsonEncode(answer))}))';
+    unawaited(made.runJavaScript(script).catchError((Object error) {}));
+  }
+
+  void dropAppCalls() {
+    final open = openCalls.values.toList();
+    openCalls.clear();
+    for (final cancel in open) {
+      cancel();
     }
   }
 
@@ -344,6 +404,7 @@ class EmbedComponentState extends State<EmbedComponent> {
       return;
     }
     closeLinkQuestion();
+    dropAppCalls();
     final page = buildPage();
     if (page == null) {
       fallBack();

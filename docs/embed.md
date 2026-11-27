@@ -113,11 +113,13 @@ The spec and the SDK types disagree on the shape of `ui/message`: the spec shows
 
 ### What the renderer does not do yet
 
-`tools/call`, `resources/read` and `ui/update-model-context` from the app are answered with JSON-RPC error `-32601`, and `hostCapabilities` does not advertise `serverTools` or `serverResources`. `ui/request-display-mode` always answers `inline`. Proxying tool calls needs a server message that does not exist in protocol version 1.
+`ui/update-model-context` from the app is answered with JSON-RPC error `-32601`: text written by app code would reach the model, which needs its own decision. `ui/request-display-mode` always answers `inline`. `tools/call` and `resources/read` work when the server accepts app calls (see [App calls](#app-calls)) and get `-32601` otherwise.
 
 ## Hosting the sandbox page
 
 `js/polyui-web/embed-sandbox/index.html` is a single static file with an inline script and no dependencies. Serve it from an origin that differs from your app's origin (a different host name, not a different path), for example `https://sandbox.example-usercontent.net/`, and set `embedOrigin` to that URL. Serve it without a `Content-Security-Policy` header: the page builds the app's policy itself, and the app's document is a `srcdoc` child of this page, so a header here would be layered on top of the app's policy as well. The reference browser check serves it with no headers at all.
+
+The page that hosts the renderer has to allow the frame: if it has a `Content-Security-Policy`, its `frame-src` must include the sandbox origin, or the browser blocks the frame and the embed stays blank. The chat example allows `https:` and plain `http` on `localhost` and `127.0.0.1` only.
 
 ## Browser check
 
@@ -187,9 +189,50 @@ PLAYWRIGHT_CHANNEL=chromium npx -y -p playwright@1.65.1 node bindings/ffi/tests/
 
 The Python and Node bindings run the same step in `prepare_show` and `prepare_update` (`prepareShow`, `prepareUpdate`). Pass a resource callback when you build the validator, `ui_resource=` in Python and `uiResource` in Node. It is called as `(user, uri)` and returns a `resources/read` entry, an object `{"resource": entry, "tool_input": ..., "tool_result": ...}`, or nothing. Like the ref resolver it has to answer synchronously; when your MCP client is async, read the URIs from `resource_uris` (`resourceUris`) first and pass the entries as `resources` (see [Async lookups](bindings.md#async-lookups)). `Catalogs.with_embed()` (`withEmbed()`) turns the catalog on, `attach_apps` (`attachApps`) runs the step on its own, and a call whose `declared` list leaves out `embed@1` never reads a resource.
 
+## App calls
+
+An app can ask its own MCP server for fresh data without a model turn: the tariff calculator asks for a quote every time a slider stops moving. The request goes from the app to the renderer, to the PolyUI server as `app.call`, to your host, and back as `app.result` ([ADR 3](adr/0003-tool-calls-from-an-embedded-app.md), `spec/protocol.md` section 8.3).
+
+```mermaid
+sequenceDiagram
+    participant A as App in the sandbox
+    participant R as Renderer
+    participant S as PolyUI server
+    participant H as Your host
+    participant M as MCP server
+    A->>R: tools/call quote_tariffs
+    R->>S: app.call
+    S->>S: embed on screen, method, size, rate
+    S->>H: Host::app_request
+    H->>H: visibility includes "app", tool on the app's server
+    H->>M: tools/call
+    M-->>H: result
+    H-->>S: Ok(result)
+    S-->>R: app.result
+    R-->>A: JSON-RPC answer
+```
+
+| Web | iOS | Android |
+|---|---|---|
+| ![The tariff calculator in the web chat showing a provider quote after the sliders moved](images/web-app-call.png) | ![The same calculator in the iOS example with the quote under the tariffs](images/ios-app-call.png) | ![The calculator in the Android example with the quote for 8 people](images/android-app-call.png) |
+
+**Host.** Return `true` from `Host::app_calls` and answer `Host::app_request(user, request)`. `request.app` is the app's `ui://` URI, `request.method` is `AppMethod::CallTool` or `AppMethod::ReadResource`, and `request.params` are the app's params unchanged (`tool_name()` and `resource_uri()` read the usual fields). Return the MCP result as it came, or an `AppError`. Before you call the MCP server:
+
+- refuse a tool whose `_meta.ui.visibility` leaves out `"app"`; `polyui_server::apps::callable_by_app(&tool)` reads it with the spec's default of `["model", "app"]`,
+- refuse any tool or resource that is not on the MCP server the app URI came from,
+- keep tools that move money or delete things out of `"app"` visibility: an app call has no confirmation sheet yet.
+
+The bills host shows the whole shape in `crates/polyui-server/src/bills.rs` (`app_tools`, `quote_tariffs` and its `app_request`).
+
+**Server.** The session accepts app calls when the host says yes, the client declared `app_calls` and `embed@1` was negotiated; `welcome.features` then lists `app_calls`. `AgentConfig` holds the limits: `open_app_calls` (4 per session), `app_call_rate` (30 a minute per embed), `app_call_timeout` (30 seconds) and `max_app_params_bytes` (64 KiB). Calls and results never enter the model's history.
+
+**Renderers.** The web renderer, `PolyUISession` on iOS, and the Android and Flutter sessions read `welcome.features` and route `app.result` back to the right frame by surface, embed and their own call id. They advertise `serverTools` and `serverResources` to the app only when app calls are on, allow 4 open calls per embed, and answer a call the server never answers with a timeout error after 40 seconds. A host app that handles server messages itself, like the web chat example, has to pass `app.result` to the renderer the same way it passes `ui.*` messages. Native pages are built with `polyui_embed_page_with(props, nonce, host)`, where `host` is `{"app_calls": true}` or `false`.
+
+The Python and Node bindings have no transport, so app calls are a feature of `polyui-server` and of hosts that implement the same messages.
+
 ## Trying it locally
 
-The bills demo host has one app, an internet tariff calculator at `ui://bills/tariff` (`crates/polyui-server/src/tariff-app.html`). It gets the family's usage as `tool_input` and the three tariffs as `tool_result`, lets the user move two sliders, and has a button that sends the best tariff back as a `ui/message`. Turn it on with `--embed-origin`:
+The bills demo host has one app, an internet tariff calculator at `ui://bills/tariff` (`crates/polyui-server/src/tariff-app.html`). It gets the family's usage as `tool_input` and the three tariffs as `tool_result`, lets the user move two sliders, asks the host for a quote through the app-only tool `quote_tariffs` when the sliders stop, and has a button that sends the best tariff back as a `ui/message`. Turn it on with `--embed-origin`:
 
 ```sh
 (cd examples/chat && npm run build)

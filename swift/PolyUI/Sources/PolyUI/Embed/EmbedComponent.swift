@@ -21,6 +21,10 @@ struct EmbedComponent: View {
                 onEvent: { event in handle(event, size: size, propsJSON: propsJSON) },
                 onLink: { url, answer in
                     session.askToOpen(url, surface: surface.id, component: node.id, answer: answer)
+                },
+                appCalls: session.appCalls,
+                onAppCall: { method, params, answer in
+                    session.callApp(surface: surface.id, embed: node.id, method: method, params: params, answer: answer)
                 }
             )
             .frame(height: measured ?? size.startHeight)
@@ -30,7 +34,10 @@ struct EmbedComponent: View {
             .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: measured)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(title)
-            .onDisappear { session.withdrawLink(surface: surface.id, component: node.id) }
+            .onDisappear {
+                session.withdrawLink(surface: surface.id, component: node.id)
+                session.withdrawAppCalls(surface: surface.id, embed: node.id)
+            }
         } else {
             EmbedTitleView(title: title)
         }
@@ -38,7 +45,7 @@ struct EmbedComponent: View {
 
     private func handle(_ event: EmbedEvent, size: EmbedSize, propsJSON: String) {
         switch event {
-        case .ready, .openLink:
+        case .ready, .openLink, .appCall:
             break
         case .height(let value):
             let clamped = size.clamp(value)
@@ -80,6 +87,8 @@ struct EmbedWebView: UIViewRepresentable {
     let title: String
     let onEvent: @MainActor (EmbedEvent) -> Void
     let onLink: @MainActor (URL, @escaping @MainActor (Bool) -> Void) -> Void
+    let appCalls: Bool
+    let onAppCall: @MainActor (String, JSONValue, @escaping @MainActor (JSONValue) -> Void) -> Void
 
     func makeCoordinator() -> EmbedPageController {
         EmbedPageController()
@@ -105,6 +114,8 @@ struct EmbedWebView: UIViewRepresentable {
     private func wire(_ controller: EmbedPageController, _ webView: WKWebView) {
         controller.onEvent = onEvent
         controller.onLink = onLink
+        controller.appCalls = appCalls
+        controller.onAppCall = onAppCall
         webView.accessibilityLabel = title
     }
 }

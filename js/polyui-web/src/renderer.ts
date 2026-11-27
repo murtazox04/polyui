@@ -2,7 +2,7 @@ import { createChartRenderer, renderDashboard } from "./chart";
 import { coreRenderers } from "./components";
 import { openConfirm, type ConfirmHandle } from "./confirm";
 import { isRecord } from "./dom";
-import { createEmbedRenderer, embedSandbox } from "./embed";
+import { type AppAnswer, createEmbedRenderer, embedSandbox } from "./embed";
 import { PolyuiSurface, defineSurfaceElement, surfaceTag, type SurfaceHost } from "./surface";
 import { safeUrl } from "./url";
 import type {
@@ -44,6 +44,29 @@ function asBatch(value: Json | undefined): RenderBatch | null {
   return { ...value, ops: ops ?? [] } as unknown as RenderBatch;
 }
 
+export const appCallsFeature = "app_calls";
+const appCallTimeoutMs = 40_000;
+
+function appKey(surface: string, embed: string, id: string): string {
+  return JSON.stringify([surface, embed, id]);
+}
+
+function peek(text: string): { readonly [key: string]: Json } | null {
+  if (!text.includes('"welcome"') && !text.includes('"app.result"')) return null;
+  const value = parse(text);
+  return isRecord(value) && (value["t"] === "welcome" || value["t"] === "app.result") ? value : null;
+}
+
+function answerOf(message: { readonly [key: string]: Json }): AppAnswer {
+  const error = message["error"];
+  if (isRecord(error)) {
+    const code = typeof error["code"] === "number" ? error["code"] : -32000;
+    const text = typeof error["message"] === "string" ? error["message"] : "The app request failed.";
+    return { error: { code, message: text } };
+  }
+  return { result: message["result"] };
+}
+
 function errorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -63,6 +86,9 @@ export class Renderer implements SurfaceHost {
   #queue: RenderBatch[] = [];
   #frame = 0;
   #destroyed = false;
+  #appCalls = false;
+  #appReplies = new Map<string, (answer: AppAnswer) => void>();
+  #appCounter = 0;
 
   constructor(options: RendererOptions) {
     defineSurfaceElement();
@@ -86,6 +112,8 @@ export class Renderer implements SurfaceHost {
             { labels: this.#labels, delayMs: this.#confirmDelayMs, onConfirm: () => done(true), onDismiss: () => done(false) },
           ),
         openLink,
+        appCalls: () => this.#appCalls,
+        callApp: (surface, embed, method, params, done) => this.#callApp(surface, embed, method, params, done),
       }),
     );
   }
@@ -98,6 +126,12 @@ export class Renderer implements SurfaceHost {
   receive(message: string | { readonly [key: string]: Json }): void {
     if (this.#destroyed) return;
     const text = typeof message === "string" ? message : JSON.stringify(message);
+    const peeked = peek(text);
+    if (peeked?.["t"] === "app.result") return this.#appResult(peeked);
+    if (peeked) {
+      const features = peeked["features"];
+      this.#appCalls = Array.isArray(features) && features.includes(appCallsFeature);
+    }
     this.#accept(this.#call("", () => this.#core.receive(text)));
   }
 
@@ -163,6 +197,7 @@ export class Renderer implements SurfaceHost {
     this.#queue.length = 0;
     for (const handle of this.#confirms.values()) handle.close();
     this.#confirms.clear();
+    for (const finish of [...this.#appReplies.values()]) finish({ error: { code: -32000, message: "The renderer was closed." } });
     for (const node of this.#surfaces.values()) {
       node.dispose();
       node.remove();
@@ -223,6 +258,30 @@ export class Renderer implements SurfaceHost {
   dismiss(surface: string): void {
     this.#confirms.get(surface)?.close();
     this.#confirms.delete(surface);
+  }
+
+  #callApp(surface: string, embed: string, method: string, params: Json | undefined, done: (answer: AppAnswer) => void): () => void {
+    const id = `a${++this.#appCounter}`;
+    const key = appKey(surface, embed, id);
+    let timer = 0;
+    const finish = (answer: AppAnswer): void => {
+      if (!this.#appReplies.delete(key)) return;
+      clearTimeout(timer);
+      done(answer);
+    };
+    this.#appReplies.set(key, finish);
+    timer = window.setTimeout(() => finish({ error: { code: -32000, message: "The app request timed out." } }), appCallTimeoutMs);
+    this.#transmit({ v: 1, t: "app.call", surface, embed, id, method, params: params ?? {} });
+    return () => {
+      this.#appReplies.delete(key);
+      clearTimeout(timer);
+    };
+  }
+
+  #appResult(message: { readonly [key: string]: Json }): void {
+    const { surface, embed, id } = message;
+    if (typeof surface !== "string" || typeof embed !== "string" || typeof id !== "string") return;
+    this.#appReplies.get(appKey(surface, embed, id))?.(answerOf(message));
   }
 
   #call(surface: string, run: () => string | null): string | null {

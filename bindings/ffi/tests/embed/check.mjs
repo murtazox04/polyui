@@ -26,7 +26,9 @@ const props = {
   },
 };
 
-const html = execFileSync("cargo", ["run", "-q", "-p", "polyui-ffi", "--example", "embed_page", "--", nonce], { cwd: root, input: JSON.stringify(props), maxBuffer: 1 << 24 }).toString();
+const build = (host) => execFileSync("cargo", ["run", "-q", "-p", "polyui-ffi", "--example", "embed_page", "--", nonce, host], { cwd: root, input: JSON.stringify(props), maxBuffer: 1 << 24 }).toString();
+const html = build("{}");
+const withAppCalls = build(JSON.stringify({ app_calls: true }));
 
 const { chromium } = playwright();
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? "chrome" });
@@ -113,7 +115,47 @@ try {
   expect(await page.evaluate(() => window.polyuiHost.setTheme("sepia") === false), "setTheme refuses other names");
 
   expect(await page.evaluate(() => window.polyuiHost.update({ resource: "ui://weather/forecast" }) === false), "update with a different app asks for a reload");
+
+  const ask = (frame, id, method, params) => frame.evaluate(([id, method, params]) => new Promise((resolve) => {
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.id === id) resolve(event.data);
+    });
+    window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+  }), [id, method, params]);
+  const refused = await ask(inner, 80, "tools/call", { name: "forecast", arguments: { city: "Samarkand" } });
+  expect(refused.error && refused.error.code === -32601, "tools/call is refused when the host did not turn app calls on");
+  expect(!events.some((event) => event.kind === "app-call"), "no app call reaches native without app calls");
   expect(problems.length === 0, `no page errors (${problems.join("; ")})`);
+
+  const second = await browser.newPage();
+  const secondEvents = [];
+  await second.exposeBinding("polyuiNative", (source, text) => secondEvents.push({ main: source.frame === second.mainFrame(), ...JSON.parse(text) }));
+  await second.addInitScript(() => {
+    window.polyui = { postMessage: (text) => window.polyuiNative(text) };
+  });
+  await second.route("https://embed.polyui.invalid/", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: withAppCalls }));
+  await second.goto("https://embed.polyui.invalid/");
+  await second.frameLocator("iframe").locator("#days li").first().waitFor();
+  const secondInner = second.frames().find((frame) => frame !== second.mainFrame());
+  const capabilities = await ask(secondInner, 90, "ui/initialize", { appInfo: { name: "check", version: "1" }, appCapabilities: {}, protocolVersion: "2026-01-26" });
+  expect(capabilities.result && capabilities.result.hostCapabilities.serverTools && capabilities.result.hostCapabilities.serverResources, "the app is told it may call server tools");
+  const quoted = ask(secondInner, 91, "tools/call", { name: "forecast", arguments: { city: "Samarkand" } });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const call = secondEvents.find((event) => event.kind === "app-call");
+  expect(call && call.main && call.nonce === nonce && call.method === "tools/call" && call.params.arguments.city === "Samarkand", "tools/call reaches native as an app call");
+  expect(call && /^[0-9a-f]{12}-1$/.test(call.id), "the call id is the page's own, not the app's");
+  expect(await second.evaluate(() => window.polyuiHost.answerApp("unknown", { result: {} }) === false), "an unknown call id is ignored");
+  expect(await second.evaluate((id) => window.polyuiHost.answerApp(id, { result: { content: [{ type: "text", text: "Rain" }] } }), call && call.id), "answerApp settles the call");
+  const answered = await quoted;
+  expect(answered.result && answered.result.content[0].text === "Rain", "the result reaches the app");
+  expect(await second.evaluate((id) => window.polyuiHost.answerApp(id, { result: {} }) === false, call && call.id), "a call is answered once");
+  const failing = ask(secondInner, 92, "resources/read", { uri });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const read = secondEvents.filter((event) => event.kind === "app-call").at(-1);
+  await second.evaluate((id) => window.polyuiHost.answerApp(id, { error: { code: -32000, message: "unknown resource" } }), read.id);
+  const failed = await failing;
+  expect(failed.error && failed.error.code === -32000 && failed.error.message === "unknown resource", "an error answer reaches the app");
+  await second.close();
 } finally {
   await browser.close();
 }

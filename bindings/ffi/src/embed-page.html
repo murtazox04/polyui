@@ -14,12 +14,18 @@
     <script>
       (() => {
         const nonce = "POLYUI_NONCE_SLOT";
+        const host = POLYUI_HOST_SLOT;
         let props = POLYUI_PROPS_SLOT;
         const mimeType = "text/html;profile=mcp-app";
         const bounds = { small: [160, 320], medium: [320, 640], large: [480, 960] };
         const minHeight = 80;
         const messageBytes = 4096;
         const messageGapMs = 1000;
+        const openAppCalls = 4;
+        const paramsBytes = 65536;
+        const proxiedMethods = ["tools/call", "resources/read"];
+        const appCalls = host.app_calls === true;
+        const callPrefix = Array.from(crypto.getRandomValues(new Uint8Array(6)), (byte) => byte.toString(16).padStart(2, "0")).join("");
         const reserved = "ui/notifications/sandbox-";
         const cspKeys = ["connectDomains", "resourceDomains", "frameDomains", "baseUriDomains"];
         const sourcePattern = /^(https|wss):\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*(:\d{1,5})?$/i;
@@ -128,6 +134,8 @@
         let lastMessage = -messageGapMs;
         let pendingLink = null;
         let theme = null;
+        let callCounter = 0;
+        const calls = new Map();
 
         const maxHeight = () => (bounds[props.height] || bounds.medium)[1];
         const post = (message) => {
@@ -150,7 +158,7 @@
             reply(id, {
               protocolVersion: "2026-01-26",
               hostInfo: { name: "polyui-native", version: "0.1.0" },
-              hostCapabilities: { openLinks: {} },
+              hostCapabilities: appCalls ? { openLinks: {}, serverTools: {}, serverResources: {} } : { openLinks: {} },
               hostContext: {
                 theme: (theme = currentTheme()),
                 displayMode: "inline",
@@ -179,6 +187,13 @@
             if (pendingLink !== null) return fail(id, -32000, "Policy violation");
             pendingLink = id;
             toNative({ kind: "open-link", url: href });
+          } else if (appCalls && proxiedMethods.includes(method)) {
+            if (calls.size >= openAppCalls) return fail(id, -32000, "Too many requests are still open");
+            if (new TextEncoder().encode(JSON.stringify(isRecord(params) ? params : {})).length > paramsBytes) return fail(id, -32602, "params are too large");
+            callCounter += 1;
+            const call = `${callPrefix}-${callCounter}`;
+            calls.set(call, id);
+            toNative({ kind: "app-call", id: call, method, params: isRecord(params) ? params : {} });
           } else {
             fail(id, -32601, "Method not found");
           }
@@ -234,7 +249,22 @@
               else fail(id, -32000, "Link opening denied by user");
               return true;
             },
+            answerApp(call, answer) {
+              if (!calls.has(call)) return false;
+              const id = calls.get(call);
+              calls.delete(call);
+              const error = isRecord(answer) ? answer.error : undefined;
+              if (isRecord(error)) {
+                fail(id, typeof error.code === "number" ? error.code : -32000, typeof error.message === "string" ? error.message : "The app request failed.");
+              } else if (isRecord(answer) && isRecord(answer.result)) {
+                reply(id, answer.result);
+              } else {
+                fail(id, -32603, "Invalid result");
+              }
+              return true;
+            },
             teardown() {
+              calls.clear();
               if (ready) post({ id: 0, method: "ui/resource-teardown", params: { reason: "removed" } });
               return true;
             },

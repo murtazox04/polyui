@@ -15,6 +15,7 @@
     <p id="summary">Waiting for the tool result.</p>
     <button id="ask" type="button">Ask the assistant</button>
     <button id="docs" type="button">Open the docs</button>
+    <button id="price" type="button">Price</button>
     <p id="status">Nothing yet</p>
     <script>
       (() => {
@@ -67,6 +68,12 @@
           byId("status").textContent = "Asking to open the link";
           request("ui/open-link", { url: "https://example.com/docs?from=polyui" })
             .then(() => { byId("status").textContent = "Link opened"; })
+            .catch((error) => { byId("status").textContent = error.message; });
+        });
+        byId("price").addEventListener("click", () => {
+          byId("status").textContent = "Asking for the price";
+          request("tools/call", { name: "quote_tariffs", arguments: { usage: 320 } })
+            .then((result) => { byId("status").textContent = result.content.map((block) => block.text).join(" "); })
             .catch((error) => { byId("status").textContent = error.message; });
         });
         request("ui/initialize", { appInfo: { name: "Embed test app", version: "1.0.0" }, appCapabilities: {}, protocolVersion: "2026-01-26" }).then((result) => {

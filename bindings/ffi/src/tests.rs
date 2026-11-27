@@ -171,6 +171,56 @@ fn embed_page_props_slot_text_is_not_expanded() {
     assert!(html.contains(&format!("const nonce = \"{NONCE}\";")));
 }
 
+fn page_with(props: &str, host: &str) -> Result<String, String> {
+    let props = c_text(props);
+    let nonce = c_text(NONCE);
+    let host = c_text(host);
+    let mut error = ptr::null_mut();
+    let html = unsafe {
+        take(polyui_embed_page_with(
+            props.as_ptr(),
+            nonce.as_ptr(),
+            host.as_ptr(),
+            &mut error,
+        ))
+    };
+    match html {
+        Some(html) => Ok(html),
+        None => Err(unsafe { take(error) }.expect("error is set")),
+    }
+}
+
+#[test]
+fn embed_page_takes_app_calls_only_from_the_host() {
+    let off = page(r#"{"title":"Forecast"}"#, NONCE).expect("page");
+    assert!(off.contains(r#"const host = {"app_calls":false};"#));
+    let on = page_with(
+        r#"{"title":"Forecast"}"#,
+        r#"{"app_calls":true,"other":"x"}"#,
+    )
+    .expect("page");
+    assert!(on.contains(r#"const host = {"app_calls":true};"#));
+    assert!(!on.contains("POLYUI_HOST_SLOT"));
+    let props_text =
+        page_with(r#"{"title":"POLYUI_HOST_SLOT"}"#, r#"{"app_calls":true}"#).expect("page");
+    assert!(props_text.contains(r#"{"title":"POLYUI_HOST_SLOT"}"#));
+    assert!(
+        page_with("{}", r#"{"app_calls":"yes"}"#)
+            .unwrap_err()
+            .contains("true or false")
+    );
+    assert!(
+        page_with("{}", "[true]")
+            .unwrap_err()
+            .contains("JSON object")
+    );
+    assert!(
+        page_with("{}", "{nope")
+            .unwrap_err()
+            .contains("not valid JSON")
+    );
+}
+
 #[test]
 fn embed_page_rejects_bad_input() {
     assert!(page("{}", "short").unwrap_err().contains("nonce"));

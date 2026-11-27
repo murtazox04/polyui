@@ -106,7 +106,11 @@ Drawn types: `Text`, `Card` (nested cards are sunken), `Row` (side by side, fall
 
 An `embed:Embed` with an `app` draws the MCP App in a `WebView` inside the surface. Without an `app`, when the page reports `unavailable`, or when the device's WebView cannot do what the renderer needs, it shows the title as text and makes no `WebView` at all.
 
-The renderer does not rebuild the sandbox itself. It loads the page that the C ABI builds, `polyui_embed_page(props, nonce)`, through a new JNI entry point (`PolyuiNative.embedPage`). That page puts the app in an inner frame with `sandbox="allow-scripts"` and a CSP, and speaks the MCP Apps host protocol (see [Native renderers](embed.md#native-renderers)). What comes back to Kotlin is small: `ready`, `height`, `message`, `open-link` and `unavailable`.
+The renderer does not rebuild the sandbox itself. It loads the page that the C ABI builds, `polyui_embed_page(props, nonce)`, through a new JNI entry point (`PolyuiNative.embedPage`). That page puts the app in an inner frame with `sandbox="allow-scripts"` and a CSP, and speaks the MCP Apps host protocol (see [Native renderers](embed.md#native-renderers)). What comes back to Kotlin is small: `ready`, `height`, `message`, `open-link`, `app-call` and `unavailable`.
+
+When the server's `welcome` listed `app_calls`, the page is built with `PolyuiNative.embedPageWith(props, nonce, {"app_calls": true})`, and the app may ask its own MCP server for data. An `app-call` event goes out as `app.call` through the session, the `app.result` comes back by surface, embed and id without passing the core, and the bridge answers the page with `window.polyuiHost.answerApp(id, answer)`. More than 4 open calls are refused, a call the server never answers gets a timeout error after 40 seconds, and leaving the screen or reloading drops the open calls. The example declares `app_calls` in its `hello` (`PolyuiSession.APP_CALLS_FEATURE`). See [App calls](embed.md#app-calls).
+
+![The tariff calculator in the Android example after the people slider moved to 8: the provider quote came from the server without a model turn](images/android-app-call.png)
 
 ```mermaid
 sequenceDiagram

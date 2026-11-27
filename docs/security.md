@@ -204,8 +204,12 @@ The model names a `ui://` resource and nothing more. The host supplies the HTML,
 | The frame gets more than `allow-scripts`, or the HTML lands in the host page | web `embed.test.ts` "loads the sandbox page with allow-scripts only and never puts the HTML in the host page" |
 | Messages from another frame or window | web `embed.test.ts` "answers the sandbox only for its own frame with an opaque origin" |
 | `ui/message` without an `on_message` action, and links that skip the confirm sheet or are not `https` | web `embed.test.ts` "denies ui/message when the component has no on_message action", "opens only https links, and only after the user confirms in the renderer's sheet" |
+| An app calls a tool it may not call (`visibility` without `"app"`, another server's tool, or a model-only action) | server `app_calls.rs` `only_tools_the_app_may_call_run`, `apps::tests::visibility_decides_what_an_app_may_call` |
+| An app call for a component that is not an embed on an open surface, or with bad params | server `app_calls.rs` `calls_need_an_embed_that_is_on_screen`, `bad_params_are_refused_before_the_host` |
+| An app floods the host or a slow MCP server holds every slot | server `app_calls.rs` `each_embed_has_a_rate_limit`, `slow_hosts_time_out_and_open_calls_are_capped` |
+| App calls without the `app_calls` feature, or app results leaking into the model | server `app_calls.rs` `without_the_feature_every_call_is_method_not_found`, `the_app_gets_a_quote_without_a_model_turn` |
 
-The core tests are in `crates/polyui-core/tests/embed.rs`, the server tests in `crates/polyui-server/tests/embed.rs`, and the renderer tests in `js/polyui-web/test/embed.test.ts` (run with `npm test` in `js/polyui-web`).
+The core tests are in `crates/polyui-core/tests/embed.rs`, the server tests in `crates/polyui-server/tests/embed.rs` and `crates/polyui-server/tests/app_calls.rs`, and the renderer tests in `js/polyui-web/test/embed.test.ts` (run with `npm test` in `js/polyui-web`).
 
 ## The transport
 

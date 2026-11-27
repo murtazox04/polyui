@@ -11,10 +11,27 @@ public final class PolyUISession {
     @ObservationIgnored public var openLink: @MainActor (URL) -> Void = { url in
         UIApplication.shared.open(url)
     }
+    public static let appCallsFeature = "app_calls"
+
     public private(set) var surfaceIDs: [String] = []
     public private(set) var lastError: String?
+    public private(set) var appCalls = false
+    @ObservationIgnored public var appCallTimeout: Duration = .seconds(40)
     @ObservationIgnored private var surfaces: [String: PolyUISurfaceModel] = [:]
     @ObservationIgnored private var reportedTypes: Set<String> = []
+    @ObservationIgnored private var appWaiters: [AppCallKey: AppWaiter] = [:]
+    @ObservationIgnored private var appCounter = 0
+
+    struct AppCallKey: Hashable {
+        let surface: String
+        let embed: String
+        let id: String
+    }
+
+    private struct AppWaiter {
+        let answer: @MainActor (JSONValue) -> Void
+        let timer: Task<Void, Never>
+    }
 
     public init(core: PolyUICore, allowHTTP: Bool = false, send: @escaping (String) -> Void = { _ in }) {
         self.core = core
@@ -40,7 +57,70 @@ public final class PolyUISession {
     }
 
     public func receive(_ message: String) {
+        if let peeked = Self.peek(message) {
+            if peeked["t"]?.stringValue == "app.result" {
+                appResult(peeked)
+                return
+            }
+            appCalls = peeked["features"]?.arrayValue?.contains(.string(Self.appCallsFeature)) ?? false
+        }
         accept(attempt(surface: "") { try core.receive(message) })
+    }
+
+    public func callApp(
+        surface: String,
+        embed: String,
+        method: String,
+        params: JSONValue,
+        answer: @escaping @MainActor (JSONValue) -> Void
+    ) {
+        appCounter += 1
+        let key = AppCallKey(surface: surface, embed: embed, id: "a\(appCounter)")
+        let timeout = appCallTimeout
+        let timer = Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            self?.finishApp(key, with: ["error": ["code": -32000, "message": "The app request timed out."]])
+        }
+        appWaiters[key] = AppWaiter(answer: answer, timer: timer)
+        transmit([
+            "v": 1, "t": "app.call", "surface": .string(surface), "embed": .string(embed), "id": .string(key.id),
+            "method": .string(method), "params": params,
+        ])
+    }
+
+    public func withdrawAppCalls(surface: String, embed: String) {
+        for key in appWaiters.keys where key.surface == surface && key.embed == embed {
+            appWaiters.removeValue(forKey: key)?.timer.cancel()
+        }
+    }
+
+    var openAppCalls: Int { appWaiters.count }
+
+    private func appResult(_ message: JSONValue) {
+        guard let surface = message["surface"]?.stringValue, let embed = message["embed"]?.stringValue,
+            let id = message["id"]?.stringValue
+        else { return }
+        let answer: JSONValue =
+            if let error = message["error"], error.objectValue != nil {
+                ["error": error]
+            } else {
+                ["result": message["result"] ?? .null]
+            }
+        finishApp(AppCallKey(surface: surface, embed: embed, id: id), with: answer)
+    }
+
+    private func finishApp(_ key: AppCallKey, with answer: JSONValue) {
+        guard let waiter = appWaiters.removeValue(forKey: key) else { return }
+        waiter.timer.cancel()
+        waiter.answer(answer)
+    }
+
+    private static func peek(_ message: String) -> JSONValue? {
+        guard message.contains("\"welcome\"") || message.contains("\"app.result\"") else { return nil }
+        guard let value = try? JSONValue.parse(message) else { return nil }
+        let kind = value["t"]?.stringValue
+        return kind == "welcome" || kind == "app.result" ? value : nil
     }
 
     public func receive(_ message: JSONValue) {

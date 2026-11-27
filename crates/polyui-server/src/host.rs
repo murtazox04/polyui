@@ -77,6 +77,83 @@ impl ActionOutcome {
     }
 }
 
+pub const METHOD_NOT_FOUND: i64 = -32601;
+pub const INVALID_PARAMS: i64 = -32602;
+pub const REFUSED: i64 = -32000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppMethod {
+    CallTool,
+    ReadResource,
+}
+
+impl AppMethod {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "tools/call" => Some(Self::CallTool),
+            "resources/read" => Some(Self::ReadResource),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::CallTool => "tools/call",
+            Self::ReadResource => "resources/read",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AppRequest<'a> {
+    pub app: &'a str,
+    pub method: AppMethod,
+    pub params: &'a Map<String, Value>,
+}
+
+impl AppRequest<'_> {
+    pub fn tool_name(&self) -> Option<&str> {
+        match self.method {
+            AppMethod::CallTool => self.params.get("name").and_then(Value::as_str),
+            AppMethod::ReadResource => None,
+        }
+    }
+
+    pub fn resource_uri(&self) -> Option<&str> {
+        match self.method {
+            AppMethod::ReadResource => self.params.get("uri").and_then(Value::as_str),
+            AppMethod::CallTool => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppError {
+    pub code: i64,
+    pub message: String,
+}
+
+impl AppError {
+    pub fn new(code: i64, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+
+    pub fn not_available() -> Self {
+        Self::new(METHOD_NOT_FOUND, "Method not found")
+    }
+
+    pub fn invalid_params(message: impl Into<String>) -> Self {
+        Self::new(INVALID_PARAMS, message)
+    }
+
+    pub fn refused(message: impl Into<String>) -> Self {
+        Self::new(REFUSED, message)
+    }
+}
+
 pub trait Host: Send + Sync + 'static {
     fn system_prompt(&self, user: &User, locale: Locale) -> String;
 
@@ -128,6 +205,19 @@ pub trait Host: Send + Sync + 'static {
     ) -> BoxFuture<'a, Option<UiResource>> {
         let _ = (user, uri);
         Box::pin(async { None })
+    }
+
+    fn app_calls(&self) -> bool {
+        false
+    }
+
+    fn app_request<'a>(
+        &'a self,
+        user: &'a User,
+        request: AppRequest<'a>,
+    ) -> BoxFuture<'a, Result<Value, AppError>> {
+        let _ = (user, request);
+        Box::pin(async { Err(AppError::not_available()) })
     }
 
     fn fallback_text(&self, locale: Locale) -> String {

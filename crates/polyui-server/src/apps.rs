@@ -3,11 +3,24 @@ use polyui_core::Limits;
 use polyui_core::embed::{self, MAX_APPS, UiResource};
 use polyui_core::protocol::Component;
 use polyui_core::validate::Problem;
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 pub use polyui_core::client::{APP_PROP, EMBED_TYPE, MCP_APP_MIME_TYPE};
 
 pub type Apps = BTreeMap<String, Option<UiResource>>;
+
+pub const APP_VISIBILITY: &str = "app";
+
+pub fn callable_by_app(tool: &Value) -> bool {
+    match tool.pointer("/_meta/ui/visibility") {
+        None | Some(Value::Null) => true,
+        Some(Value::Array(visibility)) => visibility
+            .iter()
+            .any(|entry| entry.as_str() == Some(APP_VISIBILITY)),
+        Some(_) => false,
+    }
+}
 
 pub async fn read_apps<I>(host: &dyn Host, user: &User, uris: I, apps: &mut Apps)
 where
@@ -65,5 +78,25 @@ mod tests {
                 .starts_with("components[1] id \"other\"")
         );
         assert!(components[2].props.get(APP_PROP).is_none());
+    }
+
+    #[test]
+    fn visibility_decides_what_an_app_may_call() {
+        assert!(callable_by_app(&json!({ "name": "plain" })));
+        assert!(callable_by_app(
+            &json!({ "name": "both", "_meta": { "ui": { "visibility": ["model", "app"] } } })
+        ));
+        assert!(callable_by_app(
+            &json!({ "name": "app", "_meta": { "ui": { "visibility": ["app"] } } })
+        ));
+        assert!(!callable_by_app(
+            &json!({ "name": "model", "_meta": { "ui": { "visibility": ["model"] } } })
+        ));
+        assert!(!callable_by_app(
+            &json!({ "name": "empty", "_meta": { "ui": { "visibility": [] } } })
+        ));
+        assert!(!callable_by_app(
+            &json!({ "name": "odd", "_meta": { "ui": { "visibility": "app" } } })
+        ));
     }
 }

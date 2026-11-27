@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
@@ -367,5 +369,254 @@ void main() {
       page.scripts.last,
       'window.polyuiHost && window.polyuiHost.teardown()',
     );
+  });
+
+  group('app calls', () {
+    String welcome(List<String> features) => jsonEncode({
+      'v': 1,
+      't': 'welcome',
+      'session': 'sess_1',
+      'catalogs': ['core@1', 'embed@1'],
+      'features': features,
+    });
+
+    List<Map<String, Object?>> calls() => harness.messages
+        .where((message) => message['t'] == 'app.call')
+        .toList();
+
+    Map<String, Object?> forecastCall(String nonce, {String id = 'p-1'}) => {
+      'kind': 'app-call',
+      'id': id,
+      'method': 'tools/call',
+      'params': {
+        'name': 'forecast',
+        'arguments': {'city': 'Samarkand'},
+      },
+      'nonce': nonce,
+    };
+
+    String answerScript(String id, Map<String, Object?> answer) =>
+        'window.polyuiHost.answerApp(${jsonEncode(id)}, '
+        'JSON.parse(${jsonEncode(jsonEncode(answer))}))';
+
+    testWidgets('without the server feature the page has app calls off', (
+      tester,
+    ) async {
+      harness.session.receive(welcome(['resume']));
+      await show(tester, embed());
+      final page = web.last;
+      expect(page.pages.single, contains('const host = {"app_calls":false};'));
+
+      page.post(forecastCall(page.nonce));
+      await tester.pumpAndSettle();
+      expect(calls(), isEmpty);
+      expect(
+        page.scripts.last,
+        answerScript('p-1', {
+          'error': {'code': -32601, 'message': 'Method not found'},
+        }),
+      );
+    });
+
+    testWidgets('a call goes to the server and the answer back to the page', (
+      tester,
+    ) async {
+      harness.session.receive(welcome(['stream', 'app_calls']));
+      await show(tester, embed());
+      final page = web.last;
+      expect(page.pages.single, contains('const host = {"app_calls":true};'));
+
+      page.post(forecastCall(page.nonce));
+      page.post({
+        'kind': 'app-call',
+        'id': 'p-2',
+        'method': 'resources/read',
+        'params': {'uri': uri},
+        'nonce': page.nonce,
+      });
+      await tester.pumpAndSettle();
+      expect(calls(), [
+        {
+          'v': 1,
+          't': 'app.call',
+          'surface': 's1',
+          'embed': 'forecast',
+          'id': 'a1',
+          'method': 'tools/call',
+          'params': {
+            'name': 'forecast',
+            'arguments': {'city': 'Samarkand'},
+          },
+        },
+        {
+          'v': 1,
+          't': 'app.call',
+          'surface': 's1',
+          'embed': 'forecast',
+          'id': 'a2',
+          'method': 'resources/read',
+          'params': {'uri': uri},
+        },
+      ]);
+      final scripts = page.scripts.length;
+
+      const result = {
+        'content': [
+          {'type': 'text', 'text': 'Quote: </script> \u2028 "x" \'y\''},
+        ],
+      };
+      harness.session.receiveJson({
+        'v': 1,
+        't': 'app.result',
+        'surface': 's1',
+        'embed': 'forecast',
+        'id': 'a2',
+        'result': result,
+      });
+      await tester.pumpAndSettle();
+      expect(page.scripts, hasLength(scripts + 1));
+      expect(page.scripts.last, answerScript('p-2', {'result': result}));
+
+      harness.session.receiveJson({
+        'v': 1,
+        't': 'app.result',
+        'surface': 's1',
+        'embed': 'forecast',
+        'id': 'a1',
+        'error': {'code': -32000, 'message': 'Refused by the host.'},
+      });
+      await tester.pumpAndSettle();
+      expect(
+        page.scripts.last,
+        answerScript('p-1', {
+          'error': {'code': -32000, 'message': 'Refused by the host.'},
+        }),
+      );
+      expect(harness.session.openAppCalls, 0);
+    });
+
+    testWidgets('an app call with a forged nonce is never sent', (
+      tester,
+    ) async {
+      harness.session.receive(welcome(['app_calls']));
+      await show(tester, embed());
+      final page = web.last;
+      page.post(forecastCall('${page.nonce.substring(1)}x'));
+      page.post({...forecastCall(page.nonce), 'method': 'tools/list'});
+      await tester.pumpAndSettle();
+      expect(calls(), isEmpty);
+    });
+
+    testWidgets('an unanswered call times out after 40 seconds', (
+      tester,
+    ) async {
+      harness.session.receive(welcome(['app_calls']));
+      await show(tester, embed());
+      final page = web.last;
+      page.post(forecastCall(page.nonce));
+      await tester.pump(const Duration(seconds: 39));
+      expect(
+        page.scripts.where((script) => script.contains('answerApp')),
+        isEmpty,
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        page.scripts.last,
+        answerScript('p-1', {
+          'error': {'code': -32000, 'message': 'The app request timed out.'},
+        }),
+      );
+    });
+
+    testWidgets('waiters are dropped when the embed leaves the screen', (
+      tester,
+    ) async {
+      harness.session.receive(welcome(['app_calls']));
+      await show(tester, embed());
+      final page = web.last;
+      page.post(forecastCall(page.nonce));
+      await tester.pumpAndSettle();
+      expect(harness.session.openAppCalls, 1);
+
+      harness.patch([embed(withApp: false)]);
+      await tester.pumpAndSettle();
+      expect(harness.session.openAppCalls, 0);
+      harness.session.receiveJson({
+        'v': 1,
+        't': 'app.result',
+        'surface': 's1',
+        'embed': 'forecast',
+        'id': 'a1',
+        'result': {'content': <Object?>[]},
+      });
+      await tester.pumpAndSettle();
+      expect(
+        page.scripts.where((script) => script.contains('answerApp')),
+        isEmpty,
+      );
+    });
+
+    testWidgets('waiters are dropped when the widget is removed', (
+      tester,
+    ) async {
+      harness.session.receive(welcome(['app_calls']));
+      await show(tester, embed());
+      final page = web.last;
+      page.post(forecastCall(page.nonce));
+      await tester.pumpAndSettle();
+      expect(harness.session.openAppCalls, 1);
+      await tester.pumpWidget(const SizedBox());
+      expect(harness.session.openAppCalls, 0);
+    });
+
+    testWidgets('a reloaded page does not hear answers for the old page', (
+      tester,
+    ) async {
+      harness.session.receive(welcome(['app_calls']));
+      await show(tester, embed());
+      final page = web.last;
+      page.post(forecastCall(page.nonce));
+      await tester.pumpAndSettle();
+      expect(harness.session.openAppCalls, 1);
+
+      page.updateResult = false;
+      harness.patch([embed(html: '<!doctype html><p>New app</p>')]);
+      await tester.pumpAndSettle();
+      expect(page.pages, hasLength(2));
+      expect(harness.session.openAppCalls, 0);
+      harness.session.receiveJson({
+        'v': 1,
+        't': 'app.result',
+        'surface': 's1',
+        'embed': 'forecast',
+        'id': 'a1',
+        'result': {'content': <Object?>[]},
+      });
+      await tester.pumpAndSettle();
+      expect(
+        page.scripts.where((script) => script.contains('answerApp')),
+        isEmpty,
+      );
+    });
+
+    testWidgets('the page may hold at most four open calls', (tester) async {
+      harness.session.receive(welcome(['app_calls']));
+      await show(tester, embed());
+      final page = web.last;
+      for (var index = 1; index <= 5; index += 1) {
+        page.post(forecastCall(page.nonce, id: 'p-$index'));
+      }
+      await tester.pumpAndSettle();
+      expect(calls(), hasLength(4));
+      expect(
+        page.scripts.last,
+        answerScript('p-5', {
+          'error': {
+            'code': -32000,
+            'message': 'Too many requests are still open',
+          },
+        }),
+      );
+    });
   });
 }

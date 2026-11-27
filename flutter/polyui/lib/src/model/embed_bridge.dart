@@ -10,6 +10,8 @@ const embedBaseUrl = 'https://embed.polyui.invalid/';
 const embedChannelName = 'polyui';
 const embedNonceLength = 32;
 const embedMinHeight = 80.0;
+const embedAppCallIdLength = 64;
+const embedAppCallMethods = {'tools/call', 'resources/read'};
 
 const nonceAlphabet =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -72,6 +74,8 @@ sealed class EmbedEvent {
       case 'open-link':
         final link = checkSafeUrl(jsonString(decoded['url']));
         return link == null ? null : EmbedOpenLink(link);
+      case 'app-call':
+        return EmbedAppCall.read(decoded);
       default:
         return null;
     }
@@ -113,6 +117,33 @@ final class EmbedOpenLink extends EmbedEvent {
   const EmbedOpenLink(this.url);
 
   final Uri url;
+}
+
+final class EmbedAppCall extends EmbedEvent {
+  const EmbedAppCall({
+    required this.id,
+    required this.method,
+    required this.params,
+  });
+
+  static EmbedAppCall? read(Map<String, Object?> event) {
+    final id = jsonString(event['id']);
+    final method = jsonString(event['method']);
+    final params = event['params'];
+    if (id == null ||
+        id.isEmpty ||
+        id.length > embedAppCallIdLength ||
+        method == null ||
+        !embedAppCallMethods.contains(method) ||
+        params is! Map<String, Object?>) {
+      return null;
+    }
+    return EmbedAppCall(id: id, method: method, params: params);
+  }
+
+  final String id;
+  final String method;
+  final Map<String, Object?> params;
 }
 
 bool embedHasApp(Map<String, Object?> props) => props['app'] is Map;

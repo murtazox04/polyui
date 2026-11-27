@@ -87,6 +87,40 @@ class EmbedTest {
     }
 
     @Test
+    fun appCallsNeedAnIdTheMethodAndObjectParams() {
+        val params = buildJsonObject { put("name", "quote_tariffs") }
+        assertEquals(
+            PolyuiEmbedEvent.AppCall("a1b2c3d4e5f6-1", "tools/call", params),
+            read(event("app-call", ""","id":"a1b2c3d4e5f6-1","method":"tools/call","params":{"name":"quote_tariffs"}""")),
+        )
+        assertEquals(
+            PolyuiEmbedEvent.AppCall("x".repeat(64), "resources/read", JsonObject(emptyMap())),
+            read(event("app-call", ""","id":"${"x".repeat(64)}","method":"resources/read","params":{}""")),
+        )
+        assertNull(read(event("app-call", ""","id":"","method":"tools/call","params":{}""")))
+        assertNull(read(event("app-call", ""","id":"${"x".repeat(65)}","method":"tools/call","params":{}""")))
+        assertNull(read(event("app-call", ""","id":7,"method":"tools/call","params":{}""")))
+        assertNull(read(event("app-call", ""","method":"tools/call","params":{}""")))
+        assertNull(read(event("app-call", ""","id":"c-1","method":"tools/list","params":{}""")))
+        assertNull(read(event("app-call", ""","id":"c-1","method":"Tools/call","params":{}""")))
+        assertNull(read(event("app-call", ""","id":"c-1","params":{}""")))
+        assertNull(read(event("app-call", ""","id":"c-1","method":"tools/call","params":[]""")))
+        assertNull(read(event("app-call", ""","id":"c-1","method":"tools/call","params":"x"""")))
+        assertNull(read(event("app-call", ""","id":"c-1","method":"tools/call"""")))
+    }
+
+    @Test
+    fun appCallsFollowTheNonceAndMainFrameRules() {
+        val body = ""","id":"c-1","method":"tools/call","params":{}"""
+        assertNull(read(event("app-call", body, sentNonce = PolyuiEmbed.newNonce())))
+        assertNull(read(event("app-call", body), mainFrame = false))
+        assertNull(read(event("app-call", body), origin = "https://example.com"))
+        val big = "y".repeat(65_536)
+        val large = read(event("app-call", ""","id":"c-2","method":"tools/call","params":{"name":"t","arguments":{"blob":"$big"}}"""))
+        assertEquals("c-2", (large as PolyuiEmbedEvent.AppCall).id)
+    }
+
+    @Test
     fun heightsAreClampedNatively() {
         assertEquals(PolyuiEmbedEvent.Height(80), read(event("height", ""","value":10""")))
         assertEquals(PolyuiEmbedEvent.Height(320), read(event("height", ""","value":5000""")))
@@ -152,6 +186,23 @@ class EmbedTest {
         assertNotEquals(PolyuiEmbed.page(props(), PolyuiEmbed.newNonce()), PolyuiEmbed.page(props(), nonce))
         assertThrows(PolyuiException::class.java) { PolyuiEmbed.page(props(), "short") }
         assertThrows(PolyuiException::class.java) { PolyuiEmbed.page(props(), "x".repeat(31) + "-") }
+    }
+
+    @Test
+    fun thePageCarriesTheAppCallsOption() {
+        val off = PolyuiEmbed.page(props(), nonce)
+        val on = PolyuiEmbed.page(props(), nonce, appCalls = true)
+        assertTrue(off.contains("const host = {\"app_calls\":false};"))
+        assertTrue(on.contains("const host = {\"app_calls\":true};"))
+        assertFalse(on.contains("POLYUI_HOST_SLOT"))
+        assertTrue(on.contains("serverTools"))
+    }
+
+    @Test
+    fun theOlderPageCallStillWorksWithAppCallsOff() {
+        val slot = arrayOfNulls<ByteArray>(1)
+        val page = PolyuiNative.embedPage(props().toString().encodeToByteArray(), nonce.encodeToByteArray(), slot)
+        assertEquals(PolyuiEmbed.page(props(), nonce), page?.decodeToString())
     }
 
     @Test
